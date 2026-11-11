@@ -87,6 +87,7 @@ type ProposalListItem = {
   version_no?: number;
   updated_at?: string;
   current_version_no?: number;
+  my_decision?: string | null;
 };
 
 type ProposalDetail = ProposalListItem & {
@@ -95,6 +96,7 @@ type ProposalDetail = ProposalListItem & {
   current_version?: { id: number; version_no: number; snapshot?: Record<string, unknown> };
   progress?: { partner: StageSummary; risk_precheck: StageSummary; chairman: StageSummary };
   risk_checks?: RiskCheck[];
+  risk_blocks?: string[];
   approval_chain?: ApprovalItem[];
   my_decision?: { decision?: string; comment?: string; conditions?: string[] } | null;
   authorization?: { id: number; status: string; issued_at?: string } | null;
@@ -119,6 +121,22 @@ const DECISION_LABEL: Record<string, string> = {
   block: "否决",
   reject: "拒绝",
 };
+
+const PROPOSAL_STATUS_LABEL: Record<string, string> = {
+  draft: "草稿",
+  partner_review: "合伙人复核",
+  risk_precheck: "风控审批",
+  chairman_review: "待 Chairman",
+  authorized: "已授权",
+  executed: "已成交",
+  frozen: "已冻结",
+  rejected: "已否决",
+  returned: "已退回",
+};
+
+function proposalStatusLabel(status?: string): string {
+  return PROPOSAL_STATUS_LABEL[status || ""] || status || "—";
+}
 
 function parseProposalId(key: string | null): number | null {
   const m = String(key || "").match(/proposal:(\d+)/);
@@ -254,8 +272,8 @@ export function InstV3ApprovalsPage() {
 
   const loadList = async () => {
     // 审批工作台只列当前待办；已执行/已驳回/草稿属于其他阶段或历史，不混入当前项目。
-    const pending = await instApi<{ items: ProposalListItem[] }>("/proposals?scope=pending");
-    const active = new Set(["partner_review", "risk_precheck", "chairman_review"]);
+    const pending = await instApi<{ items: ProposalListItem[] }>("/proposals?scope=active");
+    const active = new Set(["partner_review", "risk_precheck", "chairman_review", "frozen"]);
     const rows = (pending.items || []).filter((p) => active.has(String(p.status || "")));
     setItems(dedupeBy(rows, (p) => p.id));
     return rows;
@@ -377,17 +395,26 @@ export function InstV3ApprovalsPage() {
 
   const progress = detail?.progress;
   const riskChecks = dedupeBy(detail?.risk_checks || [], (c) => c.key);
+  const hardBlocks = riskChecks.filter((c) => c.status === "block");
   const stageForRole: Record<string, string> = { partner: "partner_review", risk: "risk_precheck", chairman: "chairman_review" };
   const canAct = (kind: "partner" | "risk" | "chairman") =>
     role === kind && detail?.status === stageForRole[kind];
-  const roleStep = role === "partner" ? 1 : role === "risk" ? 2 : role === "chairman" ? 3 : role === "execution" ? 4 : 0;
+  const roleStep = role === "partner" ? 1 : role === "risk" ? 2 : role === "chairman" ? 3 : 0;
   const canViewStep = (step: number) => step === 0 || step === roleStep;
   const progressForStep = (step: number) =>
     step === 1 ? progress?.partner : step === 2 ? progress?.risk_precheck : step === 3 ? progress?.chairman : null;
   const chain = detail?.approval_chain || [];
   const snapshot = (detail?.current_version?.snapshot || {}) as Record<string, unknown>;
   const auth = detail?.authorization;
-  const myPending = useMemo(() => items.filter((x) => ["draft", "partner_review", "risk_precheck", "chairman_review"].includes(x.status)).length, [items]);
+  const myStageStatus = role === "partner" ? "partner_review" : role === "risk" ? "risk_precheck" : role === "chairman" ? "chairman_review" : null;
+  const myPending = useMemo(
+    () => items.filter((x) =>
+      role === "manager"
+        ? ["draft", "partner_review", "risk_precheck", "chairman_review"].includes(x.status)
+        : x.status === myStageStatus && !x.my_decision
+    ).length,
+    [items, role, myStageStatus],
+  );
 
   if (loading) return <div className="v3-loading">正在加载投委会审批…</div>;
 
@@ -416,18 +443,26 @@ export function InstV3ApprovalsPage() {
 
       <div className="v3-workspace-grid">
         <div className="v3-project-list">
-          <div className="pl-head"><span>{role === "manager" ? "我的议案" : "待我审"}</span><span>{items.length}</span></div>
+          <div className="pl-head"><span>{role === "manager" ? "我的议案" : "审批项目"}</span><span>{items.length}</span></div>
           {items.map((p) => (
             <button key={p.id} className={`pl-item${p.id === detail?.id ? " on" : ""}`} onClick={() => selectProposal(p.id)}>
               <b>{p.company_name}</b>
-              <span>{p.symbol} · 版本 {p.current_version_no || p.version_no || "—"} · {p.direction} {fmtPct(p.target_weight)} · {p.status}</span>
+              <span>
+                {p.symbol} · 版本 {p.current_version_no || p.version_no || "—"} · {p.direction} {fmtPct(p.target_weight)} · {proposalStatusLabel(p.status)}
+                {p.my_decision ? ` · 我已${DECISION_LABEL[p.my_decision] || p.my_decision}` : ""}
+              </span>
             </button>
           ))}
-          {!items.length ? <div className="v3-empty" style={{ padding: "16px" }}>当前没有待你处理的议案。</div> : null}
+          {!items.length ? <div className="v3-empty" style={{ padding: "16px" }}>当前没有可查看的议案。</div> : null}
         </div>
 
         <div className="v3-work-main">
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
+          {detail?.status === "frozen" ? (
+            <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
+              风控已否决，议案已冻结{(detail.risk_blocks?.length || hardBlocks.length) ? `：${(detail.risk_blocks?.length ? detail.risk_blocks : hardBlocks.map((c) => c.label || c.key)).join("；")}` : ""}；Chairman 不能批准。
+            </div>
+          ) : null}
 
           {viewStep === 0 ? (
             <>
@@ -441,7 +476,7 @@ export function InstV3ApprovalsPage() {
             </section>
             {detail ? (
               <section className="v3-card">
-                <div className="v3-card-head"><div><h2>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>提案人提交内容 · 只读</p></div><span className={`v3-chip ${statusTone(detail.status)}`}>{detail.status}</span></div>
+                <div className="v3-card-head"><div><h2>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>提案人提交内容 · 只读</p></div><span className={`v3-chip ${statusTone(detail.status)}`}>{proposalStatusLabel(detail.status)}</span></div>
                 <dl>
                   <div className="v3-kv"><dt>方向 / 目标仓位</dt><dd>{detail.direction} · {fmtPct(detail.target_weight)}</dd></div>
                   <div className="v3-kv"><dt>价格区间</dt><dd>{snapshot.price_low != null ? `${snapshot.price_low} – ${snapshot.price_high}` : "—"}</dd></div>
@@ -466,7 +501,7 @@ export function InstV3ApprovalsPage() {
               <dl>
                 <div className="v3-kv"><dt>环节</dt><dd>{STEPS[viewStep]?.name || "—"}</dd></div>
                 <div className="v3-kv"><dt>完成进度</dt><dd>{progressForStep(viewStep)?.reviewed ?? 0}/{progressForStep(viewStep)?.total ?? "—"}</dd></div>
-                <div className="v3-kv"><dt>当前议案状态</dt><dd>{detail.status}</dd></div>
+                <div className="v3-kv"><dt>当前议案状态</dt><dd>{proposalStatusLabel(detail.status)}</dd></div>
               </dl>
             </section>
           ) : null}
@@ -475,8 +510,8 @@ export function InstV3ApprovalsPage() {
             <>
               <section className="v3-card">
                 <div className="v3-card-head">
-                  <div><h2>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>v{detail.current_version_no || detail.version_no || "—"} · {detail.direction} {fmtPct(detail.target_weight)} · {detail.status}</p></div>
-                  <span className={`v3-chip ${statusTone(detail.status)}`}>{detail.status}</span>
+                  <div><h2>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>v{detail.current_version_no || detail.version_no || "—"} · {detail.direction} {fmtPct(detail.target_weight)} · {proposalStatusLabel(detail.status)}</p></div>
+                  <span className={`v3-chip ${statusTone(detail.status)}`}>{proposalStatusLabel(detail.status)}</span>
                 </div>
                 <dl>
                   <div className="v3-kv"><dt>方向 / 目标仓位</dt><dd>{detail.direction} · {fmtPct(detail.target_weight)}</dd></div>
@@ -493,7 +528,11 @@ export function InstV3ApprovalsPage() {
                   <div className="v3-card-head"><div><h2>合伙人复核</h2><p>研究质量、上会资格、议案合理性与机会成本；不看风控逐项明细。</p></div><span className="v3-chip">{progress?.partner?.status || "—"}</span></div>
                   <p style={{ lineHeight: 1.7, color: "#5f5766" }}>研究与辩论摘要由上游锁定版本提供；合伙人只判断是否值得上会。提案人不能审批自己的议案。</p>
                   {role === "partner" && !canAct("partner") ? (
-                    <div className="v3-note">当前议案状态为 {detail.status}，合伙人环节已结束或尚未轮到，不能再操作。</div>
+                    <div className="v3-note">
+                      {detail.my_decision
+                        ? `你已提交合伙人意见：${DECISION_LABEL[detail.my_decision.decision || ""] || detail.my_decision.decision || "—"}；当前议案在 ${proposalStatusLabel(detail.status)} 环节，进度可继续跟踪。`
+                        : `当前议案状态为 ${proposalStatusLabel(detail.status)}，合伙人环节已结束或尚未轮到，不能再操作。`}
+                    </div>
                   ) : null}
                   {role === "partner" && canAct("partner") ? (
                     <>
@@ -517,11 +556,20 @@ export function InstV3ApprovalsPage() {
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>硬约束核查</h2><p>任何一项否决，议案即时终止；Chairman 不能越过。</p></div><span className="v3-chip">{riskChecks.length} 项</span></div>
                   {riskChecks.map((c) => (
-                    <div className="v3-kv" key={c.key}><dt>{c.label}</dt><dd>{c.value || "—"} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status}</span></dd></div>
+                    <div className="v3-kv" key={c.key}><dt>{c.label}</dt><dd>{c.value || "—"} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status === "pass" ? "通过" : c.status === "warn" ? "关注" : "阻断"}</span></dd></div>
                   ))}
                   {!riskChecks.length ? <div className="v3-empty">当前议案还没有风控核查数据。</div> : null}
                   {role === "risk" && !canAct("risk") ? (
-                    <div className="v3-note">当前议案状态为 {detail.status}，风控环节尚未轮到或已结束，不能操作。</div>
+                    <div className="v3-note">
+                      {detail.my_decision
+                        ? `你已提交风控意见：${DECISION_LABEL[detail.my_decision.decision || ""] || detail.my_decision.decision || "—"}；当前议案在 ${proposalStatusLabel(detail.status)} 环节，进度可继续跟踪。`
+                        : `当前议案状态为 ${proposalStatusLabel(detail.status)}，风控环节尚未轮到或已结束，不能操作。`}
+                    </div>
+                  ) : null}
+                  {role === "risk" && canAct("risk") && hardBlocks.length ? (
+                    <div className="v3-note" style={{ marginTop: 8, borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
+                      硬约束未通过：{hardBlocks.map((c) => c.label || c.key).join("；")}。放行会被系统自动否决，议案将立即冻结。
+                    </div>
                   ) : null}
                   {role === "risk" && canAct("risk") ? (
                     <>
@@ -530,13 +578,19 @@ export function InstV3ApprovalsPage() {
                         <div className="v3-field span-2"><label>附条件（有条件放行时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
                       </div>
                       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                        <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "pass")}><Check className="h-3.5 w-3.5" />放行</button>
-                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "conditional")}>有条件放行</button>
-                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />否决（终局）</button>
+                        {hardBlocks.length ? (
+                          <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />确认否决（硬约束）</button>
+                        ) : (
+                          <>
+                            <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "pass")}><Check className="h-3.5 w-3.5" />放行</button>
+                            <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "conditional")}>有条件放行</button>
+                            <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />否决（终局）</button>
+                          </>
+                        )}
                       </div>
                     </>
                   ) : null}
-                  {role !== "risk" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；独立风控账号可操作。</div> : null}
+                  {role !== "risk" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；风控账号可操作。</div> : null}
                 </section>
               ) : null}
 
@@ -544,7 +598,7 @@ export function InstV3ApprovalsPage() {
                 <>
                 <ResearchDebateSummary data={detail.research_debate} />
                 <section className="v3-card">
-                  <div className="v3-card-head"><div><h2>风控结论</h2><p>独立风控硬约束的结论与附加条件；详细核查值不回传 Chairman。</p></div><span className="v3-chip">{detail.risk_stage?.status || "—"}</span></div>
+                  <div className="v3-card-head"><div><h2>风控结论</h2><p>风控硬约束的结论与附加条件；详细核查值不回传 Chairman。</p></div><span className="v3-chip">{detail.risk_stage?.status || "—"}</span></div>
                   <dl>
                     <div className="v3-kv"><dt>结论</dt><dd>{detail.risk_stage?.decision || "—"}</dd></div>
                     <div className="v3-kv"><dt>意见</dt><dd>{detail.risk_stage?.comment || "—"}</dd></div>
@@ -558,7 +612,7 @@ export function InstV3ApprovalsPage() {
                     <div className="v3-kv" key={`${a.step}-${i}`}><dt>{a.step} · {a.approver_name || a.approver_member_id || "—"}</dt><dd>{DECISION_LABEL[a.decision || ""] || a.decision || "待审"}{a.comment ? ` · ${a.comment}` : ""}</dd></div>
                   )) : <div className="v3-empty">还没有审批记录。</div>}
                   {role === "chairman" && !canAct("chairman") ? (
-                    <div className="v3-note">当前议案状态为 {detail.status}，Chairman 环节尚未轮到或已结束，不能操作。</div>
+                    <div className="v3-note">当前议案状态为 {proposalStatusLabel(detail.status)}，Chairman 环节尚未轮到或已结束，不能操作。</div>
                   ) : null}
                   {role === "chairman" && canAct("chairman") ? (
                     <>
@@ -638,7 +692,7 @@ export function InstV3ApprovalsPage() {
             </>
           )}
           <div className="ar-row"><b>进度</b><br />合伙人 {progress?.partner?.reviewed ?? 0}/{progress?.partner?.total ?? "—"} · 风控 {progress?.risk_precheck?.reviewed ?? 0}/{progress?.risk_precheck?.total ?? "—"} · Chairman {progress?.chairman?.reviewed ?? 0}/{progress?.chairman?.total ?? "—"}</div>
-          <div className="ar-row"><b>当前议案</b><br />{detail ? `${detail.company_name} · ${detail.status}` : "未选择"}</div>
+          <div className="ar-row"><b>当前议案</b><br />{detail ? `${detail.company_name} · ${proposalStatusLabel(detail.status)}` : "未选择"}</div>
           <div className="ar-row"><b>硬约束</b><br /><ShieldAlert className="mr-1 inline h-3 w-3" />风控否决终局；提案人回避；顺序不可跳级。</div>
         </aside>
       </div>

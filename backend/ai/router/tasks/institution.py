@@ -769,7 +769,7 @@ DIMENSION_CHAT_TASK = register(
 RISK_REVIEW_TASK = register(
     TaskSpec(
         task_id="inst.risk_review",
-        description="机构端独立风控复核意见（只建议，不改变状态）",
+        description="机构端风控复核意见（只建议，不改变状态）",
         temperature=0.2,
         max_tokens=8000,
         timeout_sec=180,

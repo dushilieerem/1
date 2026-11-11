@@ -35,7 +35,7 @@ EXPECTED = {
         "debate": "write",
         "portfolio": "read",
         "approvals": "write",
-        "execution": "read",
+        "execution": "write",
         "monitor": "write",
         "about": "write",
     },
@@ -68,28 +68,6 @@ EXPECTED = {
         "debate": "read",
         "portfolio": "write",
         "approvals": "write",
-        "execution": "write",
-        "monitor": "write",
-        "about": "read",
-    },
-    "execution": {
-        "overview": "read",
-        "ideas": "none",
-        "research": "none",
-        "debate": "none",
-        "portfolio": "read",
-        "approvals": "read",
-        "execution": "write",
-        "monitor": "read",
-        "about": "read",
-    },
-    "monitoring": {
-        "overview": "read",
-        "ideas": "none",
-        "research": "digest",
-        "debate": "none",
-        "portfolio": "write",
-        "approvals": "digest",
         "execution": "read",
         "monitor": "write",
         "about": "read",
@@ -120,7 +98,7 @@ EXPECTED = {
 
 
 class PermissionMatrixTest(unittest.TestCase):
-    def test_six_roles_and_nine_workspaces(self):
+    def test_four_roles_and_nine_workspaces(self):
         self.assertEqual(set(EXPECTED), set(ROLE_LABELS))
         self.assertEqual(len(WORKSPACES), 9)
 

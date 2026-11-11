@@ -790,11 +790,27 @@ def _research_debate_summary(conn, org_id: int, case_id: int) -> dict[str, Any] 
 def list_proposals_for_member(
     org_id: int, member_id: int, role: str, *, scope: str = "pending"
 ) -> list[dict[str, Any]]:
-    sql = """
+    # 本人已表决但在途的项目仍保留在列表里，页面用 my_decision 标记“我已表决”，
+    # 避免风控放行后项目从工作台消失、看不到后续 Chairman 进度。
+    my_step = {"partner": "partner", "risk": "risk_precheck", "chairman": "chairman"}.get(role)
+    my_select = ", md.decision AS my_decision" if my_step else ""
+    my_join = (
+        """
+          LEFT JOIN LATERAL (
+            SELECT decision FROM inst_approval
+             WHERE proposal_version_id=v.id AND step=%s AND approver_member_id=%s
+             ORDER BY id DESC LIMIT 1
+          ) md ON TRUE
+        """
+        if my_step
+        else ""
+    )
+    sql = f"""
         SELECT p.*, co.symbol, co.name AS company_name, co.market,
                v.version_no, v.snapshot, v.status AS version_status,
                a.id AS authorization_id, a.status AS authorization_status,
                x.id AS exit_case_id, x.status AS exit_status, x.reason_type AS exit_reason_type
+               {my_select}
           FROM inst_proposal p
           JOIN inst_company co ON co.id=p.company_id
           LEFT JOIN LATERAL (
@@ -809,9 +825,10 @@ def list_proposals_for_member(
             SELECT id, status, reason_type FROM inst_exit_case
              WHERE proposal_id=p.id ORDER BY id DESC LIMIT 1
           ) x ON TRUE
+          {my_join}
          WHERE p.org_id=%s
     """
-    params: list[Any] = [org_id]
+    params: list[Any] = ([my_step, member_id] if my_step else []) + [org_id]
     if role == "manager":
         sql += " AND p.created_by=%s"
         params.append(member_id)
@@ -822,6 +839,10 @@ def list_proposals_for_member(
                 " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
                 " WHERE pv.proposal_id=p.id AND ap.step='partner' AND ap.approver_member_id=%s)"
             )
+            params.append(member_id)
+        elif scope == "active":
+            # 已表决但仍在途的议案也保留；风控否决后的冻结案保留结果，避免直接消失。
+            sql += " AND p.status IN ('partner_review','risk_precheck','chairman_review','frozen')"
         else:
             sql += (
                 " AND p.status IN ('draft','partner_review')"
@@ -829,7 +850,7 @@ def list_proposals_for_member(
                 " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
                 " WHERE pv.proposal_id=p.id AND ap.step='partner' AND ap.approver_member_id=%s)"
             )
-        params.append(member_id)
+            params.append(member_id)
     elif role == "risk":
         if scope == "reviewed":
             sql += (
@@ -837,6 +858,10 @@ def list_proposals_for_member(
                 " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
                 " WHERE pv.proposal_id=p.id AND ap.step='risk_precheck' AND ap.approver_member_id=%s)"
             )
+            params.append(member_id)
+        elif scope == "active":
+            # 风控放行后、Chairman 批准前仍可追加否决；已否决的冻结案保留结果。
+            sql += " AND p.status IN ('risk_precheck','chairman_review','frozen')"
         else:
             sql += (
                 " AND p.status IN ('risk_precheck','chairman_review')"
@@ -844,13 +869,21 @@ def list_proposals_for_member(
                 " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
                 " WHERE pv.proposal_id=p.id AND ap.step='risk_precheck' AND ap.approver_member_id=%s)"
             )
-        params.append(member_id)
+            params.append(member_id)
     elif role == "chairman":
         if scope == "reviewed":
             sql += (
                 " AND EXISTS (SELECT 1 FROM inst_approval ap"
                 " JOIN inst_proposal_version pv ON pv.id=ap.proposal_version_id"
                 " WHERE pv.proposal_id=p.id AND ap.step='chairman' AND ap.approver_member_id=%s)"
+            )
+            params.append(member_id)
+        elif scope == "active":
+            sql += (
+                " AND p.status='chairman_review'"
+                " AND NOT EXISTS (SELECT 1 FROM inst_approval ar"
+                " JOIN inst_proposal_version pvr ON pvr.id=ar.proposal_version_id"
+                " WHERE pvr.proposal_id=p.id AND ar.step='risk_precheck' AND ar.decision IN ('veto','block'))"
             )
         else:
             sql += (
@@ -862,7 +895,7 @@ def list_proposals_for_member(
                 " JOIN inst_proposal_version pvr ON pvr.id=ar.proposal_version_id"
                 " WHERE pvr.proposal_id=p.id AND ar.step='risk_precheck' AND ar.decision IN ('veto','block'))"
             )
-        params.append(member_id)
+            params.append(member_id)
     else:
         return []
     sql += " ORDER BY p.updated_at DESC"
@@ -936,6 +969,14 @@ def get_proposal_for_member(
             for r in rows
         )
 
+    def risk_block_labels() -> list[str]:
+        # 只回传触发阻断的硬约束名称，不回传具体核查值。
+        return [
+            str(c.get("label") or c.get("key") or "硬约束")
+            for c in (data.get("risk_checks") or [])
+            if str(c.get("status") or "") == "block"
+        ]
+
     if role == "manager":
         if created_by != int(member_id):
             raise PermissionError("该议案不在你当前角色的审批范围")
@@ -943,6 +984,7 @@ def get_proposal_for_member(
         with get_conn() as conn:
             out["progress"] = _proposal_progress(conn, org_id, rows)
         out["authorization"] = _authorization_summary(data)
+        out["risk_blocks"] = risk_block_labels()
         return out
 
     if role == "partner":
@@ -957,6 +999,7 @@ def get_proposal_for_member(
                 if data.get("case_id")
                 else None
             )
+        out["risk_blocks"] = risk_block_labels()
         return out
 
     if role == "risk":
@@ -1274,11 +1317,11 @@ def chairman_review(
             raise LookupError("议案版本不存在")
         state = _approval_state(_approval_rows(conn, int(current["id"])), _member_role_counts(conn, org_id))
         if state["risk_precheck"]["vetoed"]:
-            raise PermissionError("独立风控已否决，Chairman 不能批准")
+            raise PermissionError("风控已否决，Chairman 不能批准")
         if not state["partner"]["passed"]:
             raise PermissionError("合伙人复核未通过，不能提交 Chairman")
         if not state["risk_precheck"]["passed"]:
-            raise PermissionError("独立风控尚未放行，不能提交 Chairman")
+            raise PermissionError("风控尚未放行，不能提交 Chairman")
         _insert_approval(
             conn,
             version_id=int(current["id"]),

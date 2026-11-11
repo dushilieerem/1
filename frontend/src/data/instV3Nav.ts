@@ -49,8 +49,6 @@ export function visibleV3Nav(
     partner: ["dashboard", "pipeline", "stocks", "approvals", "playbook"],
     risk: ["dashboard", "pipeline", "stocks", "approvals", "playbook"],
     chairman: ["dashboard", "pipeline", "stocks", "approvals", "playbook"],
-    execution: ["dashboard", "pipeline", "stocks", "execute", "playbook"],
-    monitoring: ["dashboard", "pipeline", "stocks", "manage", "playbook"],
   };
   const allowed = allowedByRole[role] || ["dashboard", "pipeline", "playbook"];
   return V3_NAV_GROUPS.map((group) => ({

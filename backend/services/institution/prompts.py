@@ -1051,7 +1051,7 @@ DEBATE_PROMPT = _render(
 
 RISK_REVIEW_PROMPT = _agent_prompt(
     _A19,
-    agent_name="独立风控 Agent",
+    agent_name="风控 Agent",
     role="风控",
     next_stage="Chairman 审批",
     note=RISK_OUTPUT_NOTE,
@@ -1152,7 +1152,7 @@ INSTITUTION_AGENTS: list[dict[str, Any]] = [
     _agent("inst.chief.agent", "研究经理 Agent", "研究", "带只读工具的研究判断 Agent：自己查数据、证据和专业输出后给结论（A10）", auto_run=False),
     _agent("inst.debate", "投资辩论", "辩论", "多空论点、主持与裁决，引用证据 id（A11/A12/A15/A16）", auto_run=True),
     _agent("inst.dim.chat", "单维追问", "研究", "围绕单个维度回答追问", auto_run=False),
-    _agent("inst.risk_review", "独立风控", "审批", "六项硬检查、一票否决与执行条件（A19）", auto_run=True),
+    _agent("inst.risk_review", "风控", "审批", "六项硬检查、一票否决与执行条件（A19）", auto_run=True),
     _agent("inst.chairman_memo", "Chairman 审议", "审批", "审批链、资本配置与拟授权快照（A20）", auto_run=True),
     _agent("inst.partner_memo", "合伙人审批建议", "审批", "研究质量、议案合理性与附条件建议（A18）", auto_run=True),
     _agent("inst.role.financial", "财务与取证岗位", "岗位", "财务质量与证据核验建议（A07/A13）", auto_run=False),

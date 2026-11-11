@@ -190,7 +190,7 @@ def scan_holdings(org_id: int, *, actor_member_id: int | None = None) -> dict[st
     """自动监控：复核到期与持仓价格异常，登记监控事件；7 天内同类不重复。"""
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "manager", "risk", "monitoring", "partner")
+        _require_role(member, "manager", "risk", "partner")
         rows = conn.execute(
             """
             SELECT * FROM (
@@ -286,7 +286,7 @@ def refresh_thesis(org_id: int, company_id: int, *, actor_member_id: int | None 
     """从最近一笔买入议案/研究版本重新生成论点台账；旧台账保留，不自动覆盖。"""
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "manager", "partner", "monitoring")
+        _require_role(member, "manager", "partner")
         company = conn.execute(
             "SELECT id, symbol, name FROM inst_company WHERE id=%s AND org_id=%s",
             (company_id, org_id),
@@ -412,7 +412,7 @@ def create_thesis(
             raise ValueError(f"第 {idx} 个 KPI 缺少 name")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "manager", "partner", "monitoring")
+        _require_role(member, "manager", "partner")
         company = conn.execute(
             "SELECT id, symbol, name FROM inst_company WHERE id=%s AND org_id=%s",
             (company_id, org_id),
@@ -474,7 +474,7 @@ def review_thesis(
         raise ValueError("conclusion 必须是 hold/reduce/exit/invalidate")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "manager", "partner", "monitoring")
+        _require_role(member, "manager", "partner")
         ledger, new_status, out = repo.review_thesis(
             conn, OrgScope(org_id), ledger_id,
             kpi_status=kpi_status, conclusion=conclusion, note=note,
@@ -506,7 +506,7 @@ def create_monitor_event(
 ) -> dict[str, Any]:
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "manager", "risk", "monitoring", "partner")
+        _require_role(member, "manager", "risk", "partner")
         company = conn.execute(
             "SELECT id FROM inst_company WHERE id=%s AND org_id=%s",
             (company_id, org_id),

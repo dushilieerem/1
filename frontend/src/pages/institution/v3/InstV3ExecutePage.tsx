@@ -80,7 +80,7 @@ export function InstV3ExecutePage() {
 
   const detailSeq = useRef(0);
   const selectedId = parseAuthId(params.get("key"));
-  const canExecute = session.role === "execution";
+  const canExecute = session.role === "manager";
   const snapshot = ((selected?.snapshot || selected?.version_snapshot || {}) as Record<string, unknown>);
   const approvalConditions = (snapshot.approval_conditions || []) as unknown[];
 
@@ -100,7 +100,7 @@ export function InstV3ExecutePage() {
     setReconcile(null);
     setPrecheck(null);
     setError(null);
-    // 现金、持仓、可执行数量与成交明细只属于交易执行角色；其他角色只看授权进度。
+    // 现金、持仓、可执行数量与成交明细只属于投资经理；其他角色只看授权进度。
     if (!canExecute) return;
     try {
       const pre = await instApi<Precheck>(`/authorizations/${auth.id}/precheck`);
@@ -313,7 +313,7 @@ export function InstV3ExecutePage() {
                     <div className="v3-kv"><dt>当前环节</dt><dd>{selected.status === "filled" ? "执行完成" : selected.status === "qualified" ? "待交易执行" : "流程已结束"}</dd></div>
                     <div className="v3-kv"><dt>议案版本</dt><dd>{selected.version_no ? `V${selected.version_no}` : "—"}</dd></div>
                   </dl>
-                  <div className="v3-note" style={{ marginTop: 8 }}>交易执行价格、数量、账户余额、成交与对账明细仅交易执行角色可见；当前角色只查看授权与执行进度。</div>
+                  <div className="v3-note" style={{ marginTop: 8 }}>执行价格、数量、账户余额、成交与对账明细仅投资经理可见；当前角色只查看授权与执行进度。</div>
                 </section>
               )}
             </>

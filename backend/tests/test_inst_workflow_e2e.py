@@ -82,7 +82,7 @@ def fixture():
         users = []
         tokens: dict[str, str] = {}
         members: dict[str, int] = {}
-        for role in ("manager", "partner", "chairman", "risk", "execution", "monitoring"):
+        for role in ("manager", "partner", "chairman", "risk"):
             user, membership, token = _mk_member(conn, org_id, role, tag)
             users.append(user)
             tokens[role] = token
@@ -136,12 +136,11 @@ def _ok(resp, code: int = 200) -> dict:
 
 def test_full_chain_and_permission_penetration(fixture) -> None:
     tokens = fixture["tokens"]
-    manager, partner, chairman, risk, execution = (
+    manager, partner, chairman, risk = (
         tokens["manager"],
         tokens["partner"],
         tokens["chairman"],
         tokens["risk"],
-        tokens["execution"],
     )
     # 不进 lifespan：避免启动调度/迁移写仓库文件；schema 已在上方显式确保。
     client = TestClient(app)
@@ -216,6 +215,23 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     )
     assert risk_out["status"] == "chairman_review"
 
+    # 风控放行后仍在自己的审批列表里（标记我已放行），直到 Chairman 批完；
+    # 合伙人也继续看到后续进度，避免流程中项目突然消失。
+    for token, decision in ((risk, "pass"), (partner, "approve")):
+        active = _ok(
+            client.get("/api/inst/proposals?scope=active", headers=_h(token))
+        )
+        row = next(
+            (x for x in active["items"] if int(x["id"]) == proposal_id), None
+        )
+        assert row is not None, active
+        assert row.get("status") == "chairman_review"
+        assert row.get("my_decision") == decision
+    chairman_active = _ok(
+        client.get("/api/inst/proposals?scope=active", headers=_h(chairman))
+    )
+    assert any(int(x["id"]) == proposal_id for x in chairman_active["items"])
+
     precheck = _ok(
         client.get(
             f"/api/inst/proposals/{proposal_id}/ai/chairman-precheck", headers=_h(chairman)
@@ -242,22 +258,22 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     )
     auth_id = int(authorized["authorizations"][0]["id"])
 
-    # 非交易执行角色只拿到授权进度，不能读执行要素（价格区间/账户/有效期）。
+    # 投资经理兼交易执行，能读执行要素；其他角色只看授权进度。
     manager_queue = _ok(
         client.get("/api/inst/authorizations?status=qualified", headers=_h(manager))
     )
     manager_row = next(x for x in manager_queue["items"] if int(x["id"]) == auth_id)
     assert int(manager_row["id"]) == auth_id
-    assert "snapshot" not in manager_row and "version_snapshot" not in manager_row
-    execution_queue = _ok(
-        client.get("/api/inst/authorizations?status=qualified", headers=_h(execution))
+    assert "snapshot" in manager_row or "version_snapshot" in manager_row
+    partner_queue = _ok(
+        client.get("/api/inst/authorizations?status=qualified", headers=_h(partner))
     )
-    execution_row = next(x for x in execution_queue["items"] if int(x["id"]) == auth_id)
-    assert "snapshot" in execution_row or "version_snapshot" in execution_row
-    # 现金、持仓、可执行数量与核对明细只对交易执行角色开放。
+    partner_row = next(x for x in partner_queue["items"] if int(x["id"]) == auth_id)
+    assert "snapshot" not in partner_row and "version_snapshot" not in partner_row
+    # 现金、持仓、可执行数量与核对明细只对投资经理开放。
     assert (
         client.get(
-            f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(manager)
+            f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(partner)
         ).status_code
         == 403
     )
@@ -267,7 +283,7 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     )
 
     precheck = _ok(
-        client.get(f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(execution))
+        client.get(f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(manager))
     )
     assert precheck["checks"]
     if precheck.get("price"):
@@ -277,7 +293,7 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         client.post(
             f"/api/inst/authorizations/{auth_id}/execute",
             json={"price": 100},
-            headers=_h(execution),
+            headers=_h(manager),
         )
     )
     assert executed["order"]["authorization_id"] == auth_id
@@ -286,16 +302,16 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         client.post(
             f"/api/inst/authorizations/{auth_id}/execute",
             json={"price": 100},
-            headers=_h(execution),
+            headers=_h(manager),
         )
     )
     assert again.get("idempotent") is True
 
     reconciled = _ok(
-        client.post(f"/api/inst/authorizations/{auth_id}/reconcile", headers=_h(execution))
+        client.post(f"/api/inst/authorizations/{auth_id}/reconcile", headers=_h(manager))
     )
     assert reconciled["matched"] is True, reconciled
-    # 风控虽有 execution 工作区写权限，也不能查看成交与账户对账明细。
+    # 风控不能查看成交与账户对账明细。
     assert (
         client.post(
             f"/api/inst/authorizations/{auth_id}/reconcile", headers=_h(risk)
@@ -308,13 +324,13 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
             "VALUES (%s,%s,'manual','对账差异待处理') RETURNING id",
             (fixture["org_id"], auth_id),
         ).fetchone()
-    listed = _ok(client.get("/api/inst/execution/exceptions", headers=_h(execution)))
+    listed = _ok(client.get("/api/inst/execution/exceptions", headers=_h(manager)))
     assert any(item["id"] == exception["id"] for item in listed["items"])
     resolved = _ok(
         client.post(
             f"/api/inst/execution/exceptions/{int(exception['id'])}/resolve",
             json={"status": "resolved", "resolution": "已人工核对"},
-            headers=_h(execution),
+            headers=_h(manager),
         )
     )
     assert resolved["status"] == "resolved"
@@ -424,6 +440,16 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         client.post(f"/api/inst/proposals/{blocked_id}/risk-check", json={}, headers=_h(risk))
     )
     assert risk_blocked["status"] == "frozen"
+    # 风控否决后仍保留在风控/合伙人的审批列表里，显示冻结结果与原因。
+    for token in (risk, partner):
+        active = _ok(
+            client.get("/api/inst/proposals?scope=active", headers=_h(token))
+        )
+        row = next(
+            (x for x in active["items"] if int(x["id"]) == blocked_id), None
+        )
+        assert row is not None, active
+        assert row.get("status") == "frozen"
     assert (
         client.post(
             f"/api/inst/proposals/{blocked_id}/chairman",

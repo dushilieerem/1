@@ -73,12 +73,10 @@ export function InstV3PlaybookPage() {
           <table className="v3-table">
             <thead><tr><th>角色</th><th>工作台/流水线</th><th>价值分析</th><th>多空辩论</th><th>投委会审批</th><th>执行成交</th><th>投资管理</th></tr></thead>
             <tbody>
-              <tr><td>投资经理</td><td>读写</td><td>写</td><td>写</td><td>只读本人</td><td>只读</td><td>写</td></tr>
+              <tr><td>投资经理</td><td>读写</td><td>写</td><td>写</td><td>只读本人</td><td>执行</td><td>写</td></tr>
               <tr><td>合伙人</td><td>只读</td><td>—</td><td>—</td><td>第一关</td><td>—</td><td>—</td></tr>
-              <tr><td>独立风控</td><td>只读</td><td>—</td><td>—</td><td>第二关</td><td>—</td><td>—</td></tr>
+              <tr><td>风控</td><td>只读</td><td>—</td><td>—</td><td>第二关</td><td>—</td><td>—</td></tr>
               <tr><td>Chairman</td><td>只读</td><td>—</td><td>—</td><td>第三关</td><td>—</td><td>—</td></tr>
-              <tr><td>交易执行</td><td>只读</td><td>—</td><td>—</td><td>—</td><td>执行</td><td>—</td></tr>
-              <tr><td>组合监控</td><td>只读</td><td>—</td><td>—</td><td>—</td><td>—</td><td>写</td></tr>
             </tbody>
           </table>
         </div>

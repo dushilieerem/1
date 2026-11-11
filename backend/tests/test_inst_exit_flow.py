@@ -91,7 +91,7 @@ def fixture():
         users = []
         tokens: dict[str, str] = {}
         members: dict[str, int] = {}
-        for role in ("manager", "partner", "chairman", "risk", "execution", "monitoring"):
+        for role in ("manager", "partner", "chairman", "risk"):
             user, membership, token = _mk_member(conn, org_id, role, tag)
             users.append(user)
             tokens[role] = token
@@ -276,7 +276,7 @@ def test_exit_flow_state_machine_and_direction_guard(fixture) -> None:
         client.post(
             f"/api/inst/authorizations/{auth_id}/execute",
             json={"price": 100},
-            headers=_h(tokens["execution"]),
+            headers=_h(tokens["manager"]),
         )
     )
     assert executed["order"]["side"] == "sell"
@@ -293,7 +293,7 @@ def test_exit_flow_state_machine_and_direction_guard(fixture) -> None:
     ], actions
 
     # 8) 投后列表回链研究案/议案，并带议案与授权状态。
-    monitor = _ok(client.get("/api/inst/monitor", headers=_h(tokens["monitoring"])))
+    monitor = _ok(client.get("/api/inst/monitor", headers=_h(tokens["manager"])))
     exit_row = next(x for x in monitor["exits"] if int(x["id"]) == exit_id)
     assert int(exit_row["case_id"]) == case_id
     assert exit_row["case_no"]

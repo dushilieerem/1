@@ -13,9 +13,7 @@ const DEMO_ACCOUNTS: [string, string][] = [
   ["inst_manager", "投资经理"],
   ["inst_partner", "合伙人"],
   ["inst_chairman", "Chairman"],
-  ["inst_risk", "独立风控"],
-  ["inst_execution", "交易执行"],
-  ["inst_monitoring", "组合监控"],
+  ["inst_risk", "风控"],
 ];
 const DEMO_PASSWORD = "inst123456";
 

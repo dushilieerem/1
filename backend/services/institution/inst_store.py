@@ -22,14 +22,12 @@ from services.auth.auth_store import (
 from services.core.db import get_conn
 from services.core.env_config import env
 
-# 六个机构角色，与需求文档 §2.1 一致
+# 主观投资只有四个机构角色；交易执行与组合监控由投资经理承担。
 ROLE_LABELS: dict[str, tuple[str, str]] = {
     "manager": ("投资经理", "Investment manager"),
     "partner": ("合伙人", "Partner"),
     "chairman": ("Chairman", "Chairman"),
-    "risk": ("独立风控", "Independent risk"),
-    "execution": ("交易执行", "Execution"),
-    "monitoring": ("组合监控", "Portfolio monitoring"),
+    "risk": ("风控", "Risk"),
     "quant_researcher": ("量化研究员", "Quant researcher"),
     "quant_reviewer": ("量化研究复核", "Quant research reviewer"),
 }
@@ -67,7 +65,7 @@ ROLE_WORKSPACE_ACCESS: dict[str, dict[str, Access]] = {
         "debate": "write",
         "portfolio": "read",
         "approvals": "write",
-        "execution": "read",
+        "execution": "write",
         "monitor": "write",
         "about": "write",
     },
@@ -100,28 +98,6 @@ ROLE_WORKSPACE_ACCESS: dict[str, dict[str, Access]] = {
         "debate": "read",
         "portfolio": "write",
         "approvals": "write",
-        "execution": "write",
-        "monitor": "write",
-        "about": "read",
-    },
-    "execution": {
-        "overview": "read",
-        "ideas": "none",
-        "research": "none",
-        "debate": "none",
-        "portfolio": "read",
-        "approvals": "read",
-        "execution": "write",
-        "monitor": "read",
-        "about": "read",
-    },
-    "monitoring": {
-        "overview": "read",
-        "ideas": "none",
-        "research": "digest",
-        "debate": "none",
-        "portfolio": "write",
-        "approvals": "digest",
         "execution": "read",
         "monitor": "write",
         "about": "read",
@@ -141,9 +117,7 @@ DEMO_MEMBERS: tuple[tuple[str, str, str], ...] = (
     ("inst_manager", "投资经理", "manager"),
     ("inst_partner", "合伙人", "partner"),
     ("inst_chairman", "Chairman", "chairman"),
-    ("inst_risk", "独立风控", "risk"),
-    ("inst_execution", "交易执行", "execution"),
-    ("inst_monitoring", "组合监控", "monitoring"),
+    ("inst_risk", "风控", "risk"),
 )
 
 
@@ -221,13 +195,13 @@ def ensure_inst_schema() -> None:
 
 
 def seed_inst_demo() -> dict[str, Any]:
-    """幂等写入演示机构与六个角色账号；默认关闭，需显式 INST_SEED_DEMO=1。"""
+    """幂等写入演示机构与四个角色账号；默认关闭，需显式 INST_SEED_DEMO=1。"""
     if (env("INST_SEED_DEMO", "0") or "0").strip() in {"0", "false", "False", "no"}:
         return {"ok": True, "skipped": True}
 
     ensure_inst_schema()
     password = env("INST_DEMO_PASSWORD", "inst123456") or "inst123456"
-    # 六个演示账号共用同一密码，只做一次 bcrypt
+    # 四个演示账号共用同一密码，只做一次 bcrypt
     password_hash = hash_password(password)
     created_users = 0
     with get_conn() as conn:
@@ -268,6 +242,12 @@ def seed_inst_demo() -> dict[str, Any]:
                 """,
                 (org_id, int(row["id"]), role, display_name),
             )
+        # 旧演示环境的交易执行/组合监控账号停用；历史审计与订单仍保留成员 ID。
+        conn.execute(
+            "UPDATE inst_members SET status='disabled', updated_at=NOW() "
+            "WHERE org_id=%s AND role IN ('execution','monitoring')",
+            (org_id,),
+        )
     return {"ok": True, "created_users": created_users, "org_id": org_id}
 
 
@@ -342,6 +322,8 @@ def login_inst(*, username: str, password: str) -> dict[str, Any]:
         raise PermissionError("该账号未加入机构，请联系管理员")
     if str(membership.get("role") or "") in QUANT_ROLES:
         raise PermissionError("该账号为机构量化角色，请使用机构量化入口登录")
+    if str(membership.get("role") or "") not in ROLE_LABELS:
+        raise PermissionError("该账号的机构角色已停用，请联系管理员调整")
     token = issue_inst_token(user, membership)
     return {"user": user, "membership": membership, "token": token}
 

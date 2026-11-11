@@ -1307,11 +1307,11 @@ def chairman_review(
             raise LookupError("议案版本不存在")
         state = _approval_state(_approval_rows(conn, int(current["id"])), _member_role_counts(conn, org_id))
         if state["risk_precheck"]["vetoed"]:
-            raise PermissionError("独立风控已否决，Chairman 不能批准")
+            raise PermissionError("风控已否决，Chairman 不能批准")
         if not state["partner"]["passed"]:
             raise PermissionError("合伙人复核未通过，不能提交 Chairman")
         if not state["risk_precheck"]["passed"]:
-            raise PermissionError("独立风控尚未放行，不能提交 Chairman")
+            raise PermissionError("风控尚未放行，不能提交 Chairman")
         _insert_approval(
             conn,
             version_id=int(current["id"]),

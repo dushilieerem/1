@@ -415,12 +415,10 @@ def debate(scope: OrgScope, session_id: int) -> dict[str, Any] | None:
 
 def overview(scope: OrgScope, role: str) -> dict[str, Any]:
     role_status = {
-        "manager": ("draft", "partner_review"),
+        "manager": ("draft", "partner_review", "authorized"),
         "partner": ("partner_review",),
         "chairman": ("chairman_review",),
         "risk": ("risk_precheck",),
-        "execution": ("authorized",),
-        "monitoring": (),
     }.get(role, ())
     with get_conn() as conn:
         def one(sql: str, params: tuple = ()) -> int:

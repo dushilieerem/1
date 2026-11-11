@@ -121,7 +121,7 @@ export function InstV3ManagePage() {
 
   const detailSeq = useRef(0);
   const selectedSymbol = parseHolding(params.get("key"));
-  const canWrite = ["manager", "monitoring", "partner"].includes(session.role);
+  const canWrite = ["manager", "partner"].includes(session.role);
 
   const loadPortfolio = async () => {
     const data = await instApi<Portfolio>("/portfolio");

@@ -125,7 +125,7 @@ def create_exit_case(
         raise ValueError("reason_type 不合法")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "manager", "partner", "monitoring")
+        _require_role(member, "manager", "partner")
         company = conn.execute(
             "SELECT id, symbol, name FROM inst_company WHERE id=%s AND org_id=%s",
             (company_id, org_id),
@@ -228,7 +228,7 @@ def review_exit(
         raise ValueError("thesis_verdict 必须是 right/wrong/mixed")
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
-        _require_role(member, "manager", "partner", "monitoring")
+        _require_role(member, "manager", "partner")
         exit_case = conn.execute(
             "SELECT * FROM inst_exit_case WHERE id=%s AND org_id=%s",
             (exit_case_id, org_id),

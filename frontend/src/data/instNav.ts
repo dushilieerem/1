@@ -88,7 +88,7 @@ export const INST_PLACEHOLDERS: Record<
     points: ["配置 + 现金 = 100%", "CNY / USD / HKD 敞口", "A/H/ADR 经济敞口聚合"],
   },
   approvals: {
-    summary: "议案登记、合伙人复核、独立风控与 Chairman 审批。",
+    summary: "议案登记、合伙人复核、风控与 Chairman 审批。",
     points: ["议案版本与阶段流转", "风控硬性阻断", "授权快照与执行前复核"],
   },
   execution: {

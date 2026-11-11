@@ -28,7 +28,7 @@ def _v3_org():
         ).fetchone()
         ORG_ID = int(org["id"])
         user_ids: list[int] = []
-        for role in ("manager", "partner", "risk", "chairman", "execution", "monitoring"):
+        for role in ("manager", "partner", "risk", "chairman"):
             user = conn.execute(
                 "INSERT INTO users (username, password_hash, role, status, display_name) "
                 "VALUES (%s,'x','user','active',%s) RETURNING id",

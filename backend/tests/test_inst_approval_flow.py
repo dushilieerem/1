@@ -102,7 +102,6 @@ def fixture():
             ("risk", "r1"),
             ("risk", "r2"),
             ("chairman", "c1"),
-            ("execution", "e1"),
         ):
             user, token = _mk_member(conn, org_id, role, tag, suffix)
             users.append(user)
@@ -385,7 +384,7 @@ def test_conditions_flow_and_execution_gate(fixture) -> None:
         client.post(
             f"/api/inst/authorizations/{int(auth['id'])}/execute",
             json={"price": 110},
-            headers=_h(tokens["e1"]),
+            headers=_h(tokens["m"]),
         ).status_code
         == 403
     )
@@ -393,7 +392,7 @@ def test_conditions_flow_and_execution_gate(fixture) -> None:
         client.post(
             f"/api/inst/authorizations/{int(auth['id'])}/execute",
             json={"price": 110, "conditions_met": True},
-            headers=_h(tokens["e1"]),
+            headers=_h(tokens["m"]),
         )
     )
     assert executed["order"]["side"] == "buy"

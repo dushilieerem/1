@@ -397,7 +397,7 @@ export function InstV3ApprovalsPage() {
   const stageForRole: Record<string, string> = { partner: "partner_review", risk: "risk_precheck", chairman: "chairman_review" };
   const canAct = (kind: "partner" | "risk" | "chairman") =>
     role === kind && detail?.status === stageForRole[kind];
-  const roleStep = role === "partner" ? 1 : role === "risk" ? 2 : role === "chairman" ? 3 : role === "execution" ? 4 : 0;
+  const roleStep = role === "partner" ? 1 : role === "risk" ? 2 : role === "chairman" ? 3 : 0;
   const canViewStep = (step: number) => step === 0 || step === roleStep;
   const progressForStep = (step: number) =>
     step === 1 ? progress?.partner : step === 2 ? progress?.risk_precheck : step === 3 ? progress?.chairman : null;
@@ -572,7 +572,7 @@ export function InstV3ApprovalsPage() {
                       </div>
                     </>
                   ) : null}
-                  {role !== "risk" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；独立风控账号可操作。</div> : null}
+                  {role !== "risk" ? <div className="v3-note">当前登录角色为 {session.role_label_cn}，只能查看；风控账号可操作。</div> : null}
                 </section>
               ) : null}
 
@@ -580,7 +580,7 @@ export function InstV3ApprovalsPage() {
                 <>
                 <ResearchDebateSummary data={detail.research_debate} />
                 <section className="v3-card">
-                  <div className="v3-card-head"><div><h2>风控结论</h2><p>独立风控硬约束的结论与附加条件；详细核查值不回传 Chairman。</p></div><span className="v3-chip">{detail.risk_stage?.status || "—"}</span></div>
+                  <div className="v3-card-head"><div><h2>风控结论</h2><p>风控硬约束的结论与附加条件；详细核查值不回传 Chairman。</p></div><span className="v3-chip">{detail.risk_stage?.status || "—"}</span></div>
                   <dl>
                     <div className="v3-kv"><dt>结论</dt><dd>{detail.risk_stage?.decision || "—"}</dd></div>
                     <div className="v3-kv"><dt>意见</dt><dd>{detail.risk_stage?.comment || "—"}</dd></div>

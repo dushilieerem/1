@@ -59,6 +59,10 @@ export function JoinquantBacktestPage() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const active = run ? ACTIVE.has(run.status) : false;
+  // 业务错误可能挂在 result.error 上（RE 旧版语义：status=succeeded 但 result.error 非空）
+  const runError = run ? run.error || run.result?.error || null : null;
+  const runUnsupported = run ? run.unsupported_api || run.result?.unsupported_api || null : null;
+  const runFailed = !!run && (run.status === "failed" || (run.status !== "cancelled" && !!runError));
   const blockers = useMemo(
     () => (check ? check.issues.filter((i) => i.severity === "blocker") : []),
     [check],
@@ -248,8 +252,8 @@ export function JoinquantBacktestPage() {
           {run ? (
             <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-slate-800">
-                  {STATUS_TEXT[run.status] || run.status}
+                <span className={`font-semibold ${runFailed ? "text-rose-600" : "text-slate-800"}`}>
+                  {runFailed ? "失败" : STATUS_TEXT[run.status] || run.status}
                   {active ? <Loader2 className="ml-1 inline h-3.5 w-3.5 animate-spin text-slate-400" /> : null}
                 </span>
                 {active ? (
@@ -263,10 +267,12 @@ export function JoinquantBacktestPage() {
                 ) : null}
               </div>
               <p className="mt-1 break-all text-[11px] text-slate-400">run_id {run.run_id}</p>
-              {run.error ? (
-                <p className="mt-2 text-xs text-rose-600">
-                  {run.error}
-                  {run.unsupported_api ? <span className="ml-1 font-mono">({run.unsupported_api})</span> : null}
+              {runError ? (
+                <p className="mt-2 break-words text-xs text-rose-600">
+                  {runError}
+                  {runUnsupported && runUnsupported !== runError ? (
+                    <span className="ml-1 font-mono">({runUnsupported})</span>
+                  ) : null}
                 </p>
               ) : null}
               {run.result?.meta ? (

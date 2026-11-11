@@ -15,32 +15,75 @@ export type AiChartData = {
 
 function BarChart({ chart }: { chart: AiChartData }) {
   const { t } = useLocale();
-  const values = chart.values || [];
-  const max = Math.max(1, ...values.map((x) => Math.abs(Number(x) || 0)));
+  const values = (chart.values || []).map((x) => Number(x) || 0);
+  if (!values.length) return null;
+  const n = values.length;
+  const w = 340;
+  const h = 118;
+  const plotLeft = 34;
+  const plotRight = 8;
+  const plotTop = 12;
+  const plotBottom = 22;
+  const plotW = w - plotLeft - plotRight;
+  const plotH = h - plotTop - plotBottom;
+  const yMin = Math.min(0, ...values);
+  const yMax = Math.max(0, ...values);
+  const span = yMax - yMin || 1;
+  const y = (value: number) => plotTop + ((yMax - value) / span) * plotH;
+  const zeroY = y(0);
+  const slot = plotW / n;
+  const barW = Math.min(40, slot * 0.55);
+  const centerX = (i: number) => plotLeft + (i + 0.5) * slot;
+  const fmt = (value: number) => `${value.toFixed(Math.abs(value) < 1 ? 2 : 1)}${chart.unit || ""}`;
+  const ticks = Array.from(new Set([yMax, 0, yMin]));
   return (
     <div className="ai-chart-box">
       <div className="card-title-row">
         <b>{t(chart.title || "数据图表", chart.title_en || "Data chart")}</b>
         <span className="hint">{chart.source || chart.unit || ""}</span>
       </div>
-      <div className="ai-bars" role="img" aria-label={chart.title || "Data chart"}>
-        {values.map((value, i) => {
-          const n = Number(value) || 0;
-          return (
-            <i
-              key={`${chart.labels?.[i] || i}-${i}`}
-              className={n >= 0 ? "in" : "out"}
-              style={{ height: `${Math.max(3, (Math.abs(n) / max) * 64)}px` }}
-              title={`${chart.labels?.[i] || ""} ${n.toFixed(2)}${chart.unit || ""}`.trim()}
+      <svg
+        className="ai-bars-svg"
+        viewBox={`0 0 ${w} ${h}`}
+        role="img"
+        aria-label={chart.title || "Data chart"}
+      >
+        {ticks.map((tick, i) => (
+          <g key={`tick-${i}`}>
+            <line
+              x1={plotLeft}
+              y1={y(tick)}
+              x2={w - plotRight}
+              y2={y(tick)}
+              stroke={tick === 0 ? "#c9c9c9" : "#f0f0f0"}
+              strokeWidth={tick === 0 ? 1 : 0.8}
             />
+            <text x={plotLeft - 4} y={y(tick) + 3} textAnchor="end" fontSize="8" fill="#999">{fmt(tick)}</text>
+          </g>
+        ))}
+        {values.map((value, i) => {
+          const top = value >= 0 ? y(value) : zeroY;
+          const height = Math.max(1, Math.abs(y(value) - zeroY));
+          const x = centerX(i) - barW / 2;
+          return (
+            <g key={`bar-${i}`}>
+              <rect
+                className="bar"
+                x={x}
+                y={top}
+                width={barW}
+                height={height}
+                rx="1"
+                fill={value >= 0 ? "#e54d42" : "#16a34a"}
+              >
+                <title>{`${chart.labels?.[i] || i}: ${value.toFixed(2)}${chart.unit || ""}`}</title>
+              </rect>
+            </g>
           );
         })}
-      </div>
-      <div className="ai-bar-labels">
-        <span>{chart.labels?.[0] || ""}</span>
-        <span>{chart.labels?.[chart.labels.length - 1] || ""}</span>
-        <span>{chart.unit || ""}</span>
-      </div>
+        <text x={plotLeft} y={h - 4} fontSize="8" fill="#999">{chart.labels?.[0] || ""}</text>
+        <text x={w - plotRight} y={h - 4} textAnchor="end" fontSize="8" fill="#999">{chart.labels?.[n - 1] || ""}</text>
+      </svg>
     </div>
   );
 }

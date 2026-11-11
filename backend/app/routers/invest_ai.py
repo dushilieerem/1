@@ -418,7 +418,9 @@ def _stock_dimension_facts(data: dict[str, Any]) -> dict[str, Any]:
             "pePercentile": valuation.get("pePercentile"),
             "pbPercentile": valuation.get("pbPercentile"),
             "industryPe": valuation.get("industryPe"),
+            "ps": valuation.get("ps"),
             "dividendYield": quote.get("dividendYield"),
+            "dividendPerShare": valuation.get("dividendPerShare"),
             "marketCap": quote.get("marketCap"),
             "label": valuation.get("label"),
             "samples": valuation.get("samples"),
@@ -473,7 +475,7 @@ def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
     divergence = capital.get("divergence") if isinstance(capital.get("divergence"), dict) else {}
     summary = (
         f"{name} {period}营收 {_fmt_stock_value(fund.get('revenue'), 2, ' 亿元')}，"
-        f"归母净利 {_fmt_stock_value(fund.get('netProfit'), 2, ' 亿元')}；"
+        f"归母净利 {_fmt_stock_value(fund.get('netProfit'), 2, ' 亿元')}。"
         f"PE {_fmt_stock_value(valuation.get('pe'), 2, 'x')}，近三年分位 {_fmt_stock_value(valuation.get('pePercentile'), 1, '%')}。"
         f"规则风险：{risk_titles}。"
     )
@@ -677,6 +679,15 @@ def _daily_review_default(home: dict[str, Any], portfolio: dict[str, Any]) -> tu
     leaders = "、".join(str(s.get("name")) for s in (sectors.get("leaders") or [])[:3]) or "未提供"
     laggards = "、".join(str(s.get("name")) for s in (sectors.get("laggards") or [])[:3]) or "未提供"
     topic_names = "、".join(str(t.get("name")) for t in topics[:3]) or "未提供"
+    style = pulse.get("style") or {}
+    style_text = (
+        f"大盘 {_fmt_stock_value(style.get('large'), 2, '%')} / 小盘 {_fmt_stock_value(style.get('small'), 2, '%')}；"
+        f"价值 {_fmt_stock_value(style.get('value'), 2, '%')} / 成长 {_fmt_stock_value(style.get('growth'), 2, '%')}"
+        if style.get("available") else "风格：未提供"
+    )
+    fund_flow = pulse.get("fundFlow") or {}
+    flow_leaders = "、".join(f"{x.get('name')} {_fmt_stock_value(x.get('value'), 2, ' 亿')}" for x in (fund_flow.get("leaders") or [])[:2]) or "未提供"
+    flow_laggards = "、".join(f"{x.get('name')} {_fmt_stock_value(x.get('value'), 2, ' 亿')}" for x in (fund_flow.get("laggards") or [])[:2]) or "未提供"
     attr_top = sorted(items, key=lambda x: x.get("contributionPct") or 0, reverse=True)
     contributors = "、".join(f"{x.get('name')}（{float(x.get('contributionPct') or 0):+.2f}pct）" for x in attr_top[:2]) or "未提供"
     drags = "、".join(f"{x.get('name')}（{float(x.get('contributionPct') or 0):+.2f}pct）" for x in attr_top[-2:] if (x.get("contributionPct") or 0) < 0) or "未提供"
@@ -710,7 +721,8 @@ def _daily_review_default(home: dict[str, Any], portfolio: dict[str, Any]) -> tu
         {"key": "structure", "title": "二、市场结构", "blocks": [
             {"type": "bullets", "items": [
                 f"领涨板块：{leaders}", f"领跌板块：{laggards}",
-                f"热点主题：{topic_names}", "风格与主力行业流向：未提供",
+                f"热点主题：{topic_names}", style_text,
+                f"行业主力净流入：{flow_leaders}", f"行业主力净流出：{flow_laggards}",
             ]},
         ]},
         {"key": "portfolio", "title": "三、我的组合", "blocks": [
@@ -771,8 +783,9 @@ def _stock_diagnosis_default(ctx: dict[str, Any]) -> tuple[dict[str, Any], list[
         ["总市值", _fmt_stock_value(quote.get("marketCap"), 2, " 亿元")],
         ["PE(TTM)", _fmt_stock_value(valuation.get("pe"), 2, "x")],
         ["PB", _fmt_stock_value(valuation.get("pb"), 2, "x")],
-        ["PS(TTM)", "未提供"],
+        ["PS(TTM)", _fmt_stock_value(valuation.get("ps"), 2, "x")],
         ["PE 近 3 年分位", _fmt_stock_value(valuation.get("pePercentile"), 1, "%")],
+        ["每股分红", _fmt_stock_value(valuation.get("dividendPerShare"), 2, " 元")],
     ]
     flow_rows = [
         [str(p.get("date") or "—"), _fmt_stock_value(p.get("value"), 2, " 亿元")]
@@ -802,9 +815,14 @@ def _stock_diagnosis_default(ctx: dict[str, Any]) -> tuple[dict[str, Any], list[
         f"近 20 日 {_fmt_stock_value(flow.get('twenty_day'), 2, ' 亿元')}。"
         + (cap_text or "资金与股价关系未提供。")
     )
+    coverage = inst.get("coverage")
+    rating_counts = inst.get("ratings") or []
+    rating_text = "、".join(f"{r.get('label')} {r.get('count')}" for r in rating_counts) or "未提供"
     inst_paragraph = (
-        "覆盖家数、评级分布、目标价与盈利预测均未提供；"
-        "若后续展示，只能作为第三方数据，不能视为本产品观点。"
+        f"近 180 天覆盖 {coverage if coverage is not None else '未提供'} 家机构，评级分布：{rating_text}。"
+        "目标价与盈利预测未提供；若后续展示，只能作为第三方数据，不能视为本产品观点。"
+        if inst.get("available") else
+        "覆盖家数、评级分布、目标价与盈利预测均未提供；不能视为本产品观点。"
     )
     highlights = [
         f"毛利率 {_fmt_stock_value(report.get('grossMargin'), 1, '%')}，盈利质量需结合现金流看。",
@@ -834,7 +852,11 @@ def _stock_diagnosis_default(ctx: dict[str, Any]) -> tuple[dict[str, Any], list[
             {"type": "paragraph", "text": capital_paragraph},
         ]},
         {"key": "institution", "title": "五、机构怎么看", "blocks": [
-            {"type": "bullets", "items": ["覆盖家数：未提供（第三方数据）", "评级分布：未提供（第三方数据）", "一致目标价：未提供（第三方数据，非本产品观点）"]},
+            {"type": "bullets", "items": [
+                f"覆盖家数：{coverage if coverage is not None else '未提供'}（第三方数据）",
+                f"评级分布：{rating_text}（第三方数据）",
+                "一致目标价：未提供（第三方数据，非本产品观点）",
+            ]},
             {"type": "table", "title": "机构盈利预测", "source": "forecast", "columns": ["指标", "预测"], "rows": [["未来 3 年营收", "未提供"], ["未来 3 年净利", "未提供"]]},
             {"type": "paragraph", "text": inst_paragraph},
         ]},

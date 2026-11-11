@@ -320,13 +320,47 @@ def _earnings_flash(latest: dict[str, Any] | None, prev: dict[str, Any] | None) 
     }
 
 
-def _institutional_view() -> dict[str, Any]:
+def _institutional_view(conn: Any, code: str) -> dict[str, Any]:
+    """研报覆盖与评级来自 doc_item；目标价/盈利预测没有结构化字段，明确留空。"""
+    symbol = _with_suffix(code)
+    try:
+        data = rows(
+            conn,
+            """
+            SELECT raw->>'org_name' AS org_name, raw->>'rating' AS rating,
+                   COUNT(*) AS n, MAX(publish_at)::text AS latest
+              FROM doc_item
+             WHERE doc_type='research' AND symbol=?
+               AND publish_at >= CURRENT_DATE - INTERVAL '180 days'
+             GROUP BY 1, 2
+            """,
+            (symbol,),
+        )
+    except Exception:
+        data = []
+    orgs = {str(r.get("org_name")).strip() for r in data if str(r.get("org_name") or "").strip()}
+    counts: dict[str, int] = {}
+    for row in data:
+        rating = str(row.get("rating") or "未评级").strip() or "未评级"
+        counts[rating] = counts.get(rating, 0) + int(row.get("n") or 0)
+    ratings = [
+        {"label": label, "count": count}
+        for label, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    ]
+    latest = max((str(r.get("latest"))[:10] for r in data if r.get("latest")), default=None)
     return {
-        "available": False,
-        "ratings": [],
+        "available": bool(ratings),
+        "coverage": len(orgs),
+        "reportCount": sum(counts.values()),
+        "ratings": ratings,
+        "latest": latest,
         "target": None,
         "forecast": None,
-        "note": "机构评级 / 目标价 / 盈利预测数据待补充；本模块不由 AI 生成。",
+        "note": (
+            "覆盖家数与评级分布来自公开研报；目标价与盈利预测未提供，不能视为本产品观点。"
+            if ratings else "研报覆盖数据未提供；目标价与盈利预测也未提供。"
+        ),
+        "source": "doc_item · 公开研报",
     }
 
 
@@ -470,6 +504,38 @@ def _financial_trend(conn: Any, code: str) -> dict[str, Any]:
     return {"items": out, "available": bool(out)}
 
 
+def _ttm_revenue_yi(fins: list[dict[str, Any]]) -> float | None:
+    """按累计报表计算 TTM 营收（亿元）；期数不足时返回 None。"""
+    if not fins:
+        return None
+    latest = fins[-1]
+    period = str(latest.get("report_date") or "")[:10]
+    try:
+        year, month = int(period[:4]), int(period[5:7])
+    except (TypeError, ValueError):
+        return None
+    latest_rev = _num(latest.get("revenue"))
+    if latest_rev is None:
+        return None
+    if month == 12:
+        return latest_rev
+    prior_annual = next(
+        (x for x in fins if str(x.get("report_date") or "")[:10] == f"{year - 1}-12-31"),
+        None,
+    )
+    prior_same = next(
+        (x for x in fins if str(x.get("report_date") or "")[:10] == f"{year - 1}-{month:02d}-{int(period[8:10]):02d}"),
+        None,
+    )
+    if not prior_annual or not prior_same:
+        return None
+    annual_rev = _num(prior_annual.get("revenue"))
+    prior_rev = _num(prior_same.get("revenue"))
+    if annual_rev is None or prior_rev is None:
+        return None
+    return latest_rev + annual_rev - prior_rev
+
+
 def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] | None:
     stock = one(conn, "SELECT * FROM stocks WHERE code=?", (code,))
     if not stock:
@@ -524,7 +590,8 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             ),
             "valuation": {
                 "pe": stock.get("pe_ttm"), "pb": stock.get("pb"), "pePercentile": None,
-                "pbPercentile": None, "industryPe": None, "samples": 0,
+                "pbPercentile": None, "industryPe": None, "samples": 0, "ps": None,
+                "ttmRevenue": None, "dividendPerShare": None,
                 "label": "No valuation data" if is_us else "无估值数据",
             },
             "financials": [],
@@ -553,7 +620,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
             "institutionalView": (
                 {"available": False, "ratings": [], "target": None, "forecast": None,
                  "note": "Institutional ratings, target prices and forecasts are not available for US names (no free stable source)."}
-                if is_us else _institutional_view()
+                if is_us else _institutional_view(conn, code)
             ),
             "sensitivity": (
                 {"available": False, "level": None, "beta": None, "note": "Beta data not available"}
@@ -597,7 +664,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     pb_vals = [v["pb"] for v in valuations if v["pb"] is not None]
     pe_pct = percentile(pe_vals, stock["pe_ttm"])
     pb_pct = percentile(pb_vals, stock["pb"])
-    peer = one(conn, "SELECT AVG(pe_ttm) AS pe FROM stocks WHERE industry=? AND pe_ttm IS NOT NULL AND code<>?",
+    peer = one(conn, "SELECT AVG(pe_ttm) AS pe FROM stocks WHERE industry=? AND pe_ttm > 0 AND pe_ttm < 300 AND code<>?",
                (stock["industry"], code))
 
     fins = rows(conn, "SELECT * FROM financials WHERE code=? AND report_date<=? ORDER BY period ASC", (code, latest_date(conn)))
@@ -665,12 +732,36 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         "SELECT board, exchange, list_date::text AS list_date FROM ref_security WHERE symbol=?",
         (_with_suffix(code),),
     ) or {}
+    data_date = meta["dataDate"]
+    symbol = _with_suffix(code)
     total_mv = _num(latest_val.get("total_mv"))
     float_mv = _num(latest_val.get("float_mv"))
     total_shares = _num(latest_val.get("total_shares"))
+    float_shares = _num(latest_val.get("float_shares"))
+    capital = one(
+        conn,
+        "SELECT total_shares, float_shares FROM fin_share_capital WHERE symbol=? AND effective_date<=? ORDER BY effective_date DESC LIMIT 1",
+        (symbol, data_date),
+    ) or {}
+    if total_shares is None:
+        total_shares = _num(capital.get("total_shares"))
+    if float_shares is None:
+        float_shares = _num(capital.get("float_shares"))
+    if total_mv is None and total_shares and stock.get("price"):
+        total_mv = total_shares * float(stock["price"])
     if total_shares is None and total_mv and stock.get("price"):
         total_shares = total_mv / float(stock["price"])
-    float_shares = float_mv / float(stock["price"]) if float_mv and stock.get("price") else None
+    if float_mv is None and float_shares and stock.get("price"):
+        float_mv = float_shares * float(stock["price"])
+    float_shares = float_mv / float(stock["price"]) if float_shares is None and float_mv and stock.get("price") else float_shares
+    ttm_revenue = _ttm_revenue_yi(fins)
+    ps_ttm = total_mv / (ttm_revenue * 1e8) if total_mv and ttm_revenue and ttm_revenue > 0 else None
+    dividend_row = one(
+        conn,
+        "SELECT cash_per_share FROM fin_dividend WHERE symbol=? AND ex_date<=? ORDER BY ex_date DESC LIMIT 1",
+        (symbol, data_date),
+    ) or {}
+    dividend_per_share = _num(dividend_row.get("cash_per_share"))
     q = {
         "code": stock["code"], "name": display_name, "industry": display_industry,
         "asset": stock["asset"], "market": stock.get("market") or ("US" if is_us else "CN"),
@@ -710,6 +801,9 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     valuation = {
         "pe": stock["pe_ttm"], "pb": stock["pb"], "pePercentile": pe_pct, "pbPercentile": pb_pct,
         "industryPe": peer["pe"] if peer else None, "samples": len(pe_vals),
+        "ps": round(ps_ttm, 2) if ps_ttm is not None else None,
+        "ttmRevenue": round(ttm_revenue, 2) if ttm_revenue is not None else None,
+        "dividendPerShare": dividend_per_share,
         "label": ("No valuation data" if is_us else ("近 3 年历史分位" if pe_vals else "无估值数据")),
     }
     report = None
@@ -818,7 +912,7 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
         "institutionalView": (
             {"available": False, "ratings": [], "target": None, "forecast": None,
              "note": "Institutional ratings, target prices and forecasts are not available for US names (no free stable source)."}
-            if is_us else _institutional_view()
+            if is_us else _institutional_view(conn, code)
         ),
         "sensitivity": (
             {"available": False, "level": None, "beta": None, "note": "Beta data not available"}
@@ -1920,6 +2014,93 @@ def _topic_risk_tags(topic: dict[str, Any]) -> list[dict[str, str]]:
     return tags
 
 
+def _industry_heat(
+    stocks: list[dict[str, Any]],
+    fund_flow: list[dict[str, Any]],
+    news_counts: dict[str, int] | None = None,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """用全市场个股等权数据计算行业热度；不依赖主题-成分股映射。"""
+    groups: dict[str, dict[str, Any]] = {}
+    for stock in stocks:
+        price, prev = _num(stock.get("price")), _num(stock.get("prev_close"))
+        if price is None or not prev:
+            continue
+        name = str(stock.get("industry") or "未分类")
+        item = groups.setdefault(name, {"changes": [], "amount": 0.0, "count": 0})
+        item["changes"].append(pct(price, prev))
+        item["amount"] += float(_num(stock.get("amount")) or 0)
+        item["count"] += 1
+    flow_map = {str(x.get("name")): float(x.get("value") or 0) for x in fund_flow}
+    news_counts = news_counts or {}
+    rows = []
+    for name, item in groups.items():
+        changes = item["changes"]
+        if not changes:
+            continue
+        rows.append({
+            "name": name,
+            "change": sum(changes) / len(changes),
+            "amount": item["amount"] / 1e8,
+            "fundFlow": flow_map.get(name),
+            "newsCount": int(news_counts.get(name, 0)),
+            "count": item["count"],
+        })
+    if not rows:
+        return []
+    def ranks(values: list[float | None]) -> dict[int, float]:
+        valid = sorted((v, i) for i, v in enumerate(values) if v is not None)
+        out = {}
+        for pos, (_, idx) in enumerate(valid):
+            out[idx] = pos / max(1, len(valid) - 1) * 100
+        return out
+    amount_rank = ranks([abs(r["amount"]) for r in rows])
+    change_rank = ranks([abs(r["change"]) for r in rows])
+    flow_rank = ranks([abs(r["fundFlow"]) if r["fundFlow"] is not None else None for r in rows])
+    news_rank = ranks([r["newsCount"] for r in rows])
+    for i, row in enumerate(rows):
+        score = (
+            amount_rank.get(i, 0) * 0.40
+            + change_rank.get(i, 0) * 0.20
+            + flow_rank.get(i, 0) * 0.25
+            + news_rank.get(i, 0) * 0.15
+        )
+        tags = [{
+            "label": f"平均 {row['change']:+.2f}%",
+            "label_en": f"Avg {row['change']:+.2f}%",
+            "tone": "red" if row["change"] >= 0 else "green",
+        }]
+        if row["fundFlow"] is not None:
+            tags.append({
+                "label": f"主力 {row['fundFlow']:+.1f} 亿",
+                "label_en": f"Main flow {row['fundFlow']:+.1f} 100m",
+                "tone": "red" if row["fundFlow"] >= 0 else "green",
+            })
+        tags.append({
+            "label": f"资讯 {row['newsCount']} 条",
+            "label_en": f"News {row['newsCount']}",
+            "tone": "gray",
+        })
+        row.update({
+            "id": f"industry:{row['name']}",
+            "heat": round(score, 1),
+            "summary": (
+                f"平均涨跌 {row['change']:+.2f}%，成交额 {row['amount']:.0f} 亿"
+                + (f"，主力净流入 {row['fundFlow']:+.1f} 亿" if row["fundFlow"] is not None else "")
+                + f"；近 7 日资讯 {row['newsCount']} 条。"
+            ),
+            "summary_en": (
+                f"Average move {row['change']:+.2f}%, turnover CNY {row['amount']:.0f}00m"
+                + (f", main net flow {row['fundFlow']:+.1f}00m" if row["fundFlow"] is not None else "")
+                + f"; {row['newsCount']} news items in 7 days."
+            ),
+            "riskTags": tags,
+            "detailAvailable": False,
+        })
+    rows.sort(key=lambda x: x["heat"], reverse=True)
+    return rows[:limit]
+
+
 def _home_daily(conn: Any, user_id: int, data_date: str, pf: dict[str, Any],
                 market: dict[str, Any], by_code: dict[str, dict[str, Any]],
                 watch_codes: set[str]) -> list[dict[str, Any]]:
@@ -2080,6 +2261,68 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
         "leaders": sector_avg[:3], "laggards": list(reversed(sector_avg[-3:])),
         "available": bool(sector_avg),
     }
+    flow_rows = rows(
+        conn,
+        """
+        SELECT s.industry AS industry, SUM(f.main_net_inflow) AS amount
+          FROM md_fund_flow_daily f
+          JOIN stocks s ON s.code = split_part(f.symbol, '.', 1)
+         WHERE f.trade_date = (
+             SELECT MAX(trade_date) FROM md_fund_flow_daily WHERE trade_date <= ?::date
+         )
+         GROUP BY s.industry
+        """,
+        (data_date,),
+    )
+    flow_sector = [
+        {"name": str(r.get("industry") or "未分类"), "value": round(float(r.get("amount") or 0) / 1e8, 2)}
+        for r in flow_rows if r.get("industry")
+    ]
+    flow_sector.sort(key=lambda x: x["value"], reverse=True)
+    market_pulse["fundFlow"] = {
+        "leaders": flow_sector[:3], "laggards": list(reversed(flow_sector[-3:])),
+        "available": bool(flow_sector),
+    }
+    mv_rows = [
+        (pct(_num(s.get("price")), _num(s.get("prev_close"))), _num(s.get("market_cap")))
+        for s in stocks if _num(s.get("price")) is not None and _num(s.get("prev_close"))
+    ]
+    mv_rows = [(chg, cap) for chg, cap in mv_rows if cap is not None]
+    mv_rows.sort(key=lambda x: x[1])
+    half = len(mv_rows) // 2
+    small_change = sum(x[0] for x in mv_rows[:half]) / half if half else None
+    large_change = sum(x[0] for x in mv_rows[half:]) / max(1, len(mv_rows) - half) if len(mv_rows) > half else None
+    pe_rows = [
+        (pct(_num(s.get("price")), _num(s.get("prev_close"))), _num(s.get("pe_ttm")))
+        for s in stocks if _num(s.get("price")) is not None and _num(s.get("prev_close"))
+    ]
+    pe_rows = [(chg, pe) for chg, pe in pe_rows if pe is not None and 0 < pe < 300]
+    pe_rows.sort(key=lambda x: x[1])
+    pe_half = len(pe_rows) // 2
+    value_change = sum(x[0] for x in pe_rows[:pe_half]) / pe_half if pe_half else None
+    growth_change = sum(x[0] for x in pe_rows[pe_half:]) / max(1, len(pe_rows) - pe_half) if len(pe_rows) > pe_half else None
+    market_pulse["style"] = {
+        "large": round(large_change, 2) if large_change is not None else None,
+        "small": round(small_change, 2) if small_change is not None else None,
+        "value": round(value_change, 2) if value_change is not None else None,
+        "growth": round(growth_change, 2) if growth_change is not None else None,
+        "available": bool(mv_rows or pe_rows),
+        "basis": "全市场个股等权平均，按市值/PE 中位数分组",
+    }
+    news_rows = rows(
+        conn,
+        """
+        SELECT s.industry AS industry, COUNT(*) AS n
+          FROM news n
+          JOIN stocks s ON s.code = n.code
+         WHERE n.published_at::timestamptz >= ?::date - INTERVAL '7 days'
+           AND n.published_at::timestamptz < ?::date + INTERVAL '1 day'
+         GROUP BY s.industry
+        """,
+        (data_date, data_date),
+    )
+    news_counts = {str(r.get("industry")): int(r.get("n") or 0) for r in news_rows if r.get("industry")}
+    industry_heat = _industry_heat(stocks, flow_sector, news_counts, limit=6)
     daily = _home_daily(conn, user_id, data_date, pf, market_pulse, by_code, watch_codes)
     etf = by_code.get("510300")
     review = {
@@ -2119,7 +2362,8 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
         "user": {"id": user_id, "name": "演示用户"},
         "portfolioSnapshot": portfolio, "marketPulse": market_pulse,
         "daily": daily, "review": review,
-        "indices": indices, "topics": topic_cards, "watchlist": watch_cards,
+        "indices": indices, "topics": topic_cards, "industryHeat": industry_heat,
+        "watchlist": watch_cards,
         "learn": {"title": "估值分位：贵不贵，跟什么比？", "titleEn": "Valuation percentile: expensive versus what?", "link": "/learn"},
         "glossary": glossary, "disclaimer": DISCLAIMER, "market": "CN", "hasQuotes": True,
     }

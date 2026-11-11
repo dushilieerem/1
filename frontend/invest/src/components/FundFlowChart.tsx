@@ -40,7 +40,7 @@ export default function FundFlowChart({ points }: { points: Point[] }) {
         const y = value >= 0 ? zeroY - height : zeroY;
         return (
           <g key={`${point.date || i}-${i}`}>
-            <rect x={x} y={y} width={barW} height={height} rx="1" fill={value >= 0 ? "rgba(230,0,18,.72)" : "rgba(22,163,74,.72)"} />
+            <rect x={x} y={y} width={barW} height={height} rx="1" fill={value >= 0 ? "#e54d42" : "#16a34a"} fillOpacity=".72" />
             {(i % labelEvery === 0 || i === rows.length - 1) && point.date ? (
               <text x={x + barW / 2} y={h - 7} textAnchor="middle" fontSize="7.5" fill="#999">{String(point.date).slice(5)}</text>
             ) : null}

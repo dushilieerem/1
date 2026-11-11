@@ -90,6 +90,49 @@ def test_home_review_line_keeps_portfolio_number(monkeypatch):
     assert "沪深300" in line and "组合" in line and len(line) <= 30
 
 
+def test_ttm_revenue_uses_prior_annual_and_same_period():
+    fins = [
+        {"report_date": "2025-06-30", "revenue": 400},
+        {"report_date": "2025-12-31", "revenue": 1000},
+        {"report_date": "2026-06-30", "revenue": 500},
+    ]
+    assert rules._ttm_revenue_yi(fins) == 1100
+
+
+def test_institutional_view_uses_research_ratings(monkeypatch):
+    monkeypatch.setattr(
+        rules, "rows",
+        lambda conn, sql, args=(): [
+            {"org_name": "机构A", "rating": "买入", "n": 2, "latest": "2026-11-04"},
+            {"org_name": "机构B", "rating": "增持", "n": 1, "latest": "2026-11-03"},
+        ],
+    )
+    out = rules._institutional_view(object(), "600519")
+    assert out["available"] is True
+    assert out["coverage"] == 2
+    assert out["reportCount"] == 3
+    assert out["ratings"][0] == {"label": "买入", "count": 2}
+    assert out["target"] is None
+
+
+def test_industry_heat_uses_turnover_change_flow_and_news():
+    stocks = [
+        {"industry": "电子", "price": 11, "prev_close": 10, "amount": 1e10},
+        {"industry": "电子", "price": 22, "prev_close": 20, "amount": 1e10},
+        {"industry": "银行", "price": 10.1, "prev_close": 10, "amount": 1e9},
+    ]
+    out = rules._industry_heat(
+        stocks,
+        [{"name": "电子", "value": 5.0}, {"name": "银行", "value": -2.0}],
+        {"电子": 10, "银行": 1},
+        limit=2,
+    )
+    assert [x["name"] for x in out] == ["电子", "银行"]
+    assert out[0]["heat"] > out[1]["heat"]
+    assert out[0]["fundFlow"] == 5.0
+    assert out[0]["detailAvailable"] is False
+
+
 def test_build_topics_returns_risk_tags_and_spark(monkeypatch):
     topics = [
         {"id": "ai", "name": "AI 算力", "summary": "热度", "heat": 86,

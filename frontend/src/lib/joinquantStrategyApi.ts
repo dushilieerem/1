@@ -41,6 +41,8 @@ export type JoinquantRunStatus = {
     meta?: { run_id?: string; code_hash?: string; data_release_id?: string; engine_mode?: string };
     assumptions?: Record<string, unknown> | null;
     error?: string | null;
+    error_code?: string | null;
+    unsupported_api?: string | null;
     [key: string]: unknown;
   } | null;
 };

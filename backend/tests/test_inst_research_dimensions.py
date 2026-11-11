@@ -218,17 +218,11 @@ def test_per_dimension_review_then_global_approve(fixture) -> None:
     reviews = latest["versions"][0]["dim_reviews"]
     assert set(reviews) == set(DIM_KEYS)
 
-    # 无 AI / 无证据的研究必须显式带缺口锁定，不能走 review 绕过门禁。
-    blocked = client.post(
-        f"/api/inst/research/{version_id}/review",
-        json={"decision": "approve", "comment": "逐维通过后整体通过"},
-        headers=_h(fixture["tokens"]["manager"]),
-    )
-    assert blocked.status_code == 403
+    # 门禁只做提示，不阻断整体通过。
     approved = _ok(
         client.post(
-            f"/api/inst/research/{version_id}/lock",
-            json={"allow_gaps": True, "comment": "单维测试：规则兜底，显式带缺口锁定"},
+            f"/api/inst/research/{version_id}/review",
+            json={"decision": "approve", "comment": "逐维通过后整体通过"},
             headers=_h(fixture["tokens"]["manager"]),
         )
     )

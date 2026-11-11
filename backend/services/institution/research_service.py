@@ -2050,6 +2050,14 @@ def generate_research(
                 """,
                 (case_id, key, title, f"AI-{key}"),
             )
+    # 行业分析不依赖六维结果，和六维并行跑；否则六维先完成、行业还在生成，
+    # 前端会看到“6/6 已完成”后继续空等一段时间。
+    industry_pool: ThreadPoolExecutor | None = None
+    industry_future = None
+    industry_complete = (built.get("facts") or {}).get("data_completeness", {}).get("industry") or {}
+    if run_industry and str(industry_complete.get("level") or "") != "missing":
+        industry_pool = ThreadPoolExecutor(max_workers=1)
+        industry_future = industry_pool.submit(_run_industry_agent, built["facts"])
     if keys:
         complete = (built.get("facts") or {}).get("data_completeness") or {}
         skipped = [k for k in keys if (complete.get(k) or {}).get("level") == "missing"]
@@ -2071,7 +2079,6 @@ def generate_research(
             )
         built = _merge_agent_results(built, results, keys)
     if run_industry:
-        industry_complete = (built.get("facts") or {}).get("data_completeness", {}).get("industry") or {}
         if str(industry_complete.get("level") or "") == "missing":
             block = dict(built.get("industry_analysis") or {})
             missing = list(industry_complete.get("missing") or [])
@@ -2094,7 +2101,17 @@ def generate_research(
             )
             built["industry_analysis"] = block
         else:
-            industry_result = _run_industry_agent(built["facts"])
+            try:
+                industry_result = (
+                    industry_future.result()
+                    if industry_future is not None
+                    else {"error": "行业 Agent 未启动"}
+                )
+            except Exception as exc:  # noqa: BLE001
+                industry_result = {"error": str(exc)}
+            finally:
+                if industry_pool is not None:
+                    industry_pool.shutdown(wait=False)
             built["industry_analysis"] = _merge_industry(
                 built, industry_result, built.get("industry_analysis") or {}
             )
@@ -2343,10 +2360,7 @@ def review_research(
         if decision == "approve":
             row = _ensure_version_hash(conn, row)
             gate = evaluate_research_gate(_row_dict(row) or {})
-            if gate["status"] == "block":
-                raise PermissionError("研究门禁未通过：" + "；".join(
-                    x["detail"] for x in gate["checks"] if x["status"] == "block"
-                ))
+            gate_status = "warn" if gate["status"] == "block" else gate["status"]
             conn.execute(
                 "UPDATE inst_research_version SET status='approved', frozen_at=NOW(), locked_at=COALESCE(locked_at,NOW()), approved_by=%s, approved_at=NOW() WHERE id=%s",
                 (actor_member_id, version_id),
@@ -2358,7 +2372,7 @@ def review_research(
                 to_stage=2,
                 trigger="research.lock",
                 actor_member_id=actor_member_id,
-                gate_status=gate["status"],
+                gate_status=gate_status,
                 gate_checks=gate["checks"],
                 object_type="inst_research_version",
                 object_id=version_id,
@@ -2616,11 +2630,8 @@ def lock_research(
             return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
         version = _row_dict(_ensure_version_hash(conn, row)) or {}
         gate = evaluate_research_gate(version)
-        if gate["status"] == "block" and not allow_gaps:
-            raise PermissionError("研究门禁未通过：" + "；".join(
-                x["detail"] for x in gate["checks"] if x["status"] == "block"
-            ))
-        status = "warn" if gate["status"] == "block" and allow_gaps else gate["status"]
+        # 门禁只做提示，不阻断定稿：数据缺口不阻止研究进入辩论与议案。
+        status = "warn" if gate["status"] == "block" else gate["status"]
         conn.execute(
             """
             UPDATE inst_research_version
@@ -2641,7 +2652,12 @@ def lock_research(
             gate_checks=gate["checks"],
             object_type="inst_research_version",
             object_id=version_id,
-            detail={"version_no": int(row.get("version_no") or 0), "allow_gaps": allow_gaps, "comment": comment},
+            detail={
+                "version_no": int(row.get("version_no") or 0),
+                "allow_gaps": allow_gaps,
+                "gate_hint": gate["status"],
+                "comment": comment,
+            },
         )
         _audit(
             conn,

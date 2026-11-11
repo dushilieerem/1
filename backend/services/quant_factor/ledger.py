@@ -386,8 +386,7 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                       (SELECT COUNT(*) FROM quant_factor_candidates c
                         WHERE c.user_id=t.user_id AND c.org_id=t.org_id AND c.project_id=t.project_id
                           AND c.archive->>'approved'='true'
-                          AND c.archive->'research_asset'->>'schema'='quant.research-asset.v1'
-                          AND c.archive->'research_asset'->>'snapshot_hash'=c.snapshot_hash) AS registered_count,
+                          AND c.archive ? 'factor') AS registered_count,
                       (SELECT r.outcome FROM quant_factor_trials r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
                         ORDER BY r.trial_no DESC LIMIT 1) AS latest_outcome

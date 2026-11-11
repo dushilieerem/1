@@ -276,7 +276,7 @@ _HUMAN_LIST_FIELDS = ("risks", "open_questions", "conditions", "concerns", "evid
 def _strip_gap_clauses(value: Any) -> str:
     text = str(value or "")
     text = re.sub(
-        r"[，；]?[^，。；]*(?:未验证|待复核|待补充|补齐|数据缺失|未接入|数据缺口|未覆盖|无法核实)[^，。；]*",
+        r"[，；]?[^。；]*(?:未验证|待复核|待补充|补齐|数据缺失|未接入|数据缺口|未覆盖|无法核实)[^。；]*[。；]?",
         "",
         text,
     )
@@ -659,7 +659,7 @@ def ai_research_memo(
                 hit = latest
                 stale = True
         if hit:
-            memo = _ensure_chief_memo_fields(dict(hit["output"]), version, case)
+            memo = _humanize_memo_output(_ensure_chief_memo_fields(dict(hit["output"]), version, case))
             memo = _apply_memo_data_gate(memo, version)
             for field in ("risks", "open_questions", "key_variables"):
                 if memo.get(field):

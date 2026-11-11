@@ -661,7 +661,8 @@ def pipeline(org_id: int) -> dict[str, Any]:
             stage = max(stage, 3)
         if case_id in auth_cases:
             stage = max(stage, 4)
-        if symbol and symbol in position_symbols:
+        # 持仓只覆盖已进入执行/管理阶段的案；同一标的的新研究案仍留在研究阶段。
+        if symbol and symbol in position_symbols and stage >= 4:
             stage = 5
         stage_def = _stage_def(stage)
         card.update(

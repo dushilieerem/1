@@ -255,7 +255,7 @@ export function InstV3ApprovalsPage() {
   const loadList = async () => {
     // 审批工作台只列当前待办；已执行/已驳回/草稿属于其他阶段或历史，不混入当前项目。
     const pending = await instApi<{ items: ProposalListItem[] }>("/proposals?scope=pending");
-    const active = new Set(["partner_review", "risk_precheck", "chairman_review", "authorized"]);
+    const active = new Set(["partner_review", "risk_precheck", "chairman_review"]);
     const rows = (pending.items || []).filter((p) => active.has(String(p.status || "")));
     setItems(dedupeBy(rows, (p) => p.id));
     return rows;

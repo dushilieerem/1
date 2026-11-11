@@ -5,6 +5,8 @@ import { api } from "../api";
 import AiCharts, { AiPriceTrend } from "../components/AiChart";
 
 const KLineChart = lazy(() => import("../KLineChart"));
+const VolumeChart = lazy(() => import("../VolumeChart"));
+import { SUB_INDICATORS, aggregateBars, formatCompact, kdj, latestValue, macd, movingAverage, rsi, type Bar, type SubIndicator } from "../chartIndicators";
 import CompareView, { type ComparePayload } from "../components/CompareView";
 import { ErrorState, PageHeader, Tag } from "../components";
 import { ConditionPicker, ConditionScreener, looksLikeCondition, type ConditionResponse, type RelaxAction } from "../components/ConditionScreener";
@@ -144,35 +146,143 @@ function SectionBlocks({ blocks }: { blocks: Block[] }) {
   );
 }
 
+const PERIODS = [
+  { key: "daily", zh: "日K", en: "D" },
+  { key: "weekly", zh: "周K", en: "W" },
+  { key: "monthly", zh: "月K", en: "M" },
+] as const;
+
+function maLines(bars: Bar[], values: Array<number | null>) {
+  return bars
+    .map((bar, i) => (values[i] == null ? null : { time: bar.time, value: values[i] as number }))
+    .filter((item): item is { time: string; value: number } => item !== null);
+}
+
 function StockKlineCard({ chart }: { chart: Chart }) {
   const { t } = useLocale();
+  const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
   const [indicator, setIndicator] = useState<"ma" | "boll">("ma");
-  const bars = (chart.bars || [])
+  const [subIndicator, setSubIndicator] = useState<SubIndicator>("volume");
+  const [range, setRange] = useState<{ from: number; to: number } | null>(null);
+  const sourceBars = useMemo<Bar[]>(() => (chart.bars || [])
     .filter((b) => b.time && b.open != null && b.high != null && b.low != null && b.close != null)
     .map((b) => ({
       time: String(b.time), open: Number(b.open), high: Number(b.high),
       low: Number(b.low), close: Number(b.close), volume: Number(b.volume || 0),
-    }));
+      amount: Number((b as { amount?: number }).amount || 0),
+    })), [chart.bars]);
+  const bars = useMemo(() => aggregateBars(sourceBars, period), [sourceBars, period]);
+  const ma = useMemo(() => {
+    const closes = bars.map((bar) => bar.close);
+    return {
+      ma5: maLines(bars, movingAverage(closes, 5)),
+      ma10: maLines(bars, movingAverage(closes, 10)),
+      ma20: maLines(bars, movingAverage(closes, 20)),
+    };
+  }, [bars]);
+  const subValues = useMemo(() => {
+    if (subIndicator === "volume" || subIndicator === "amount") {
+      const values = bars.map((bar) => Number((subIndicator === "volume" ? bar.volume : bar.amount) || 0));
+      const ma5 = movingAverage(values, 5);
+      const ma10 = movingAverage(values, 10);
+      return [
+        { key: "value", label: subIndicator === "volume" ? t("成交量", "Volume") : t("成交额", "Turnover"), value: formatCompact(values[values.length - 1] ?? null, subIndicator === "volume" ? "vol" : "amount"), color: "red" },
+        { key: "ma5", label: "MA5", value: formatCompact(ma5[ma5.length - 1] ?? null, subIndicator === "volume" ? "vol" : "amount"), color: "amber" },
+        { key: "ma10", label: "MA10", value: formatCompact(ma10[ma10.length - 1] ?? null, subIndicator === "volume" ? "vol" : "amount"), color: "purple" },
+      ];
+    }
+    if (subIndicator === "macd") {
+      const data = macd(bars);
+      return [
+        { key: "dif", label: "DIF", value: formatCompact(latestValue(data.dif), "index"), color: "blue" },
+        { key: "dea", label: "DEA", value: formatCompact(latestValue(data.dea), "index"), color: "amber" },
+        { key: "macd", label: "MACD", value: formatCompact(latestValue(data.hist), "index"), color: "purple" },
+      ];
+    }
+    if (subIndicator === "kdj") {
+      const data = kdj(bars);
+      return [
+        { key: "k", label: "K", value: formatCompact(latestValue(data.k), "index"), color: "blue" },
+        { key: "d", label: "D", value: formatCompact(latestValue(data.d), "index"), color: "amber" },
+        { key: "j", label: "J", value: formatCompact(latestValue(data.j), "index"), color: "purple" },
+      ];
+    }
+    return [
+      { key: "rsi6", label: "RSI6", value: formatCompact(latestValue(rsi(bars, 6)), "index"), color: "blue" },
+      { key: "rsi12", label: "RSI12", value: formatCompact(latestValue(rsi(bars, 12)), "index"), color: "amber" },
+      { key: "rsi24", label: "RSI24", value: formatCompact(latestValue(rsi(bars, 24)), "index"), color: "purple" },
+    ];
+  }, [bars, subIndicator, t]);
   if (!bars.length) return <AiPriceTrend chart={chart} />;
   return (
     <div className="ai-chart-box ai-kline-card">
       <div className="card-title-row">
         <b>{chart.code || ""} {t("行情走势", "Price trend")}</b>
-        <div className="chart-indicator-switch ai-kline-switch">
-          <button className={indicator === "ma" ? "on" : ""} onClick={() => setIndicator("ma")}>MA</button>
+        <span className="hint">{t("收盘 · 非实时", "Close · not real-time")}</span>
+      </div>
+      <div className="seg period-seg">
+        {PERIODS.map((item) => (
+          <button key={item.key} className={period === item.key ? "on" : ""} onClick={() => { setPeriod(item.key); setRange(null); }}>{t(item.zh, item.en)}</button>
+        ))}
+      </div>
+      <div className="chart-topline">
+        <div className="chart-indicator-switch">
+          <button className={indicator === "ma" ? "on" : ""} onClick={() => setIndicator("ma")}>{t("均线", "MA")}</button>
           <button className={indicator === "boll" ? "on" : ""} onClick={() => setIndicator("boll")}>BOLL</button>
+        </div>
+        <div className="chart-legend chart-legend-top">
+          <span><i className="legend-red" />{t("K 线", "Candles")}</span>
+          {indicator === "ma" ? (
+            <>
+              <span><i className="legend-amber" />MA5</span>
+              <span><i className="legend-purple" />MA10</span>
+              <span><i className="legend-blue" />MA20</span>
+            </>
+          ) : (
+            <>
+              <span><i className="legend-amber" />MID</span>
+              <span><i className="legend-red" />UP</span>
+              <span><i className="legend-blue" />LOW</span>
+            </>
+          )}
         </div>
       </div>
       <Suspense fallback={<div className="kline-empty">{t("加载走势…", "Loading chart…")}</div>}>
         <KLineChart
           bars={bars}
-          ma5={chart.ma5 || []}
-          ma10={chart.ma10 || []}
-          ma20={chart.ma20 || []}
+          ma5={ma.ma5}
+          ma10={ma.ma10}
+          ma20={ma.ma20}
           indicator={indicator}
-          height={220}
+          range={range}
+          onRangeChange={setRange}
+          height={230}
         />
       </Suspense>
+      <div className="volume-topline">
+        <div className="chart-indicator-switch sub-indicator-switch">
+          {SUB_INDICATORS.map((item) => (
+            <button key={item.key} className={subIndicator === item.key ? "on" : ""} onClick={() => setSubIndicator(item.key)}>
+              {t(item.zh, item.en)}
+            </button>
+          ))}
+        </div>
+        <div className="chart-legend sub-legend">
+          {subValues.map((item) => (
+            <span key={item.key}><i className={`legend-${item.color}`} />{item.label} {item.value}</span>
+          ))}
+        </div>
+      </div>
+      <Suspense fallback={<div className="volume-empty">{t("加载副图…", "Loading sub-chart…")}</div>}>
+        <VolumeChart
+          bars={bars}
+          indicator={subIndicator}
+          range={range}
+          onRangeChange={setRange}
+          height={118}
+        />
+      </Suspense>
+      <div className="hint">{t("日/周/月 K 由收盘数据聚合；前复权口径。", "Daily/weekly/monthly candles are aggregated from EOD data; forward-adjusted.")}</div>
     </div>
   );
 }

@@ -331,6 +331,7 @@ export default function Stock() {
           endpoint={`/api/invest/ai/stock/${code}`}
           hideOnError
           blocksMode
+          expandable
         />
       ) : null}
 

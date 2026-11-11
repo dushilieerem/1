@@ -83,6 +83,9 @@ export default function Home() {
   const daily = data?.daily || [];
   const review = data?.review || {};
   const topics = data?.topics || [];
+  const industryHeat = data?.industryHeat || [];
+  const homeHeat = industryHeat.length ? industryHeat : topics;
+  const isIndustryHeat = industryHeat.length > 0;
   const learn = data?.learn || {};
 
   return (
@@ -255,19 +258,23 @@ export default function Home() {
                 </section>
               ) : null}
 
-              {topics.length ? (
+              {homeHeat.length ? (
                 <section className="home-topics">
                   <div className="home-section-head">
                     <div>
-                      <h2>{t("今日热点", "Today's themes")}</h2>
-                      <span>{t("按热度排序 · 每条带风险提示", "Ranked by heat · every row carries a risk flag")}</span>
+                      <h2>{isIndustryHeat ? t("今日行业热度", "Today's sector heat") : t("今日热点", "Today's themes")}</h2>
+                      <span>
+                        {isIndustryHeat
+                          ? t("按成交、涨跌、资金与资讯综合排序 · 全市场个股等权", "Ranked by turnover, moves, fund flow and news · equal-weight stocks")
+                          : t("按热度排序 · 每条带风险提示", "Ranked by heat · every row carries a risk flag")}
+                      </span>
                     </div>
                     <button className="link-btn" onClick={() => nav("/topics")}>
-                      {t("全部", "All")} <ChevronRight size={14} />
+                      {t("主题", "Themes")} <ChevronRight size={14} />
                     </button>
                   </div>
                   <div className="hot-list">
-                    {topics.slice(0, 3).map((topic: any) => {
+                    {homeHeat.slice(0, 3).map((topic: any) => {
                       const fallbackValue = topic.valuationPercentile ?? topic.turnoverPercentile;
                       const tags = topic.riskTags?.length
                         ? topic.riskTags
@@ -286,7 +293,7 @@ export default function Home() {
                             <b>{topic.name}</b>
                             <span className="hot-heat">{t("热度", "Heat")} {Number(topic.heat || 0).toFixed(0)}</span>
                           </div>
-                          <p>{topic.summary}</p>
+                          <p>{locale === "en" ? topic.summary_en || topic.summary : topic.summary}</p>
                           <div className="hot-tags">
                             {tags.map((tag: any) => (
                               <Tag key={tag.label} tone={tag.tone || "gray"}>
@@ -321,7 +328,7 @@ export default function Home() {
                 : t("美股行情：公开 EOD · 无财务/估值/新闻/指数", "US quotes: public EOD · no fundamentals, valuation, news or indices")
               : data.isDemo
                 ? t("演示数据", "Demo data")
-                : t("行情/组合/主题：公开 EOD（主题为等权代理） · 资讯：公开标题", "Quotes/portfolio/themes: public EOD (themes are equal-weight proxies) · News: public headlines")}
+                : t("行情/组合/行业热度：公开 EOD（行业等权平均） · 资讯：公开标题", "Quotes/portfolio/sector heat: public EOD (equal-weight industries) · News: public headlines")}
             {" · "}
             {t("收盘后更新 · 不构成投资建议", "Updated after close · not investment advice")}
           </Disclaimer>

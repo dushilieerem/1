@@ -126,7 +126,20 @@ export default function AiPanel({
         <div className="ai-result">
           {card.summary ? <p className="ai-summary">{card.summary}</p> : null}
           <AiCharts charts={visibleCharts} />
-          {blocksMode && sections.length ? (
+          {expandable && sections.length ? (
+            <button
+              type="button"
+              className="ai-expand-toggle"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded
+                ? t("收起五维分析", "Collapse 5-dim analysis")
+                : t("展开五维分析", "Expand 5-dim analysis")}
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          ) : null}
+          {blocksMode && sections.length && (!expandable || expanded) ? (
             <div className="ai-analysis">
               {sections.map((s, i) => {
                 const blocks = s.blocks?.length
@@ -162,19 +175,6 @@ export default function AiPanel({
                 );
               })}
             </div>
-          ) : null}
-          {!blocksMode && expandable && sections.length ? (
-            <button
-              type="button"
-              className="ai-expand-toggle"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((value) => !value)}
-            >
-              {expanded
-                ? t("收起五维分析", "Collapse 5-dim analysis")
-                : t("展开五维分析", "Expand 5-dim analysis")}
-              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
           ) : null}
           {!blocksMode && (!expandable || expanded) && sections.map((s, i) => (
             <div className="ai-section" key={s.key || i}>

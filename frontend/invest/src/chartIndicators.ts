@@ -132,3 +132,26 @@ export function chartTick(time: Time | { year: number; month: number; day: numbe
   if ("year" in time) return `${time.year}-${String(time.month).padStart(2, "0")}-${String(time.day).padStart(2, "0")}`;
   return String(time);
 }
+
+export function aggregateBars(bars: Bar[], period: "daily" | "weekly" | "monthly"): Bar[] {
+  if (period === "daily") return bars;
+  const groups = new Map<string, Bar[]>();
+  for (const bar of bars) {
+    const d = new Date(`${String(bar.time).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) continue;
+    const week = Math.ceil((((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000) + new Date(d.getFullYear(), 0, 1).getDay() + 1) / 7);
+    const key = period === "weekly" ? `${d.getFullYear()}-W${String(week).padStart(2, "0")}` : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const group = groups.get(key) || [];
+    group.push(bar);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values()).map((group) => ({
+    time: group[group.length - 1].time,
+    open: group[0].open,
+    high: Math.max(...group.map((b) => b.high)),
+    low: Math.min(...group.map((b) => b.low)),
+    close: group[group.length - 1].close,
+    volume: group.reduce((sum, b) => sum + (b.volume || 0), 0),
+    amount: group.reduce((sum, b) => sum + (b.amount || 0), 0),
+  }));
+}

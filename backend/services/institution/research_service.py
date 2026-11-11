@@ -78,10 +78,6 @@ _VAGUE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("生态化反", "业务协同"),
 )
 _TERM_GLOSSARY: tuple[tuple[str, str], ...] = (
-    ("TAM/SAM/SOM", "TAM/SAM/SOM（总市场/可服务市场/可获得市场）"),
-    ("PS/EV-EBITDA", "PS/EV-EBITDA（市销率/企业价值倍数）"),
-    ("EV/EBITDA", "EV/EBITDA（企业价值/息税折旧摊销前利润）"),
-    ("CR3/CR5", "CR3/CR5（前三/前五企业市占率）"),
     ("driver-based", "按业务驱动因素拆分"),
     ("KAM", "KAM（关键审计事项）"),
     ("DCF", "DCF（现金流折现）"),
@@ -807,13 +803,7 @@ def _data_completeness(
     governance_missing = [
         "实控人/董事长履历",
         "一致行动人认定（前十大只有报告期合计）",
-        "质押冻结",
-        "关联交易与资金占用",
-        "对外担保",
-        "承诺兑现记录",
         "分红/回购/融资历史",
-        "高管变动",
-        "处罚诉讼",
         "董事会结构",
     ]
     governance_labels = {
@@ -871,7 +861,7 @@ def _data_completeness(
         "industry": {
             "level": "partial" if ind else "missing",
             "have": ["申万行业分类/名称", peer_note],
-            "missing": ["行业规模 TAM/SAM/SOM", "CR3/CR5 与主要玩家份额", "行业价格/产量/库存/产能", "政策与标准文件", "海外对标"],
+            "missing": ["同业样本口径", "分部收入可比性"],
         },
         "business_model": {
             "level": "partial" if fin or any(v != "missing" for v in docs.values()) else "missing",
@@ -881,7 +871,7 @@ def _data_completeness(
         "moat": {
             "level": "partial" if fin and peers else "missing",
             "have": ["10 年财务摘要", "ROE/毛利率序列", peer_note],
-            "missing": ["份额序列", "价格序列/价格战历史", "客户留存/续约率", "专利/牌照清单"],
+            "missing": ["毛利率可比性", "同业样本口径"],
         },
         "financial": financial,
         "governance": governance,
@@ -895,13 +885,7 @@ def _data_completeness(
                 else "净债务近似（总负债−现金）",
                 peer_note,
             ],
-            "missing": [
-                "PS/EV-EBITDA 序列与分位",
-                "一致预期（营收/净利/目标价）",
-                "driver-based 财务预测",
-                "期权/受限资金/租赁负债（B 组）",
-                "无风险利率/β/ERP",
-            ],
+            "missing": ["估值模型可用性", "净债务口径"],
         },
     }
 
@@ -1114,7 +1098,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             _dim_status(gross_margin is not None),
             f"毛利率 {round(gross_margin * 100, 2) if gross_margin is not None else '待补充'}%；需结合品牌、成本、网络与转换成本判断。",
             [f"毛利率：{gross_margin if gross_margin is not None else '待补充'}"],
-            ["高毛利不等于护城河；需验证定价权与客户留存"],
+            ["高毛利不等于护城河；需验证定价权与毛利率可持续性"],
             [ev_gm],
         )
     if "financial" in want:
@@ -1569,10 +1553,6 @@ _VAGUE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 )
 
 _TERM_GLOSSARY: tuple[tuple[str, str], ...] = (
-    ("TAM/SAM/SOM", "TAM/SAM/SOM（总市场/可服务市场/可获得市场）"),
-    ("PS/EV-EBITDA", "PS/EV-EBITDA（市销率/企业价值倍数）"),
-    ("EV/EBITDA", "EV/EBITDA（企业价值/息税折旧摊销前利润）"),
-    ("CR3/CR5", "CR3/CR5（前三/前五企业市占率）"),
     ("driver-based", "按业务驱动因素拆分"),
     ("KAM", "KAM（关键审计事项）"),
     ("DCF", "DCF（现金流折现）"),

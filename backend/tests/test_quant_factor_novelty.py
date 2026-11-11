@@ -57,7 +57,7 @@ class NoveltyIntegrationBoundaryTests(TestCase):
  def test_manifest_identity_rejects_substitution_and_source_hash_change(self):
   from services.quant_factor.novelty import validate_result
   from services.quant_factor.policy import digest
-  payload={'references':[{'reference_id':'a'}]};dev={'meta':{'spec_hash':'s'}}
+  payload={'references':[{'reference_id':'a'}],'candidate':{}};dev={'meta':{'spec_hash':'s'}}
   row={'reference_id':'a','source_hash':'code','status':'succeeded'}
   result={'expected_count':1,'comparisons':[row],'meta':{'request_hash':digest(payload),'candidate_backtest_spec_hash':'s','reference_source_hash':digest([('a','code')])}}
   validate_result(result,payload,dev)

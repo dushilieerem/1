@@ -12,6 +12,7 @@ import hashlib
 import re
 from typing import Any
 
+from . import re_capabilities
 from .transcription_validation import (
     MAX_SOURCE_CHARS,
     capability_issues,
@@ -108,15 +109,36 @@ def precheck(source: str, *, hint: str | None = None) -> dict[str, Any]:
                 item_code = str(item.get("code") or "")
                 if item_code.startswith(DIRECT_RUN_SECURITY_CODES) or item_code in DIRECT_RUN_OTHER_CODES:
                     issues.append(item)
-            for pattern, issue_code, title, why in DIRECT_RUN_UNSUPPORTED:
-                match = re.search(pattern, code)
-                if match:
+            unsupported = re_capabilities.unsupported_map()
+            if unsupported is not None:
+                # 以 RE 清单为准：清单里的 API 出现即阻断，避免「预检通过但回测报 unsupported_api」。
+                for call in inventory.get("calls") or []:
+                    name = str(call.get("name") or "")
+                    reason = unsupported.get(name)
+                    if reason is None:
+                        continue
                     issues.append(
                         {
-                            **_issue(issue_code, title, why, "该调用会让直跑失败或改变口径，需改写后再回测。"),
-                            "line": code[: match.start()].count("\n") + 1,
+                            **_issue(
+                                "API-UNSUPPORTED",
+                                f"RE 不支持 {name}",
+                                reason or "该 API 不在 RE 聚宽方言的支持清单里。",
+                                "直跑会失败，需改写后再回测。",
+                            ),
+                            "line": call.get("line"),
                         }
                     )
+            else:
+                # 清单不可用时回退本地静态规则。
+                for pattern, issue_code, title, why in DIRECT_RUN_UNSUPPORTED:
+                    match = re.search(pattern, code)
+                    if match:
+                        issues.append(
+                            {
+                                **_issue(issue_code, title, why, "该调用会让直跑失败或改变口径，需改写后再回测。"),
+                                "line": code[: match.start()].count("\n") + 1,
+                            }
+                        )
 
     blockers = [item for item in issues if item.get("severity") == "blocker"]
     return {
@@ -129,6 +151,7 @@ def precheck(source: str, *, hint: str | None = None) -> dict[str, Any]:
         "blocker_count": len(blockers),
         "can_run_directly": not blockers,
         "verdict": verdict(issues) if issues else "equivalent",
+        "capabilities_version": re_capabilities.version(),
     }
 
 

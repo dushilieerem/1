@@ -175,7 +175,7 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
     if val.get("pe_ttm") is not None:
         metrics.append(
             {
-                "label": "PE_TTM",
+                "label": "市盈率",
                 "value": f"{float(val['pe_ttm']):.2f}x",
                 "note": f"历史分位 {_pc(pct.get('pe_percentile'))}",
             }
@@ -197,7 +197,7 @@ def _merge_memo_metrics(
     by_label = {str(m.get("label") or ""): m for m in existing if m.get("label")}
     for item in required:
         by_label[item["label"]] = item
-    order = ["价值区间", "PE_TTM"]
+    order = ["价值区间", "市盈率"]
     merged = [by_label.pop(label) for label in order if label in by_label]
     merged.extend(by_label.values())
     memo["metrics"] = merged

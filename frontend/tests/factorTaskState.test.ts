@@ -157,6 +157,12 @@ test('预算授权、全局暂停、数据版本等待按真实原因分别表�
 });
 
 
+test('试验预算用尽不是等待授权：本任务已结束，续研需新任务',()=>{
+ const t={...base,dispatch_status:'stopped',trial_count:5,latest_outcome:'failed',dispatch_stop_reason:'已用满 max_trials=5 且 remaining=0，预算不足，无法开展下一次新增市场检验。'};
+ const s=deriveFactorTaskState(t);
+ assert.equal(s.key,'ended');assert.equal(s.label,'未达标，已结束');assert.equal(s.currentStage,'development');assert.ok(!s.needsYou.includes('等待负责人授权'));
+});
+
 test('持续研究：排队显示等待运行，技术等待不等于市场未达标',()=>{
  assert.equal(deriveFactorTaskState({...base,dispatch_status:'queued'}).label,'等待运行');
  const waiting=deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'AiOutputTruncated',trial_count:1,latest_outcome:'failed'});

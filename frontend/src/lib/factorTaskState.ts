@@ -133,7 +133,11 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
     key = 'error'; label = '服务异常'; tone = 'bad';
     needsYou = '可重试启动并保留原任务；连续异常请联系维护人员，技术原文见诊断详情。';
   } else if (dispatch === 'stopped') {
-    if (['authorization','授权','额度不足','预算不足'].some(s=>reason.includes(s))) {
+    const trialBudgetExhausted = ['max_trials', '试验预算已用尽', 'remaining=0', '已用满'].some(s => reason.includes(s));
+    if (trialBudgetExhausted) {
+      key = 'ended'; label = '未达标，已结束'; tone = 'gray';
+      needsYou = '本任务研发试验预算已用尽，已有证据和报告保留；继续研究需新建任务或新的授权计划，不能在本任务上直接续跑。';
+    } else if (['authorization','授权','额度不足','预算不足'].some(s=>reason.includes(s))) {
       key = 'waiting'; label = '等待负责人授权'; tone = 'warn';
       needsYou = '当前范围或预算不足；由负责人处理授权后再继续，已有记录保留。';
     } else if (STOP_WAIT.some((s) => reason.includes(s))) {

@@ -321,13 +321,13 @@ _A09 = """# 角色
 4) rating/confidence/gate。锚点：5=安全边际>25%；4=15–25%；3=8–15%；2=0–8%；1=负安全边际。
 5) valuation 字段（供 03 页键值表）：wacc / g / bear / base / bull / irr / terminal_share，全部照抄估值服务。
 
-# 估值可用性门禁（实测踩过：每股价值与现价差 1–20 倍）
-先做一次 sanity check，再写结论：
-  ratio = 每股价值（base）÷ 现价
-  ratio ∈ [0.3, 3.0] → 可用，继续；
-  ratio ∉ [0.3, 3.0] → 判"估值不可用"：gate=fail、rating≤2.0，summary 只写一句
-    "估值口径失效（每股 0.80 元 vs 现价 22.49 元），本轮不给价格区间"，并在 data_gaps 写"股本口径待修"。
-  绝不允许把失效的每股价值填进议案价格带（实测：0.7956–1.3261 的"价格带"让风控直接阻断）。
+# 估值可用性检查
+- `valuation_model.available=false` 或没有 base 每股价值 → 估值不可用，gate=fail，不给价格区间。
+- `shares_source ∈ share_capital / total_shares / total_mv/price`：股本是已公告或总市值口径，可信；
+  即使 base 每股价值与现价相差很大，也直接写"现价较模型值高/低 X%"，不要判估值不可用。
+- 只有 `shares_source=float_mv/price` 的代理股本，才检查 ratio = base 每股价值 ÷ 现价；
+  ratio ∉ [0.3, 3.0] 时判估值不可用，gate=fail、rating≤2.0，不给价格区间。
+- 不把不可用的每股价值填进议案价格带。
 
 # 禁区（硬约束）
 不许自己算 DCF/IRR/终值；缺输出就 fail。不重述业务模式与行业空间；不用"估值合理/具备吸引力"；

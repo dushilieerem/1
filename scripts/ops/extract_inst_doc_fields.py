@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""机构端 2025 年报五字段首版抽取（本地 parquet → CSV + 回写 SQL）。
+"""机构端经营五字段抽取（本地 parquet → CSV + 回写 SQL）。
 
 只读数据业务交付的 catalog/page_text parquet，不连生产库、不写 doc_extract。
 产出 review_status=pending，人工抽检后再改 approved。
@@ -47,6 +47,14 @@ NOT_APPLICABLE = {
 
 def _norm(text: Any) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _year(doc: dict[str, Any]) -> tuple[str, str]:
+    year = str(doc.get("report_period") or "")[:4]
+    if not year.isdigit():
+        year = REPORT_PERIOD[:4]
+    prior = str(int(year) - 1)
+    return year, prior
 
 
 def _num(text: str | None) -> float | None:
@@ -150,6 +158,7 @@ def extract_top5(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tuple[dict
 
 def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tuple[dict | None, str]:
     symbol = doc["symbol"]
+    year, _ = _year(doc)
     for pg in pages:
         t = _norm(pg["text"])
         if "销售量" not in t and "销售面积" not in t:
@@ -165,7 +174,7 @@ def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tu
             )
             if m:
                 value_text = (
-                    f"2025 年酒类：生产量 {m.group(1)} 吨，销售量 {m.group(2)} 吨，"
+                    f"{year} 年酒类：生产量 {m.group(1)} 吨，销售量 {m.group(2)} 吨，"
                     f"库存量 {m.group(3)} 吨；销量同比 {m.group(5)}%"
                 )
                 value_num, unit = _num(m.group(2)), "吨"
@@ -177,7 +186,7 @@ def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tu
             )
             if m:
                 value_text = (
-                    f"2025 年合计：生产量 {m.group(1)}，销售量 {m.group(2)}，库存量 {m.group(3)}；"
+                    f"{year} 年合计：生产量 {m.group(1)}，销售量 {m.group(2)}，库存量 {m.group(3)}；"
                     f"销量同比 {m.group(8)}%"
                 )
                 value_num = _num(m.group(2))
@@ -188,7 +197,7 @@ def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tu
             )
             if m:
                 value_text = (
-                    f"2025 年整车：产量 {m.group(1)} 辆（同比 {m.group(3)}%），"
+                    f"{year} 年整车：产量 {m.group(1)} 辆（同比 {m.group(3)}%），"
                     f"销量 {m.group(4)} 辆（同比 {m.group(6)}%）"
                 )
                 value_num, unit = _num(m.group(4)), "辆"
@@ -200,7 +209,7 @@ def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tu
             )
             if m:
                 value_text = (
-                    f"2025 年全钢巨胎：销售量 {m.group(1)} 条（同比 {m.group(3)}%），"
+                    f"{year} 年全钢巨胎：销售量 {m.group(1)} 条（同比 {m.group(3)}%），"
                     f"生产量 {m.group(4)} 条（同比 {m.group(6)}%）"
                 )
                 value_num, unit = _num(m.group(1)), "条"
@@ -212,7 +221,7 @@ def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tu
             )
             if m:
                 value_text = (
-                    f"2025 年销售面积 {m.group(1)} 万平方米（同比{m.group(3)} {m.group(4)}%），"
+                    f"{year} 年销售面积 {m.group(1)} 万平方米（同比{m.group(3)} {m.group(4)}%），"
                     f"销售金额 {m.group(2)} 亿元（同比{m.group(3)} {m.group(5)}%）"
                 )
                 value_num, unit = _num(m.group(1)), "万平方米"
@@ -271,6 +280,7 @@ def _unit_of(text: str) -> str:
 
 
 def extract_contract_liabilities(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tuple[dict | None, str]:
+    year, prior_year = _year(doc)
     best: tuple[int, dict[str, Any], str, str, str] | None = None
     ref = r"(?:[（(][^)）]{1,12}[)）]|[一二三四五六七八九十百]+[、.．]\d{1,3}|\d{1,3}\s+)?"
     line_re = re.compile(
@@ -302,7 +312,12 @@ def extract_contract_liabilities(doc: dict[str, Any], pages: list[dict[str, Any]
                 score -= 3
             if "负债合计" in t:
                 score += 1
-            if "期末余额" in t or "2025 年末" in t or "本年年末" in t:
+            if (
+                "期末余额" in t
+                or f"{year} 年末" in t
+                or "本年年末" in t
+                or f"{year}年12月31日" in t
+            ):
                 score += 1
             if "审计" in t or "会计政策" in t:
                 score -= 2
@@ -322,8 +337,8 @@ def extract_contract_liabilities(doc: dict[str, Any], pages: list[dict[str, Any]
             page_no=pg["page_no"],
             quote=_quote(t, t.find("合同负债"), "合同负债"),
             value_text=(
-                f"2025 年末合同负债 {amount_text} {unit}"
-                + (f"，2024 年末 {prior_text} {unit}" if prior is not None else "")
+                f"{year} 年末合同负债 {amount_text} {unit}"
+                + (f"，{prior_year} 年末 {prior_text} {unit}" if prior is not None else "")
             ),
             value_num=amount,
             unit=unit,
@@ -418,13 +433,19 @@ def main() -> None:
     parser.add_argument("--catalog", required=True)
     parser.add_argument("--pagetext", required=True)
     parser.add_argument("--out-dir", default="backend/output/inst_doc_extract_2025")
-    parser.add_argument("--report-period", default=REPORT_PERIOD)
+    parser.add_argument(
+        "--report-period",
+        default=REPORT_PERIOD,
+        help="报告期前缀，如 2025；传 all/* 处理 catalog 中所有报告期",
+    )
     parser.add_argument("--symbols", default="")
     args = parser.parse_args()
 
     catalog = pd.read_parquet(args.catalog).dropna(subset=["doc_id"])
     pages_df = pd.read_parquet(args.pagetext)
-    catalog = catalog[catalog["report_period"].astype(str).str.startswith(args.report_period[:4])]
+    period = str(args.report_period or "").strip().lower()
+    if period not in {"", "all", "*"}:
+        catalog = catalog[catalog["report_period"].astype(str).str.startswith(args.report_period[:4])]
     wanted = {s.strip() for s in args.symbols.split(",") if s.strip()}
     if wanted:
         catalog = catalog[catalog["symbol"].isin(wanted)]
@@ -459,20 +480,21 @@ def main() -> None:
         report["docs"].append(doc_report)
 
     rows.sort(key=lambda r: (r["symbol"], FIELD_ORDER.index(r["field_key"])))
-    csv_path = out_dir / "doc_extract_2025.csv"
+    period_label = "all" if period in {"", "all", "*"} else args.report_period
+    csv_path = out_dir / f"doc_extract_{period_label}.csv"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()) if rows else [])
         writer.writeheader()
         writer.writerows(rows)
 
-    sql_path = out_dir / "doc_extract_2025.sql"
+    sql_path = out_dir / f"doc_extract_{period_label}.sql"
     with sql_path.open("w", encoding="utf-8") as fh:
-        fh.write("-- 机构端 2025 年报五字段抽取，review_status=pending，复核后再改 approved\n")
+        fh.write(f"-- 机构端 {period_label} 五字段抽取，review_status=pending，复核后再改 approved\n")
         fh.write("-- 执行前确认 doc_extract 表已建、available_time 为公告日+1 天\n")
         for row in rows:
             fh.write(_sql_row(row) + "\n")
 
-    report_path = out_dir / "doc_extract_2025_report.json"
+    report_path = out_dir / f"doc_extract_{period_label}_report.json"
     report["extracted"] = len(rows)
     report["missing_count"] = len(report["missing"])
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

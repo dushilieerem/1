@@ -226,12 +226,18 @@ def _text(value: Any, *keys: str) -> str:
 
 def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
     data = _load(raw)
+    valid_ids: set[int] | None = None
+    if request is not None and request.variables.get("evidence_ids") is not None:
+        valid_ids = {
+            int(x) for x in (request.variables.get("evidence_ids") or []) if str(x).isdigit()
+        }
     summary = str(data.get("summary") or "").strip()
     if not summary:
         summary = str(data.get("one_line") or "").strip() or _first_paragraph(data.get("analysis_md"))
     if not summary:
         raise AiBadOutput("六维 Agent 缺少 summary/one_line/analysis_md")
     data["summary"] = clip_brief(summary)
+    data["analysis_md"] = str(data.get("analysis_md") or "").strip()
     data["impact"] = clip_brief(data.get("impact"))
     data["data_used"] = [
         clip_brief(x) for x in _items(data.get("data_used")) if str(x).strip()
@@ -335,6 +341,12 @@ def validate_dimension(raw: str, request: TaskRequest) -> dict[str, Any]:
         data["headline"] = None
     if not isinstance(data.get("kpis"), list):
         data["kpis"] = []
+    if valid_ids is not None:
+        data["evidence_ids"] = [
+            int(x)
+            for x in _items(data.get("evidence_ids"))
+            if str(x).isdigit() and int(x) in valid_ids
+        ]
     return data
 
 
@@ -732,6 +744,18 @@ RESEARCH_MEMO_TASK = register(
         timeout_sec=240,
         executors=("local",),
         validator=validate_research_memo,
+    )
+)
+
+CHIEF_AGENT_TASK = register(
+    TaskSpec(
+        task_id="inst.chief.agent",
+        description="机构端 Chief Agent：带只读工具判断是否值得继续研究",
+        temperature=0.3,
+        max_tokens=16000,
+        timeout_sec=360,
+        executors=("local",),
+        allow_tools=True,
     )
 )
 

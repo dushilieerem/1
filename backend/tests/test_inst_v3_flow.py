@@ -443,3 +443,32 @@ def test_proposal_advice_scores_latest_rating_without_benchmark() -> None:
         assert advice["overall_score"] == 5.0
         assert advice["recommendation"] == "avoid"
         assert advice["framework"]["direction"] == "hold"
+
+
+def test_start_research_advances_existing_opportunity_case() -> None:
+    tag = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        member = conn.execute(
+            "SELECT id FROM inst_members WHERE org_id=%s AND role='manager' AND status='active' LIMIT 1",
+            (ORG_ID,),
+        ).fetchone()["id"]
+        company = conn.execute(
+            "INSERT INTO inst_company (org_id, symbol, name, market, pool_status) "
+            "VALUES (%s,%s,%s,'CN','watch') RETURNING id",
+            (ORG_ID, f"OP{tag[:4].upper()}.SZ", f"机会测试公司{tag}"),
+        ).fetchone()["id"]
+        case = conn.execute(
+            "INSERT INTO inst_research_case "
+            "(org_id, company_id, case_no, stage, stage_no, stage_key, stage_gate, created_by) "
+            "VALUES (%s,%s,%s,'draft',0,'opportunity','{}'::jsonb,%s) RETURNING id",
+            (ORG_ID, company, f"OP-{tag}", member),
+        ).fetchone()["id"]
+
+    out = svc.start_research(ORG_ID, int(company), int(member))
+    assert int(out["id"]) == int(case)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT stage_no FROM inst_research_case WHERE id=%s AND org_id=%s",
+            (case, ORG_ID),
+        ).fetchone()
+    assert int(row["stage_no"]) == 1

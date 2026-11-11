@@ -36,7 +36,7 @@ from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 from . import applicability, doc_layer, repo
-from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi
+from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_list, humanize_text
 from .company_service import _mapped_industry
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
@@ -170,6 +170,7 @@ def start_research(org_id: int, company_id: int, actor_member_id: int | None) ->
                 object_id=case_id,
                 after={"company_id": company_id, "case_no": case_no, "source": "search"},
             )
+        _advance_opportunity_case(conn, org_id, case_id, actor_member_id)
         if str(company.get("pool_status")) != "research":
             conn.execute(
                 "UPDATE inst_company SET pool_status='research', drop_reason=NULL, updated_at=NOW() "
@@ -197,6 +198,26 @@ def _existing_case_id(conn, org_id: int, company_id: int) -> int | None:
         (org_id, company_id),
     ).fetchone()
     return int(row["id"]) if row else None
+
+
+def _advance_opportunity_case(
+    conn, org_id: int, case_id: int, actor_member_id: int | None
+) -> None:
+    """机会发现（stage 0）点“进入价值分析”时，把已有空壳案推进到 stage 1。"""
+    row = conn.execute(
+        "SELECT stage_no FROM inst_research_case WHERE id=%s AND org_id=%s",
+        (case_id, org_id),
+    ).fetchone()
+    if row and int(row.get("stage_no") or 0) == 0:
+        _set_case_stage(
+            conn,
+            org_id=org_id,
+            case_id=case_id,
+            to_stage=1,
+            trigger="research.start",
+            actor_member_id=actor_member_id,
+            detail={"source": "pipeline"},
+        )
 
 
 def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> dict[str, Any]:
@@ -230,6 +251,7 @@ def create_case(org_id: int, company_id: int, actor_member_id: int | None) -> di
                 object_id=case_id,
                 after={"company_id": company_id, "case_no": case_no},
             )
+        _advance_opportunity_case(conn, org_id, case_id, actor_member_id)
         conn.execute(
             "UPDATE inst_company SET pool_status='research', drop_reason=NULL, updated_at=NOW() "
             "WHERE id=%s AND org_id=%s",
@@ -1097,6 +1119,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             "as_of": (bar or {}).get("trade_date") or latest_fin.get("notice_date") or date.today().isoformat(),
             "price": price,
             "valuation": val,
+            "valuation_model": valuation,
             "percentile": pct,
             "risk": risk,
             "industry": ind,
@@ -1143,10 +1166,12 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
             "price": facts.get("price"),
             "pe_ttm": val.get("pe_ttm"),
             "pb_mrq": val.get("pb_mrq"),
+            "pcf_ocf_ttm": val.get("pcf_ocf_ttm"),
             "pe_percentile": pct.get("pe_percentile"),
             "pb_percentile": pct.get("pb_percentile"),
             "max_drawdown": risk.get("max_drawdown"),
             "annual_vol": risk.get("annual_vol"),
+            "beta_1y": risk.get("beta_1y"),
             "total_mv": val.get("total_mv"),
             "float_mv": val.get("float_mv"),
             "total_shares": val.get("total_shares"),
@@ -1154,6 +1179,8 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
         "industry": facts.get("industry"),
         "industry_name": facts.get("industry_name"),
         "financials": facts.get("financials") or [],
+        "valuation_model": facts.get("valuation_model"),
+        "evidence": facts.get("evidence") or [],
         "peer_summary": facts.get("peer_summary"),
         "history_summary": facts.get("history_summary"),
         "valuation_extra": facts.get("valuation_extra"),
@@ -1220,6 +1247,14 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
     return payload
 
 
+def _evidence_ids(facts: dict[str, Any]) -> list[int]:
+    return [
+        int(ev["id"])
+        for ev in (facts.get("evidence") or [])
+        if isinstance(ev, dict) and str(ev.get("id") or "").isdigit()
+    ]
+
+
 def _run_dimension_agent(key: str, facts: dict[str, Any]) -> dict[str, Any]:
     from ai.router import available_task, run_task
 
@@ -1234,6 +1269,7 @@ def _run_dimension_agent(key: str, facts: dict[str, Any]) -> dict[str, Any]:
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
         ],
+        variables={"evidence_ids": _evidence_ids(facts)},
     )
     data = out.get("data")
     if not isinstance(data, dict):
@@ -1286,6 +1322,7 @@ def _run_industry_agent(facts: dict[str, Any]) -> dict[str, Any]:
                 {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
             ],
+            variables={"evidence_ids": _evidence_ids(facts)},
         )
     except Exception as exc:  # AI 上游失败/空内容不应让整个研究 500
         return {"error": f"行业 Agent 暂不可用：{str(exc)[:240]}"}
@@ -1447,6 +1484,10 @@ def _merge_industry(
         )
         ev_idx.append(idx)
     built["evidence"] = evidence
+    industry_name = str((built.get("facts") or {}).get("industry_name") or "").strip()
+    analysis_md = humanize_text(data.get("analysis_md"))
+    if industry_name:
+        analysis_md = re.sub(r"\b\d{6}\.SI\b", industry_name, analysis_md)
     return {
         "key": "industry",
         "title": "行业分析",
@@ -1454,32 +1495,32 @@ def _merge_industry(
         "role_title": PROFESSIONAL_ROLE_TITLES["industry_overview"],
         "question": str(data.get("question") or "行业空间、景气周期、产业链与竞争格局处于什么位置？"),
         "status": "partial" if data.get("data_gaps") else "done",
-        "summary": _clip_brief(data.get("summary")),
-        "impact": _clip_brief(data.get("impact")),
-        "data_used": [_clip_brief(x) for x in (data.get("data_used") or []) if str(x).strip()][:6],
-        "checks": [_clip_brief(x) for x in (data.get("checks") or [])][:5],
-        "counter": [_clip_brief(x) for x in (data.get("counter") or [])][:3],
-        "open_questions": [_clip_brief(x) for x in (data.get("open_questions") or [])][:3],
-        "data_gaps": [_clip_brief(x) for x in (data.get("data_gaps") or [])][:5],
+        "summary": humanize_text(data.get("summary")),
+        "impact": humanize_text(data.get("impact")),
+        "data_used": humanize_list(data.get("data_used"))[:6],
+        "checks": humanize_list(data.get("checks"))[:5],
+        "counter": humanize_list(data.get("counter"))[:3],
+        "open_questions": humanize_list(data.get("open_questions"))[:3],
+        "data_gaps": humanize_list(data.get("data_gaps"))[:5],
         "evidence_idx": ev_idx,
         "direct_evidence_ids": [
             int(x) for x in (data.get("evidence_ids") or []) if str(x).isdigit()
         ],
         "confidence": data.get("confidence"),
         "confidence_label": data.get("confidence_label"),
-        "analysis_md": str(data.get("analysis_md") or ""),
+        "analysis_md": analysis_md,
         "attractiveness": data.get("attractiveness"),
         "gate": data.get("gate"),
-        "one_line": data.get("one_line"),
+        "one_line": humanize_text(data.get("one_line")),
         "headline": data.get("headline"),
         "kpis": data.get("kpis") or [],
         "market_size": data.get("market_size"),
         "competition": data.get("competition"),
-        "key_variables": data.get("key_variables") or [],
+        "key_variables": humanize_list(data.get("key_variables")),
         "falsifiers": data.get("falsifiers") or [],
-        "implication_for_company": data.get("implication_for_company"),
+        "implication_for_company": humanize_text(data.get("implication_for_company")),
         "gate": data.get("gate"),
-        "gate_note": data.get("gate_note"),
+        "gate_note": humanize_text(data.get("gate_note")),
         "data_completeness": data.get("data_completeness"),
         "engine": "agent",
     }
@@ -1626,23 +1667,23 @@ def _merge_agent_results(
                     "role_title": PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent"),
                     "question": question,
                     "status": status,
-                    "summary": str(data.get("summary")),
-                    "impact": _clip_brief(data.get("impact")),
-                    "data_used": [_clip_brief(x) for x in (data.get("data_used") or []) if str(x).strip()][:6],
-                    "checks": data.get("checks") or [],
-                    "counter": data.get("counter") or [],
-                    "open_questions": data.get("open_questions") or [],
-                    "data_gaps": data.get("data_gaps") or [],
+                    "summary": humanize_text(data.get("summary")),
+                    "impact": humanize_text(data.get("impact")),
+                    "data_used": humanize_list(data.get("data_used"))[:6],
+                    "checks": humanize_list(data.get("checks"))[:8],
+                    "counter": humanize_list(data.get("counter"))[:6],
+                    "open_questions": humanize_list(data.get("open_questions"))[:6],
+                    "data_gaps": humanize_list(data.get("data_gaps"))[:10],
                     "confidence": data.get("confidence", 0.5),
                     "confidence_label": data.get("confidence_label"),
                     "rating": score_fields["rating"],
                     "score_10": score_fields["score_10"],
-                    "rating_benchmark": score_fields["rating_benchmark"],
-                    "rating_note": score_fields["rating_note"],
+                    "rating_benchmark": humanize_text(score_fields["rating_benchmark"]),
+                    "rating_note": humanize_text(score_fields["rating_note"]),
                     "gate": data.get("gate"),
                     "headline": data.get("headline"),
                     "kpis": data.get("kpis") or [],
-                    "analysis_md": str(data.get("analysis_md") or ""),
+                    "analysis_md": humanize_text(data.get("analysis_md")),
                     "key_numbers": data.get("key_numbers") or [],
                     "falsifiers": data.get("falsifiers") or [],
                     "thesis_links": data.get("thesis_links") or [],
@@ -1678,6 +1719,79 @@ def _merge_agent_results(
     built["evidence"] = evidence
     built["data_gaps"] = gaps
     built["agent_states"] = states
+    return built
+
+
+def _insert_or_get_evidence(
+    conn,
+    org_id: int,
+    case_id: int,
+    ev: dict[str, Any],
+    actor_member_id: int | None,
+) -> int:
+    digest = str(ev.get("hash") or "")
+    if digest:
+        row = conn.execute(
+            "SELECT id FROM inst_evidence WHERE org_id=%s AND case_id=%s AND hash=%s ORDER BY id LIMIT 1",
+            (org_id, case_id, digest),
+        ).fetchone()
+        if row:
+            return int(row["id"])
+    row = conn.execute(
+        """
+        INSERT INTO inst_evidence
+          (org_id, case_id, evidence_type, grade, title, quote, source, as_of,
+           event_time, available_time, document_id, page_ref, source_uri, cutoff, hash, added_by)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+        """,
+        (
+            org_id,
+            case_id,
+            ev.get("evidence_type") or "fact",
+            ev.get("grade") or _evidence_grade(str(ev.get("source") or ""), str(ev.get("evidence_type") or "fact")),
+            ev["title"],
+            ev.get("quote"),
+            ev["source"],
+            ev.get("as_of"),
+            ev.get("event_time") or ev.get("as_of"),
+            ev.get("available_time") or ev.get("as_of"),
+            ev.get("document_id"),
+            ev.get("page_ref"),
+            ev.get("source_uri"),
+            ev.get("cutoff") or ev.get("available_time") or ev.get("as_of"),
+            ev["hash"],
+            actor_member_id,
+        ),
+    ).fetchone()
+    return int(row["id"])
+
+
+def _prepare_evidence_catalog(
+    org_id: int,
+    case_id: int,
+    built: dict[str, Any],
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """先落基础证据，给 Agent 可引用的 evidence id；后续 AI 新增证据再补插。"""
+    with get_conn() as conn:
+        for ev in built.get("evidence") or []:
+            ev["id"] = _insert_or_get_evidence(conn, org_id, case_id, ev, actor_member_id)
+    built.setdefault("facts", {})["evidence"] = [
+        {
+            "id": ev.get("id"),
+            "title": ev.get("title"),
+            "quote": ev.get("quote"),
+            "source": ev.get("source"),
+            "grade": ev.get("grade"),
+            "as_of": ev.get("as_of"),
+            "available_time": ev.get("available_time"),
+            "document_id": ev.get("document_id"),
+            "page_ref": ev.get("page_ref"),
+            "source_uri": ev.get("source_uri"),
+        }
+        for ev in (built.get("evidence") or [])
+        if ev.get("id") is not None
+    ]
     return built
 
 
@@ -1721,6 +1835,7 @@ def generate_research(
         rework = mode != "full"
         mode_label = mode
     built = _build_research(company, mode=mode, targets=targets)
+    built = _prepare_evidence_catalog(org_id, case_id, built, actor_member_id)
     run_industry = mode == "full" or (targets is not None and "industry" in targets)
     with get_conn() as conn:
         for key, title, _ in SIX_DIM_DEFS:
@@ -1809,40 +1924,11 @@ def generate_research(
 
         ev_ids: list[int] = []
         idx_to_id: dict[int, int] = {}
-        seen_hash: dict[str, int] = {}
         for ev in built["evidence"]:
-            digest = str(ev.get("hash") or "")
-            eid = seen_hash.get(digest)
-            if eid is None:
-                row = conn.execute(
-                    """
-                    INSERT INTO inst_evidence
-                      (org_id, case_id, evidence_type, grade, title, quote, source, as_of,
-                       event_time, available_time, document_id, page_ref, source_uri, cutoff, hash, added_by)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
-                    """,
-                    (
-                        org_id,
-                        case_id,
-                        ev.get("evidence_type") or "fact",
-                        ev.get("grade") or _evidence_grade(str(ev.get("source") or ""), str(ev.get("evidence_type") or "fact")),
-                        ev["title"],
-                        ev.get("quote"),
-                        ev["source"],
-                        ev.get("as_of"),
-                        ev.get("event_time") or ev.get("as_of"),
-                        ev.get("available_time") or ev.get("as_of"),
-                        ev.get("document_id"),
-                        ev.get("page_ref"),
-                        ev.get("source_uri"),
-                        ev.get("cutoff") or ev.get("available_time") or ev.get("as_of"),
-                        ev["hash"],
-                        actor_member_id,
-                    ),
-                ).fetchone()
-                eid = int(row["id"])
-                if digest:
-                    seen_hash[digest] = eid
+            eid = int(ev["id"]) if ev.get("id") else _insert_or_get_evidence(
+                conn, org_id, case_id, ev, actor_member_id
+            )
+            ev["id"] = eid
             idx_to_id[int(ev["_idx"])] = eid
             if eid not in ev_ids:
                 ev_ids.append(eid)

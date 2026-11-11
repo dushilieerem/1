@@ -119,6 +119,13 @@ export async function deleteV3Case(caseId: number): Promise<{ deleted: boolean; 
   return instApi<{ deleted: boolean; case_id: number }>(`/cases/${caseId}`, { method: "DELETE" });
 }
 
+export async function startV3Research(companyId: number): Promise<{ id: number; created?: boolean }> {
+  return instApi<{ id: number; created?: boolean }>(`/companies/${companyId}/research`, {
+    method: "POST",
+    body: {},
+  });
+}
+
 export async function fetchV3Stocks(q = "", limit = 200): Promise<{ items: V3Stock[]; total: number }> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (q.trim()) params.set("q", q.trim());

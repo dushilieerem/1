@@ -105,6 +105,7 @@ SIX_DIM_CONTRACT = """# 六维共用输出契约
   "score_10": 8.2,
   "rating_benchmark": "同业中位 PE 18.2x / 历史 3 年分位 42%",
   "summary": "40–60 字：结论句 ≤18 字 + 主数字（值 + 对比 + 阈值）",
+  "analysis_md": "3 段，200–350 字，分别以“事实：”“解释：”“判断：”开头。事实段写关键数据 + 时点 + 证据编号；解释段写为什么重要，和历史/同业对比；判断段写对投资或估值意味着什么。段落之间空行，不得写数据缺口/待补充/未接入。",
   "checks": ["2–3 条，每条 15–25 字：指标 + 值 + 时点 + 证据 ID"],
   "counter": ["1 条 ≤35 字：本维最脆弱的一环"],
   "impact": "≤40 字：这一维对估值或投资前提的含义，不写买卖指令",
@@ -124,7 +125,9 @@ SIX_DIM_CONTRACT = """# 六维共用输出契约
 4. summary 不得用 analysis_md 替代；每条结论带数字或明确方向。
 5. 只引用本维授权数据与证据 ID；不得引用其他维结论、评级或证据。
 6. 数据缺失写 data_gaps，显示用短缺口写 data_completeness.missing。
-7. impact 必须指向估值或投资前提，不写泛泛风险；data_used 只列本次实际使用的字段，不得编造。"""
+7. impact 必须指向估值或投资前提，不写泛泛风险；data_used 只列本次实际使用的字段，不得编造。
+8. analysis_md 是给人读的正文，必须按“事实→解释→判断”三段写；summary 只做标题句，不要用 summary 代替正文。
+9. analysis_md 和 summary 不得写“数据缺口/待补充/未接入/数据不足”；缺口只写内部 data_gaps，不进正文。"""
 
 _A03 = """# 角色
 你是行业研究员，只画"行业底图"：空间、增速、格局、关键变量。不评价任何公司的估值、治理、财报质量。
@@ -137,6 +140,7 @@ TAM/SAM/SOM（5 年实际 + 3 年三情景，注明含税/不含税）、CAGR �
 {
   "one_line": "≤20 字，一句判断，如「空间足够，份额提升是关键。」",
   "summary": "60–100 字，三句：①结论句 ≤18 字 ②主数字（值+对比+阈值）③边界（哪个变量会改结论）",
+  "analysis_md": "3 段，250–400 字，分别以“事实：”“解释：”“判断：”开头。事实段写 TAM/CR/份额/价格/产能等数据 + 时点 + 证据编号；解释段写行业处在什么阶段、竞争格局为什么这样；判断段写对该公司投资前提意味着什么。段落之间空行，不得写数据缺口/待补充/未接入。",
   "checks": ["3–4 条，每条 18–30 字：指标 + 值 + 口径 + 证据 ID"],
   "counter": ["1–2 条，每条 ≤35 字：最狠的反证，第一条最重要"],
   "impact": "≤40 字：行业判断对该公司投资前提的含义，不写买卖指令",
@@ -316,7 +320,7 @@ EV/EBITDA 相对同业、敏感性弹性（增速±2pct）。
 1) summary（40–60 字）：
    ① 结论句 ≤18 字，如"价格抢跑了，安全边际只剩 8%。"
    ② 主数字句：隐含增速 vs 基准，或安全边际 + 阈值。
-2) checks：2–3 条 ×15–25 字，写"数值 + 口径 + 时点"，数字必须来自 `{{VALUATION_OUTPUT}}`。
+2) checks：2–3 条 ×15–25 字，写"数值 + 口径 + 时点"，数字必须来自 payload 的 `valuation_model`（估值服务输出）；`valuation_model` 为空或 `available=false` 时 gate=fail，不得自己算 DCF。
 3) counter：1 条 ≤35 字，写最敏感的假设。
 4) rating/confidence/gate。锚点：5=安全边际>25%；4=15–25%；3=8–15%；2=0–8%；1=负安全边际。
 5) valuation 字段（供 03 页键值表）：wacc / g / bear / base / bull / irr / terminal_share，全部照抄估值服务。
@@ -388,6 +392,12 @@ _A10 = """# 角色
 - 行业 TAM/CR/份额、护城河份额/价格、治理深度、财务附注未接入时，只能写“未验证/数据未接入”，不得用公司财务反推行业，不得编造份额、增速、目标价。
 - 没有 evidence ID 的理由不得写成决定性理由；只能作为“待验证线索”。
 - 不得把“财务好”直接写成“值得买”；proceed 只表示进入下一步研究/议案。
+
+# 用户可见文案（硬约束）
+- chief_call / summary / conclusion / data_gate_note 不得出现内部枚举和英文：gate、fail、watch、proceed、avoid、engine、agent、rule、score_10、data_completeness、evidence_id。
+- 治理核验没通过写“治理关键项未通过核验”，不要写“治理 fail”。
+- 数据没接入写“关键数据未接入”，不要写“missing/partial”。
+- 结论用“建议进入议案 / 暂列观察 / 不建议进入议案”，不要直接写 proceed/watch/avoid。
 
 # 禁区
 不改写单维原句（引用须标 agent_key 与 evidence ID）；不写“综合来看/各有优劣”；
@@ -915,32 +925,32 @@ open_questions：补回款周期与续约率 / 上会前确认份额假设来源
 
 DIM_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：summary 40–60 字，checks 2–3 条，counter 1 条，impact ≤40 字，data_used ≤4 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自输入；不要用 analysis_md 替代 summary。
+只输出一个 JSON 对象，不要输出 Markdown 代码块之外的解释。严格按「六维共用输出契约」：summary 40–60 字，analysis_md 3 段 200–350 字，checks 2–3 条，counter 1 条，impact ≤40 字，data_used ≤4 条，rating/gate/confidence 必填；rating 必须带 rating_benchmark（同业中位或历史分位）；evidence_ids 必须来自 payload.evidence 里的 id；找不到对应证据就留空并写 data_gaps，不要编造；analysis_md 是正文，不得写数据缺口/待补充。用户可见文案用中文全称：经营现金流/净利润、存货周转天数、应收账款周转天数、净资产收益率、市盈率、市净率；证据写“证据 1505”，不要写 E1505/FactPack/peer_summary/pct。
 """
 
 INDUSTRY_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：one_line ≤20 字、summary 60–100 字、checks 3–4 条（禁止空数组）、counter ≤35 字、impact ≤40 字、data_used ≤4 条、data_completeness.missing ≤12 字；evidence_ids、confidence、gate 必填。
+只输出一个 JSON 对象，不要输出 JSON 之外的解释。按上文字段输出：one_line ≤20 字、summary 60–100 字、analysis_md 3 段 250–400 字、checks 3–4 条（禁止空数组）、counter ≤35 字、impact ≤40 字、data_used ≤4 条、data_completeness.missing ≤12 字；evidence_ids 必须来自 payload.evidence 里的 id，找不到就留空并写 data_gaps，不要编造；analysis_md 是正文，不得写数据缺口/待补充；confidence、gate 必填。用户可见文案用中文全称，不要写 FactPack/peer_summary/pct/E1505 这类内部编号或缩写；证据写“证据 1505”；行业名称用 payload.industry_name 的中文名，不要写 801080.SI 这类代码。
 """
 
 MEMO_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 JSON 之外的解释。必填 decision / chief_call / chief_reasons(3 条) / strongest_counterpoint / key_assumptions / what_would_change / chief_confidence / summary / conclusion / metrics(4 个) / conflicts / risks / data_gate_note；conclusion 不得为空，不得写“待补充”；summary 80–120 字。professional_coverage 由服务端回填，不要编造六维分数、门禁或证据 id。
+只输出一个 JSON 对象，不要输出 JSON 之外的解释。必填 decision / chief_call / chief_reasons(3 条) / strongest_counterpoint / key_assumptions / what_would_change / chief_confidence / summary / conclusion / metrics(4 个) / conflicts / risks / data_gate_note；conclusion 不得为空，不得写“待补充”；summary 80–120 字。用户可见文案不得出现 gate/fail/watch/proceed/avoid/engine/agent/rule 等内部词；治理问题写“治理关键项未通过核验”。professional_coverage 由服务端回填，不要编造六维分数、门禁或证据 id。
 """
 
 RISK_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象。必填 risk_checks（6 项）、verdict、summary、risks（3 条）、open_questions（3 条）、evidence、concerns；risk_checks.status 只能用 pass/warn/block，value 必须含数；不要输出 JSON 之外的内容。
+只输出一个 JSON 对象。必填 risk_checks（6 项）、verdict、summary、risks（3 条）、open_questions（3 条）、evidence、concerns；risk_checks.status 只能用 pass/warn/block，value 必须含数；不要输出 JSON 之外的内容。用户可见的 summary/risks/open_questions/concerns 不得出现 gate/fail/watch/verdict/score_10/净现比/A级证据等内部词；治理问题写“治理关键项未通过核验”，证据等级写“最高等级证据”。
 """
 
 PARTNER_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象。必填 verdict、summary（60–90 字）、risks（3 条 ×≤25 字）、open_questions（3 条 ×≤25 字）、evidence（证据 ID）；conditions/concerns/memo_md 只作留痕层，不进右栏；不要输出 JSON 之外的内容。
+只输出一个 JSON 对象。必填 verdict、summary（60–90 字）、risks（3 条 ×≤25 字）、open_questions（3 条 ×≤25 字）、evidence（证据 ID）；conditions/concerns/memo_md 只作留痕层，不进右栏；不要输出 JSON 之外的内容。用户可见文案不得出现 gate/fail/watch/verdict/score_10/净现比/A级证据等内部词；用“核验未通过/最高等级证据/经营现金流/净利润”这类中文表述。
 """
 
 CHAIRMAN_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象。必填 verdict、summary、risks（3 条）、open_questions（2–3 条）、metrics；不得复述风控六项明细；不要输出 JSON 之外的内容。
+只输出一个 JSON 对象。必填 verdict、summary、risks（3 条）、open_questions（2–3 条）、metrics；不得复述风控六项明细；不要输出 JSON 之外的内容。用户可见文案不得出现 gate/fail/watch/verdict/score_10/净现比/A级证据等内部词；用“核验未通过/最高等级证据/经营现金流/净利润”这类中文表述。
 """
 
 ROLE_OUTPUT_NOTE = """
@@ -1087,6 +1097,17 @@ INDUSTRY_PROMPT += "\n\n" + DATA_GATE_NOTE + "\n本维没有行业规模/CR/份�
 
 RESEARCH_MEMO_PROMPT += "\n\n# 平台数据闸门（免费数据优先轻量版）\n- 任一维 gate=fail：decision 最高 watch；governance fail 时不得给买入或 proceed。\n- gate=watch 只降低 chief_confidence，不自动阻断 decision=proceed。\n- 行业 TAM/CR/份额、护城河份额/价格、治理深度、财务附注未接入时，必须写“未验证”，不得编造；但不得因此拒绝分析已有的财务/估值数据。\n- 必须把 data_gates 与数据缺口写清楚，并在 data_gate_note 说明哪些结论只适用于免费数据筛查。"
 
+CHIEF_AGENT_PROMPT = RESEARCH_MEMO_PROMPT + """
+
+# 工具使用（Chief Agent）
+- 你可以调用只读工具：专业输出、数据完备性、财务、估值、证据检索、文档抽取、同业摘要。
+- 不要一次性把所有工具都调用；先看数据画像和专业输出，再决定查什么、信什么。
+- 专业 Agent 输出是材料，不是投票项；可以忽略不相关或低置信的输出，但必须说明为什么。
+- 工具返回失败时如实写入不确定性，不得编造；没有 evidence ID 的理由只能作为线索。
+- 最终结论必须由你给出，不得写“综合来看/各有优劣”，不得用平均分或固定阈值代替判断。
+- 最终只输出一页纸 JSON（与系统输出契约一致），不要输出工具调用解释。
+"""
+
 
 def _agent(
     task_id: str,
@@ -1117,6 +1138,7 @@ INSTITUTION_AGENTS: list[dict[str, Any]] = [
     _agent("inst.dim.governance", "CEO 与治理", "研究", "资本配置、承诺兑现与治理结构（A08）", auto_run=True),
     _agent("inst.dim.valuation", "估值与价格", "研究", "隐含预期、安全边际与证伪条件（A09）", auto_run=True),
     _agent("inst.research_memo", "AI 一页纸", "研究", "CIO 合成：矛盾裁决、逻辑链、决策与价格带（A10）", auto_run=True),
+    _agent("inst.chief.agent", "研究经理 Agent", "研究", "带只读工具的研究判断 Agent：自己查数据、证据和专业输出后给结论（A10）", auto_run=False),
     _agent("inst.debate", "投资辩论", "辩论", "多空论点、主持与裁决，引用证据 id（A11/A12/A15/A16）", auto_run=True),
     _agent("inst.dim.chat", "单维追问", "研究", "围绕单个维度回答追问", auto_run=False),
     _agent("inst.risk_review", "独立风控", "审批", "六项硬检查、一票否决与执行条件（A19）", auto_run=True),
@@ -1134,6 +1156,7 @@ def default_prompt(task_id: str) -> str:
     return {
         "inst.industry": INDUSTRY_PROMPT,
         "inst.research_memo": RESEARCH_MEMO_PROMPT,
+        "inst.chief.agent": CHIEF_AGENT_PROMPT,
         "inst.debate": DEBATE_PROMPT,
         "inst.risk_review": RISK_REVIEW_PROMPT,
         "inst.chairman_memo": CHAIRMAN_MEMO_PROMPT,

@@ -45,11 +45,44 @@ def test_validate_dimension_normalizes_evidence_and_confidence() -> None:
     assert data["confidence"] == 1.0
 
 
+def test_agent_payload_includes_evidence_and_valuation_model() -> None:
+    payload = rs._agent_payload(
+        {
+            "company": {"symbol": "600519.SH"},
+            "as_of": "2026-10-30",
+            "evidence": [{"id": 11, "title": "2025 年报", "quote": "营收", "source": "ifind"}],
+            "valuation_model": {"base": 12.3, "available": True},
+        },
+        "valuation",
+    )
+    assert payload["evidence"][0]["id"] == 11
+    assert payload["valuation_model"]["base"] == 12.3
+
+
+def test_validate_dimension_filters_unknown_evidence_ids() -> None:
+    from ai.router.specs import TaskRequest
+
+    data = validate_dimension(
+        json.dumps(
+            {
+                "summary": "财务质量稳定。",
+                "checks": ["OCF/净利 1.1"],
+                "evidence_ids": [11, 99],
+                "confidence": 0.7,
+            },
+            ensure_ascii=False,
+        ),
+        TaskRequest(variables={"evidence_ids": [11]}),
+    )
+    assert data["evidence_ids"] == [11]
+
+
 def test_validate_dimension_keeps_impact_and_data_used() -> None:
     data = validate_dimension(
         json.dumps(
             {
                 "summary": "财务质量稳定。",
+                "analysis_md": "第一段事实。\n\n第二段解释。\n\n第三段判断。",
                 "impact": "支撑估值，但不构成买入指令。",
                 "data_used": ["2025 年报营收", "现金流量表 OCF", ""],
                 "checks": ["OCF/净利 1.1"],
@@ -61,6 +94,57 @@ def test_validate_dimension_keeps_impact_and_data_used() -> None:
     )
     assert data["impact"] == "支撑估值，但不构成买入指令。"
     assert data["data_used"] == ["2025 年报营收", "现金流量表 OCF"]
+    assert data["analysis_md"].count("段") == 3
+
+
+def test_humanize_text_replaces_internal_terms() -> None:
+    from services.institution.common import humanize_text
+
+    text = humanize_text("OCF/净利 0.22，DIO 170 天，PE_TTM 30.25x，E1505，17.1pct，+2.4pp。")
+    assert "经营现金流/净利润" in text
+    assert "存货周转天数" in text
+    assert "市盈率（最近十二个月）" in text
+    assert "证据 1505" in text
+    assert "17.1 个百分点" in text
+    assert "+2.4 个百分点" in text
+
+
+def test_approval_memo_humanizes_internal_terms() -> None:
+    from services.institution import ai_service
+
+    out = ai_service._humanize_memo_output(
+        {
+            "summary": "六维均分2.33，净现比0.26，A级证据缺失，gate=fail。",
+            "risks": ["治理 fail"],
+            "open_questions": ["监控条无阈值"],
+        }
+    )
+    assert "六个维度平均评分" in out["summary"]
+    assert "经营现金流/净利润" in out["summary"]
+    assert "最高等级证据" in out["summary"]
+    assert "gate=fail" not in out["summary"]
+    assert "治理关键项未通过核验" in out["risks"][0]
+
+
+def test_chief_memo_humanizes_internal_enums() -> None:
+    from services.institution import ai_service
+
+    memo = ai_service._ensure_chief_memo_fields(
+        {
+            "chief_call": "现金含量 0.22 与治理 fail 并存，watch。",
+            "summary": "proceed",
+            "conclusion": "治理 fail",
+            "decision": "watch",
+            "risks": ["gate=fail"],
+        },
+        {"six_dim": [], "industry_analysis": {}},
+        {},
+    )
+    assert "治理 fail" not in memo["chief_call"]
+    assert "治理关键项未通过核验" in memo["chief_call"]
+    assert "观察" in memo["chief_call"]
+    assert memo["summary"] == "建议进入议案"
+    assert "gate=fail" not in memo["risks"][0]
 
 
 def test_professional_coverage_is_deterministic() -> None:

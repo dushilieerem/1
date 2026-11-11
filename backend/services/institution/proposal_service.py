@@ -43,7 +43,7 @@ from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 from . import repo
-from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi
+from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_text
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
 from .company_service import (
@@ -221,7 +221,7 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
         "target_weight": target_weight,
         "current_weight": current_weight,
         "held": held,
-        "rationale": reason,
+        "rationale": humanize_text(reason),
         "framework": {
             "direction": direction,
             "target_weight": target_weight,
@@ -229,8 +229,8 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
             "price_high": high_f,
             "funding_source": "现金",
             "valid_until": valid_until,
-            "monitoring": monitoring,
-            "investment_opinion": opinion,
+            "monitoring": [humanize_text(x) for x in monitoring],
+            "investment_opinion": humanize_text(opinion),
         },
         "engine": "trader_agent",
     }

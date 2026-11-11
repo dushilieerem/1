@@ -31,6 +31,7 @@ from services.institution.prompts import (
     CHAIRMAN_MEMO_PROMPT,
     PARTNER_MEMO_PROMPT,
     CHAT_PROMPT,
+    CHIEF_AGENT_PROMPT,
     INDUSTRY_PROMPT,
     DEBATE_PROMPT,
     DIMENSION_PROMPTS as _DIMENSION_PROMPTS,
@@ -43,7 +44,8 @@ from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 from . import repo
-from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi
+from .chief_agent import run_chief_agent
+from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_text
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
 from .company_service import MAX_SINGLE_WEIGHT, MIN_CASH_RATIO, _mapped_industry
@@ -259,6 +261,53 @@ def _dim_counter(dim: dict[str, Any]) -> list[str]:
     return _text_items(raw)
 
 
+_USER_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    (r"治理\s*(?:gate\s*=\s*)?fail", "治理关键项未通过核验"),
+    (r"治理\s*(?:gate\s*=\s*)?watch", "治理关键项待补充"),
+    (r"gate\s*=\s*fail", "核验未通过"),
+    (r"gate\s*=\s*watch", "待补充"),
+    (r"\bproceed\b", "建议进入议案"),
+    (r"\bwatch\b", "观察"),
+    (r"\bavoid\b", "回避"),
+)
+
+
+def _humanize_user_text(value: Any) -> str:
+    """把内部枚举从用户可见文案里换成人话。"""
+    text = str(value or "")
+    for pattern, replacement in _USER_TEXT_REPLACEMENTS:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return humanize_text(_clip_brief(text))
+
+
+_HUMAN_FIELDS = (
+    "summary",
+    "conclusion",
+    "verdict",
+    "decision",
+    "recommendation",
+    "chair_call",
+    "data_gate_note",
+    "memo_md",
+)
+_HUMAN_LIST_FIELDS = ("risks", "open_questions", "conditions", "concerns", "evidence")
+
+
+def _humanize_memo_output(data: dict[str, Any]) -> dict[str, Any]:
+    out = dict(data or {})
+    for field in _HUMAN_FIELDS:
+        if out.get(field):
+            out[field] = _humanize_user_text(out[field])
+    for field in _HUMAN_LIST_FIELDS:
+        if isinstance(out.get(field), list):
+            out[field] = [_humanize_user_text(x) for x in out[field] if str(x).strip()]
+    if isinstance(out.get("metrics"), list):
+        for item in out["metrics"]:
+            if isinstance(item, dict):
+                item["label"] = _humanize_user_text(item.get("label"))
+    return out
+
+
 def _clamp_confidence(value: Any, default: float = 0.5) -> float:
     try:
         return round(max(0.0, min(1.0, float(value))), 2)
@@ -437,6 +486,19 @@ def _ensure_chief_memo_fields(
         counterpoint["evidence_ids"] = [
             int(x) for x in (counterpoint.get("evidence_ids") or []) if str(x).isdigit() and int(x) in valid_ids
         ]
+
+    data["chief_call"] = _humanize_user_text(data.get("chief_call"))
+    for field in ("summary", "conclusion", "data_gate_note"):
+        if data.get(field):
+            data[field] = _humanize_user_text(data[field])
+    for reason in data.get("chief_reasons") or []:
+        reason["reason"] = _humanize_user_text(reason.get("reason"))
+    if isinstance(counterpoint, dict):
+        counterpoint["point"] = _humanize_user_text(counterpoint.get("point"))
+        counterpoint["response"] = _humanize_user_text(counterpoint.get("response"))
+    for field in ("risks", "conflicts", "open_questions", "key_assumptions", "what_would_change"):
+        if isinstance(data.get(field), list):
+            data[field] = [_humanize_user_text(x) for x in data[field] if str(x).strip()]
     return data
 
 
@@ -500,25 +562,22 @@ def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict
     labels = {str(d.get("key")): str(d.get("title") or d.get("key")) for d in version.get("six_dim") or [] if isinstance(d, dict)}
     labels["industry"] = "行业分析"
     failed = [labels.get(key, key) for key, gate in gates.items() if gate == "fail"]
-    watched = [labels.get(key, key) for key, gate in gates.items() if gate == "watch"]
     decision = str(data.get("decision") or "")
     if decision == "proceed" and failed:
         data["decision_original"] = decision
         data["decision"] = "watch"
         data["decision_note"] = (
-            "一页纸原判为进入下一步研究，但存在 gate=fail 的阻断维，服务端降级为观察。"
+            "一页纸原判为进入下一步研究，但存在未通过核验的阻断维，服务端降级为观察。"
             f"阻断维：{'、'.join(failed)}。"
         )
         data["data_gate_note"] = data["decision_note"]
     elif failed:
         data["data_gate_note"] = (
-            f"以下维度门禁未通过（gate=fail），按不可买入处理：{'、'.join(failed)}。"
+            f"以下维度门禁未通过，按不可买入处理：{'、'.join(failed)}。"
         )
-    elif watched:
-        data["data_gate_note"] = (
-            f"以下维度为 watch，已计入置信度，不阻断一页纸结论：{'、'.join(watched)}。"
-            "免费数据未覆盖的行业空间/份额、护城河持续性与治理深度仍属未验证项。"
-        )
+    else:
+        # 产品只展示会阻断当前结论的门禁；下一阶段数据不在页面列缺口。
+        data.pop("data_gate_note", None)
     return data
 
 
@@ -578,7 +637,11 @@ def ai_research_memo(
             for e in (case.get("evidence") or [])
         ],
     }
-    prompt, prompt_version = get_effective_prompt("inst.research_memo", RESEARCH_MEMO_PROMPT)
+    use_agent = str(os.getenv("INST_AGENT_MODE", "bounded")).strip().lower() not in {"legacy", "off", "0", "false"}
+    if use_agent:
+        prompt, prompt_version = get_effective_prompt("inst.chief.agent", CHIEF_AGENT_PROMPT)
+    else:
+        prompt, prompt_version = get_effective_prompt("inst.research_memo", RESEARCH_MEMO_PROMPT)
     scope_key = f"case:{case_id}:version:{version.get('id')}"
     cache_key = agent_input_hash(
         {"case_id": case_id, "version_id": version.get("id"), "content_hash": version.get("content_hash"), "payload": payload},
@@ -628,7 +691,10 @@ def ai_research_memo(
             "missing": True,
         }
     try:
-        data = _ai_task("inst.research_memo", payload, prompt)
+        data = run_chief_agent(case, version, payload, prompt) if use_agent else None
+        if data is None:
+            legacy_prompt, _ = get_effective_prompt("inst.research_memo", RESEARCH_MEMO_PROMPT)
+            data = _ai_task("inst.research_memo", payload, legacy_prompt)
         data.setdefault("engine", "agent")
         data = _ensure_chief_memo_fields(data, version, case)
     except AiUnavailable:
@@ -839,7 +905,7 @@ def ai_partner_memo(
             stale = bool(hit)
         if hit:
             return {
-                "memo": hit["output"],
+                "memo": _humanize_memo_output(hit["output"]),
                 "task": "inst.partner_memo",
                 "version_no": version.get("version_no"),
                 "cached": True,
@@ -856,6 +922,7 @@ def ai_partner_memo(
         }
     data = _ai_task("inst.partner_memo", payload, prompt)
     data.setdefault("engine", "agent")
+    data = _humanize_memo_output(data)
     save_output(
         "inst.partner_memo",
         org_id=org_id,
@@ -915,7 +982,7 @@ def ai_risk_review(
             stale = bool(hit)
         if hit:
             return {
-                "memo": hit["output"],
+                "memo": _humanize_memo_output(hit["output"]),
                 "task": "inst.risk_review",
                 "checks": checks,
                 "cached": True,
@@ -932,6 +999,7 @@ def ai_risk_review(
         }
     data = _ai_task("inst.risk_review", payload, prompt)
     data.setdefault("engine", "agent")
+    data = _humanize_memo_output(data)
     if data.get("engine") != "rule":
         save_output(
             "inst.risk_review",
@@ -982,7 +1050,7 @@ def ai_chairman_memo(
             stale = bool(hit)
         if hit:
             return {
-                "memo": hit["output"],
+                "memo": _humanize_memo_output(hit["output"]),
                 "task": "inst.chairman_memo",
                 "version_no": version.get("version_no"),
                 "cached": True,
@@ -999,6 +1067,7 @@ def ai_chairman_memo(
         }
     data = _ai_task("inst.chairman_memo", payload, prompt)
     data.setdefault("engine", "agent")
+    data = _humanize_memo_output(data)
     if data.get("engine") != "rule":
         save_output(
             "inst.chairman_memo",

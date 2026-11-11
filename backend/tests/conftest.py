@@ -9,6 +9,12 @@ from __future__ import annotations
 
 import os
 
+# 测试默认不调用真实 LLM；Chief Agent 单独用 monkeypatch 覆盖。
+os.environ.setdefault("INST_AGENT_MODE", "legacy")
+os.environ.setdefault("LLM_API_KEY", "")
+os.environ.setdefault("LLM_BASE_URL", "")
+os.environ.setdefault("LLM_MODEL", "")
+
 
 def pytest_sessionstart(session) -> None:
     _ = session

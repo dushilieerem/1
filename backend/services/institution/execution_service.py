@@ -340,6 +340,7 @@ def execute_authorization(
         ).fetchone()
         if not portfolio:
             raise LookupError("组合不存在")
+        live_nav = _live_nav(org_id)
         bar = md.latest_bar(auth["symbol"], adjust="none")
         px = float(price or (bar or {}).get("close") or 0)
         status = md.status_latest(auth["symbol"]) or {}
@@ -368,7 +369,7 @@ def execute_authorization(
             raise PermissionError(f"成交价 {px} 低于授权下限 {low}")
         if high is not None and px > float(high):
             raise PermissionError(f"成交价 {px} 高于授权上限 {high}")
-        nav = float(portfolio["nav"] or DEFAULT_NAV)
+        nav = live_nav or DEFAULT_NAV
         cash = float(portfolio["cash"] or nav)
         target = float(snapshot.get("target_weight") or 0)
         direction = auth["direction"]
@@ -511,7 +512,28 @@ def _execution_context(conn, org_id: int, authorization_id: int):
         "ORDER BY as_of DESC LIMIT 1",
         (portfolio["id"] if portfolio else 0, auth["symbol"]),
     ).fetchone()
-    return auth, (auth.get("snapshot") or {}), portfolio, existing, float(pos["qty"]) if pos else 0.0
+    return (
+        auth,
+        (auth.get("snapshot") or {}),
+        portfolio,
+        existing,
+        float(pos["qty"]) if pos else 0.0,
+        _live_nav(org_id),
+    )
+
+
+def _live_nav(org_id: int) -> float:
+    """盯市净值（现金 + 持仓市值），与投资管理工作台展示的 nav 同源。
+
+    inst_portfolio.nav 只是建账时的静态值（默认 1000 万），不随持仓变动；
+    执行要素若用它，大额持仓的减持会因"目标权重不足一手"被误判阻断。
+    """
+    try:
+        from .portfolio_service import portfolio as _portfolio_view
+
+        return float((_portfolio_view(org_id) or {}).get("nav") or 0)
+    except Exception:  # noqa: BLE001 - 取不到估值时回退静态净值
+        return 0.0
 
 
 def precheck_execution(
@@ -526,13 +548,13 @@ def precheck_execution(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager")
-        auth, snapshot, portfolio, existing, pos_qty = _execution_context(
+        auth, snapshot, portfolio, existing, pos_qty, live_nav = _execution_context(
             conn, org_id, authorization_id
         )
     bar = md.latest_bar(str(auth["symbol"]), adjust="none") or {}
     status = md.status_latest(str(auth["symbol"])) or {}
     price = float(bar.get("close") or 0)
-    nav = float((portfolio or {}).get("nav") or DEFAULT_NAV)
+    nav = live_nav or DEFAULT_NAV
     cash = float((portfolio or {}).get("cash") or 0)
     target = float(snapshot.get("target_weight") or 0)
     direction = str(auth["direction"])
@@ -653,7 +675,7 @@ def reconcile_authorization(
     with get_conn() as conn:
         member = _member(conn, org_id, actor_member_id)
         _require_role(member, "manager")
-        auth, _snapshot, portfolio, order, pos_qty = _execution_context(
+        auth, _snapshot, portfolio, order, pos_qty, _live_nav = _execution_context(
             conn, org_id, authorization_id
         )
         fill = (

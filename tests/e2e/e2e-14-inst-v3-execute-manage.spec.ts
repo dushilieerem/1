@@ -40,7 +40,8 @@ async function call(
 }
 
 test.beforeAll(async ({ request }) => {
-  for (const role of ["manager", "partner", "risk", "chairman", "execution"]) {
+  // 机构端只有四个角色；执行成交由 manager 承担（后端 execute_authorization 校验 role=manager）。
+  for (const role of ["manager", "partner", "risk", "chairman"]) {
     T[role] = await login(request, `inst_${role}`);
   }
   if (ALLOW_WRITE) {
@@ -56,11 +57,22 @@ test.beforeAll(async ({ request }) => {
 
 async function pickHeld(request: APIRequestContext): Promise<any> {
   const pf = await call(request, "GET", "/api/inst/portfolio", T.manager);
-  const pos = (pf.positions || []).find(
+  const candidates = (pf.positions || []).filter(
     (p: any) => Number(p.qty) > 1000 && p.company_id && p.symbol,
   );
-  expect(pos, "测试库没有可卖持仓").toBeTruthy();
-  return pos;
+  // 已关联退出议案的旧案不能再立议案（"该退出研究案已关联议案"），换一个有持仓的标的。
+  const all = await call(request, "GET", "/api/inst/cases", T.manager);
+  const caseByCompany = new Map<number, any>(
+    (all.items || []).map((c: any) => [Number(c.company_id), c]),
+  );
+  for (const pos of candidates) {
+    const kase = caseByCompany.get(Number(pos.company_id));
+    if (!kase) return pos;
+    const detail = await call(request, "GET", `/api/inst/cases/${kase.id}`, T.manager);
+    if (!detail?.exit_case?.proposal_id) return pos;
+  }
+  expect(candidates[0], "测试库没有可卖持仓").toBeTruthy();
+  throw new Error("可卖持仓都已关联退出议案，无法重复执行 e2e-14（需要重置测试库）");
 }
 
 test("执行 UI 与投资者管理：下单/对账/预警/退出研究", async ({ page, request }) => {
@@ -70,11 +82,24 @@ test("执行 UI 与投资者管理：下单/对账/预警/退出研究", async (
   const pos = await pickHeld(request);
   const symbol = String(pos.symbol);
   const beforeQty = Number(pos.qty);
+  // 卖出权重按"最多卖掉一半持仓"收敛：整仓卖光后投资管理页就没有持仓可挂预警了。
+  const pf = await call(request, "GET", "/api/inst/portfolio", T.manager);
+  const nav = Number(pf.nav || 0);
+  const px = Number(pos.last_close || 0);
+  const halfLot = Math.floor(beforeQty * 0.5 / 100) * 100;
+  const sellWeight =
+    nav > 0 && px > 0 ? Math.min(0.01, (halfLot * px) / nav) : 0.01;
 
   const created = await call(request, "POST", "/api/inst/cases", T.manager, {
     company_id: Number(pos.company_id),
   });
   const caseId = Number(created.id);
+  // 一股一流程：重复运行会返回已锁定的旧案，先重开再走研究（会作废旧议案与授权）。
+  if (created.created === false) {
+    await call(request, "POST", `/api/inst/cases/${caseId}/research/reopen`, T.manager, {
+      reason: "E2E 重复运行：重开研究案",
+    });
+  }
   const research = await call(
     request,
     "POST",
@@ -98,7 +123,7 @@ test("执行 UI 与投资者管理：下单/对账/预警/退出研究", async (
   await call(request, "POST", `/api/inst/cases/${caseId}/debate`, T.manager, { use_ai: false });
   const proposal = await call(request, "POST", `/api/inst/cases/${caseId}/proposals`, T.manager, {
     direction: "sell",
-    target_weight: 0.01,
+    target_weight: Number(sellWeight.toFixed(4)),
     price_low: 1,
     price_high: 100000,
     funding_source: "现金",
@@ -129,7 +154,7 @@ test("执行 UI 与投资者管理：下单/对账/预警/退出研究", async (
 
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(String(err)));
-  await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), T.execution);
+  await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), T.manager);
   await page.goto(`${BASE}/inst/execute?key=${encodeURIComponent(`auth:${authId}`)}`, {
     waitUntil: "networkidle",
   });
@@ -149,7 +174,7 @@ test("执行 UI 与投资者管理：下单/对账/预警/退出研究", async (
   await expect(page.getByRole("link", { name: /进入投资管理/ })).toBeVisible();
   expect(errors, `页面错误：${errors.join(" | ")}`).toEqual([]);
 
-  const auths = await call(request, "GET", "/api/inst/authorizations", T.execution);
+  const auths = await call(request, "GET", "/api/inst/authorizations", T.manager);
   const executed = (auths.items || []).find((a: any) => Number(a.id) === authId);
   expect(executed?.status).toBe("filled");
   const pfAfter = await call(request, "GET", "/api/inst/portfolio", T.manager);

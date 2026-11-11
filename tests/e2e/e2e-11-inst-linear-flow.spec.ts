@@ -42,7 +42,8 @@ async function call(
 }
 
 test.beforeAll(async ({ request }) => {
-  for (const role of ["manager", "partner", "chairman", "risk", "execution"]) {
+  // 机构端已收敛为四个角色（manager/partner/risk/chairman）；执行由 manager 承担。
+  for (const role of ["manager", "partner", "chairman", "risk"]) {
     T[role] = await login(request, `inst_${role}`);
   }
   if (ALLOW_WRITE) {
@@ -123,6 +124,12 @@ test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", asy
     company_id: Number(company.id),
   });
   const caseId = Number(created.id);
+  // 一股一流程：重复运行会返回已锁定的旧案，先重开再走研究（会作废旧议案与授权）。
+  if (created.created === false) {
+    await call(request, "POST", `/api/inst/cases/${caseId}/research/reopen`, T.manager, {
+      reason: "E2E 重复运行：重开研究案",
+    });
+  }
   const research = await call(
     request,
     "POST",
@@ -157,7 +164,14 @@ test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", asy
   await page.locator(".v3-stepper .v3-step").nth(3).click();
   const opinion = page.getByTestId("inst-investment-opinion");
   await opinion.fill("E2E 投资意见：关键假设成立、估值有安全边际才持有");
-  await page.getByTestId("inst-proposal-target").fill("0.01");
+  // 目标权重按组合盯市净值与可用现金收敛：测试库是长期累积的真实数据，
+  // 反复买入会把现金买光，固定 1% 会在若干轮后触发"现金不足"。
+  const pf = await call(request, "GET", "/api/inst/portfolio", T.manager);
+  const cashNow = Number(pf.cash || 0);
+  const navNow = Number(pf.nav || 0);
+  const affordable = navNow > 0 ? (cashNow * 0.5) / navNow : 0.01;
+  const targetWeight = Math.max(0.001, Math.floor(Math.min(0.01, affordable) * 1000) / 1000);
+  await page.getByTestId("inst-proposal-target").fill(targetWeight.toFixed(3));
   await page.getByTestId("inst-price-low").fill("1");
   await page.getByTestId("inst-price-high").fill("1000");
   await page.getByTestId("inst-proposal-create").click();
@@ -204,7 +218,7 @@ test("研究 R3 → 辩论 P3 → 三关 → 授权执行 → 持仓更新", asy
     request,
     "POST",
     `/api/inst/authorizations/${authId}/execute`,
-    T.execution,
+    T.manager,
     { price: Number(company.ref_price) || 42 },
   );
   expect(Number(executed.order?.qty || 0)).toBeGreaterThan(0);

@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 /**
- * 主观机构端 v3 冒烟：登录、三组导航、八个入口、结果页、旧入口重定向、窄屏。
+ * 主观机构端 v3 冒烟：登录、三组导航、九个入口、结果页、旧入口重定向、窄屏。
  * 默认连本地 Vite 9533 + 后端 8771；可用 INST_BASE / INST_API 覆盖。
  * 本文件只读，不写库。
  */
@@ -31,12 +31,13 @@ async function login(page: import("@playwright/test").Page) {
   await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), token);
 }
 
-test("v3 侧栏三组、八项，顺序固定", async ({ page }) => {
+test("v3 侧栏三组、九项，顺序固定", async ({ page }) => {
   await login(page);
   await page.goto(`${BASE}/inst`, { waitUntil: "networkidle" });
   await expect(page.locator("aside.v3-side nav.v3-nav a span")).toHaveText([
     "投资工作台",
     "项目流水线",
+    "股票总览",
     "价值分析",
     "多空辩论",
     "投委会审批",
@@ -50,11 +51,12 @@ test("v3 侧栏三组、八项，顺序固定", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "投资工作台" })).toBeVisible();
 });
 
-test("八个入口可达", async ({ page }) => {
+test("九个入口可达", async ({ page }) => {
   await login(page);
   const pages: Array<[string, string]> = [
     ["/inst", "INVESTMENT OFFICE"],
     ["/inst/pipeline", "PIPELINE"],
+    ["/inst/stocks", "STOCKS"],
     ["/inst/research", "RESEARCH"],
     ["/inst/debate", "DEBATE"],
     ["/inst/approvals", "DECISION"],
@@ -84,7 +86,8 @@ test("右上角搜索可进入已有股票研究", async ({ page }) => {
 test("流水线卡片进入只读结果页", async ({ page }) => {
   await login(page);
   await page.goto(`${BASE}/inst/pipeline`, { waitUntil: "networkidle" });
-  const card = page.locator("a.v3-project").first();
+  // 卡片是 div.v3-project，链接在其内的 a.v3-project-link；持仓卡会跳到投资管理，这里只取研究案。
+  const card = page.locator('a.v3-project-link[href*="/inst/pipeline/result"]').first();
   await expect(card).toBeVisible({ timeout: 20_000 });
   await card.click();
   await expect(page).toHaveURL(/\/inst\/pipeline\/result\?key=/);
@@ -97,7 +100,16 @@ test("流水线卡片进入只读结果页", async ({ page }) => {
 test("单流程视图项目横向排列", async ({ page }) => {
   await login(page);
   await page.goto(`${BASE}/inst/pipeline`, { waitUntil: "networkidle" });
-  await page.locator(".v3-rail-cell").nth(2).click();
+  // 单流程视图要求同一阶段至少 2 个项目；测试库是长期累积的真实数据，按实际计数挑阶段。
+  const rail = page.locator(".v3-rail-cell");
+  const labels = await rail.allInnerTexts();
+  const idx = labels.findIndex((t, i) => {
+    if (i === 0) return false; // 第一格是 ALL（全流程），点它不会进入单流程视图
+    const m = t.match(/(\d+)\s*个$/);
+    return !!m && Number(m[1]) >= 2;
+  });
+  test.skip(idx < 0, "测试库里没有同阶段 ≥2 个研究案，跳过单流程横向排列校验");
+  await rail.nth(idx).click();
   await expect(page.locator(".v3-board.single")).toBeVisible();
   const cards = page.locator(".v3-col-items.horizontal .v3-project");
   await expect(cards.first()).toBeVisible({ timeout: 20_000 });

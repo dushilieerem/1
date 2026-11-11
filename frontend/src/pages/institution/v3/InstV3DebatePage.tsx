@@ -254,7 +254,8 @@ export function InstV3DebatePage() {
   const autoDebateRef = useRef<string | null>(null);
   const selectedId = currentCaseId(params.get("key"));
   const version = detail?.versions?.[0] || null;
-  const latestProposal = detail?.proposals?.[0] || null;
+  // 研究重开后旧议案会被标 stale_at；它们只作历史，不应挡住新建议案。
+  const latestProposal = (detail?.proposals || []).find((p: any) => !p.stale_at) || null;
 
   const loadCases = async () => {
     const res = await instApi<{ items: CaseItem[] }>("/cases");

@@ -74,7 +74,25 @@ async function prepareProposal(request: APIRequestContext): Promise<number> {
       .map((p: any) => String(p.industry)),
   );
   // 优先用已持仓标的做卖出议案：卖出不计入在途买入资金占用，测试可重复运行。
-  const heldWithQty = positions.find((p: any) => p.company_id && Number(p.qty) > 0);
+  // 但已关联退出议案的旧案不能再建议案，逐个检查后换下一个持仓。
+  const allCases = await call(request, "GET", "/api/inst/cases", T.manager);
+  const caseByCompany = new Map<number, any>(
+    (allCases.items || []).map((c: any) => [Number(c.company_id), c]),
+  );
+  let heldWithQty: any = null;
+  for (const p of positions) {
+    if (!(p.company_id && Number(p.qty) > 0)) continue;
+    const kase = caseByCompany.get(Number(p.company_id));
+    if (!kase) {
+      heldWithQty = p;
+      break;
+    }
+    const detail = await call(request, "GET", `/api/inst/cases/${kase.id}`, T.manager);
+    if (!detail?.exit_case?.proposal_id) {
+      heldWithQty = p;
+      break;
+    }
+  }
   let company: any;
   let direction = "sell";
   let targetWeight = 0.01;
@@ -106,6 +124,12 @@ async function prepareProposal(request: APIRequestContext): Promise<number> {
     company_id: Number(company.id),
   });
   const caseId = Number(created.id);
+  // 一股一流程：重复运行会返回已锁定的旧案，先重开再走研究（会作废旧议案与授权）。
+  if (created.created === false) {
+    await call(request, "POST", `/api/inst/cases/${caseId}/research/reopen`, T.manager, {
+      reason: "E2E 重复运行：重开研究案",
+    });
+  }
   const research = await call(
     request,
     "POST",
@@ -187,7 +211,12 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
       timeout: 30_000,
     })
     .toBe("risk_precheck");
-  await expect(partner.page.getByText("合伙人环节已结束或尚未轮到", { exact: false })).toBeVisible();
+  // 页面不会自动跟随服务端状态刷新，重新加载后应显示"环节已结束"而不是复核按钮。
+  await partner.page.reload({ waitUntil: "networkidle" });
+  // 已提交过意见时页面显示"你已提交合伙人意见…"；从未操作时显示"环节已结束或尚未轮到"。
+  await expect(
+    partner.page.getByText(/你已提交合伙人意见|合伙人环节已结束或尚未轮到/).first(),
+  ).toBeVisible();
   await expect(partner.page.getByRole("button", { name: "复核通过" })).toHaveCount(0);
   await partner.ctx.close();
 
@@ -217,6 +246,15 @@ test("四套审批角色页面：当前关可操作、跨关被拒", async ({ br
   await expect(chairman.page.getByText("硬约束核查", { exact: false })).toHaveCount(0);
   await expect(chairman.page.getByRole("button", { name: /批准并生成授权/ })).toBeVisible();
   await chairman.page.getByRole("button", { name: /批准并生成授权/ }).click();
+  await expect
+    .poll(async () => (await call(request, "GET", `/api/inst/proposals/${proposalId}`, T.manager)).status, {
+      timeout: 30_000,
+    })
+    .toBe("authorized");
+  // 页面不自动跟随服务端状态刷新，重新加载后再校验授权文件。
+  await chairman.page.reload({ waitUntil: "networkidle" });
+  // 授权文件在「04 授权 AUTH 快照」分段下，切过去再校验。
+  await chairman.page.getByRole("button", { name: /授权 AUTH/ }).click();
   await expect(chairman.page.getByText("授权文件 AUTH", { exact: true })).toBeVisible({ timeout: 30_000 });
   const detail = await call(request, "GET", `/api/inst/proposals/${proposalId}`, T.manager);
   expect(detail.status).toBe("authorized");

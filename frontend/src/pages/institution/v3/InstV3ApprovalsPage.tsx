@@ -401,7 +401,8 @@ export function InstV3ApprovalsPage() {
   const canAct = (kind: "partner" | "risk" | "chairman") =>
     role === kind && detail?.status === stageForRole[kind];
   const roleStep = role === "partner" ? 1 : role === "risk" ? 2 : role === "chairman" ? 3 : 0;
-  const canViewStep = (step: number) => step === 0 || step === roleStep;
+  // 04 授权 AUTH 快照 是只读执行依据，任何能进审批台的账号都可查看（执行角色已并入 manager）。
+  const canViewStep = (step: number) => step === 0 || step === 4 || step === roleStep;
   const progressForStep = (step: number) =>
     step === 1 ? progress?.partner : step === 2 ? progress?.risk_precheck : step === 3 ? progress?.chairman : null;
   const chain = detail?.approval_chain || [];

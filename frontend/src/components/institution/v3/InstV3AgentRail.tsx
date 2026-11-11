@@ -34,7 +34,7 @@ export function InstV3AgentRail({
         <h3>{engine ? "执行引擎" : "Agent 面板"}</h3>
         <span className="v3-chip">{agents.length > 1 ? `${agents.length} 个角色 · 可切换` : engine ? "确定性服务" : "单角色"}</span>
       </div>
-      <div className="v3-agent-picks">
+      <div className={`v3-agent-picks${agents.length === 1 ? " single" : ""}`}>
         {agents.map((a) => (
           <button
             key={a.id}

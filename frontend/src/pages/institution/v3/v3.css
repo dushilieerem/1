@@ -402,7 +402,8 @@
 /* Agent 面板：右侧可切换的角色卡与当前角色详情 */
 .inst-v3 .v3-agent-rail .ar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; }
 .inst-v3 .v3-agent-rail .ar-head h3 { margin-top: 0; }
-.inst-v3 .v3-agent-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 6px; margin-top: 9px; }
+.inst-v3 .v3-agent-picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+.inst-v3 .v3-agent-picks.single { grid-template-columns: 1fr; }
 .inst-v3 .v3-agent-pick { text-align: left; border: 1px solid var(--v3-line); background: #fff; border-radius: 8px; padding: 7px 8px; cursor: pointer; min-width: 0; }
 .inst-v3 .v3-agent-pick:hover { border-color: #d7b6c6; background: var(--v3-bg-2); }
 .inst-v3 .v3-agent-pick.on { border-color: #e3c2d1; background: var(--v3-brand-soft); box-shadow: 0 0 0 1px rgba(160,58,92,.05) inset; }

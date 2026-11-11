@@ -462,7 +462,14 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
                 "SELECT * FROM inst_evidence WHERE case_id=%s ORDER BY id DESC LIMIT 200", (case_id,)
             ).fetchall()
         sessions = conn.execute(
-            "SELECT * FROM inst_debate_session WHERE case_id=%s ORDER BY id DESC", (case_id,)
+            """
+            SELECT s.*,
+                   (SELECT COUNT(*) FROM inst_debate_argument a
+                     WHERE a.session_id=s.id AND a.claim_id IS NOT NULL) AS claim_count
+              FROM inst_debate_session s
+             WHERE s.case_id=%s ORDER BY s.id DESC
+            """,
+            (case_id,),
         ).fetchall()
         proposals = conn.execute(
             "SELECT * FROM inst_proposal WHERE case_id=%s ORDER BY id DESC", (case_id,)

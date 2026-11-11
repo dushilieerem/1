@@ -118,7 +118,13 @@ type CaseItem = {
   version_status?: string | null;
   updated_at?: string | null;
   versions?: Version[];
-  debates?: Array<{ id: number; status: string; conclusion?: string }>;
+  debates?: Array<{
+    id: number;
+    status: string;
+    conclusion?: string;
+    research_version_id?: number;
+    claim_count?: number;
+  }>;
   proposals?: Proposal[];
 };
 
@@ -281,7 +287,13 @@ export function InstV3DebatePage() {
     autoDebateRef.current = key;
     try {
       const d = await instApi<CaseItem>(`/cases/${id}`);
-      if (d.debates?.[0]?.status === "completed") return;
+      const latestVersionId = Number(d.versions?.[0]?.id || 0);
+      const session = d.debates?.[0];
+      const sessionCurrent = Boolean(
+        session && (!latestVersionId || Number(session.research_version_id || 0) === latestVersionId),
+      );
+      const sessionHasCross = Number(session?.claim_count || 0) > 0;
+      if (session?.status === "completed" && sessionCurrent && sessionHasCross) return;
       const running = await latestAiJob(id, "debate");
       setBusy("auto-debate");
       if (running?.status === "running") {

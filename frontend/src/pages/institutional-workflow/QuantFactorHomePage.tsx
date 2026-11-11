@@ -531,6 +531,7 @@ export function QuantFactorHomePage(){
       <h2>我的挖掘任务</h2>
       <input className="ff-task-filter" value={taskQuery} onChange={e=>setTaskQuery(e.target.value)} aria-label="搜索挖掘任务" placeholder="搜索任务"/>
       <select className="ff-task-filter" value={taskFilter} onChange={e=>setTaskFilter(e.target.value as 'recent'|'all'|'ended')} aria-label="任务状态"><option value="recent">运行与待处理</option><option value="all">全部任务</option><option value="ended">已结束</option></select>
+      <p className="fine">默认只显示运行与待处理；已结束任务请切到“全部任务”或“已结束”。</p>
       <div className="ff-task-items">{topicCards.length?topicCards:<div className="empty">没有匹配的任务</div>}</div>
      </aside>
      {main}

@@ -393,7 +393,7 @@ def test_one_pager_metrics_are_deterministic() -> None:
     by_label = {m["label"]: m for m in metrics}
     assert by_label["价值区间"]["value"] == "43.43–72.38 元"
     assert by_label["有效维"]["value"] == "5/6"
-    assert by_label["低置信维"]["value"] == "6 项"
+    assert "低置信维" not in by_label
 
 
 def test_governance_guarantee_not_applicable_unlocks_core() -> None:

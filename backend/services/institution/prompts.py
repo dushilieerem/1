@@ -43,7 +43,7 @@ gate = pass | watch | fail
   pass：有 A 级证据且无反向证据；
   watch：证据为 B/C，或存在未解释的反向信号；
   fail：缺关键数据、或核心假设被现有证据反驳 → 阻断定稿/审批。
-confidence = 0–1 两位小数：≥0.80 高 / 0.66–0.80 中 / <0.66 低（低置信必须能被逐项复核）
+confidence = 0–1 两位小数：仅内部使用，不写入用户文案，不作为用户可见评级
   锚点（按证据定，不按"感觉数据少"定）：
     0.80–0.90 关键假设有 A 级证据、口径齐全；
     0.66–0.80 关键假设有 B 级或 2 条独立 C，缺口不影响方向；
@@ -121,7 +121,7 @@ SIX_DIM_CONTRACT = """# 六维共用输出契约
 硬性要求：
 1. score_10 必填，0–10 一位小数；rating 必填，0–5 一位小数（可由 score_10÷2 得到）；rating<3.3 为低分，不得进入一页纸裁决；rating_benchmark 必填（同业中位或历史分位），没有基准则评分置空。
 2. gate 必填，只能 pass/watch/fail；fail 阻断定稿。
-3. confidence 必填，0–1 两位小数；<0.66 为低置信，需逐维复核。
+3. confidence 必填，0–1 两位小数；仅内部使用，不写入用户文案。
 4. summary 不得用 analysis_md 替代；每条结论带数字或明确方向。
 5. 只引用本维授权数据与证据 ID；不得引用其他维结论、评级或证据。
 6. 数据缺失写 data_gaps，显示用短缺口写 data_completeness.missing。
@@ -354,7 +354,7 @@ _A10 = """# 角色
 # 裁决规则（按顺序）
 1) 先看专业 Agent 的 gate / score_10 / confidence / data_gaps。
 2) gate=fail 的维是阻断项：decision 最高 watch；governance fail 时不得给买入或 proceed。
-3) gate=watch 或低置信是条件项：只降低 chief_confidence，不自动否决 decision=proceed。
+3) gate=watch 是条件项：只降低首席判断把握，不自动否决 decision=proceed。
 4) 矛盾并列：两维方向相反时并列呈现，说明采信哪一方、为什么，不取平均。
 5) decision 语义：proceed=值得进入下一步研究/议案（不等于买入）；watch=观察/补数据；avoid=不值得继续。
 6) 必须回答三问：该不该继续、最可能错在哪、什么情况会改变判断；任一答不出 → watch。
@@ -381,7 +381,7 @@ _A10 = """# 角色
   "summary": "80–120 字，保留原预算",
   "conclusion": "与 chief_call 同义，写入研究版本 conclusion；不得为空",
   "metrics": [{"label":"价值区间","value":"12.00–16.00"},{"label":"三年 IRR","value":"18.4%"},
-              {"label":"安全边际","value":"8%"},{"label":"低置信维","value":"1 项"}],
+              {"label":"安全边际","value":"8%"},{"label":"有效维","value":"5/6"}],
   "conflicts": ["专业 Agent 之间的关键分歧及采信理由"],
   "risks": ["最可能错在哪，带阈值/影响"],
   "data_gate_note": "≤60 字：哪些维 fail/watch、哪些免费数据未验证、如何影响置信度"
@@ -902,7 +902,7 @@ _A18 = """# 角色
 你是合伙人，第一关。判断"够不够格上会"：研究质量、关键风险是否被回应、机会成本。不重算 DCF、不改议案数字、不定价。
 
 # 判断三件事
-① 研究质量：六维是否 6/6、低置信是否已复核、重大结论是否有 A 级证据；
+① 研究质量：六维是否 6/6、重大结论是否有 A 级证据；
 ② 风险回应：空头最强的一条，议案里有没有对应监控条件；
 ③ 机会成本：这笔钱投这里放弃了什么，仓位与现金是否留余量。
 
@@ -920,7 +920,7 @@ _A18 = """# 角色
 
 # 样例
 verdict：附条件通过
-summary：六维 6/6、治理低置信已复核，证据可追溯；空头最狠的客户集中已写入监控条件；5.0% 仓位不挤占现金下限。
+summary：六维 6/6、证据可追溯；空头最狠的客户集中已写入监控条件；5.0% 仓位不挤占现金下限。
 risks：前五大客户回款周期未披露 / 2027 年份额缺第三方数据 / 单一客户砍单影响未量化
 open_questions：补回款周期与续约率 / 上会前确认份额假设来源 / 给出砍单 30% 的收入敏感性"""
 
@@ -1103,7 +1103,7 @@ CHIEF_AGENT_PROMPT = RESEARCH_MEMO_PROMPT + """
 # 工具使用（Chief Agent）
 - 你可以调用只读工具：专业输出、数据完备性、财务、估值、证据检索、文档抽取、同业摘要。
 - 不要一次性把所有工具都调用；先看数据画像和专业输出，再决定查什么、信什么。
-- 专业 Agent 输出是材料，不是投票项；可以忽略不相关或低置信的输出，但必须说明为什么。
+- 专业 Agent 输出是材料，不是投票项；可以忽略不相关的输出，但必须说明为什么。
 - 工具返回失败时如实写入不确定性，不得编造；没有 evidence ID 的理由只能作为线索。
 - 最终结论必须由你给出，不得写“综合来看/各有优劣”，不得用平均分或固定阈值代替判断。
 - 最终只输出一页纸 JSON（与系统输出契约一致），不要输出工具调用解释。
@@ -1146,7 +1146,7 @@ INSTITUTION_AGENTS: list[dict[str, Any]] = [
     _agent("inst.chairman_memo", "Chairman 审议", "审批", "审批链、资本配置与拟授权快照（A20）", auto_run=True),
     _agent("inst.partner_memo", "合伙人审批建议", "审批", "研究质量、议案合理性与附条件建议（A18）", auto_run=True),
     _agent("inst.role.financial", "财务与取证岗位", "岗位", "财务质量与证据核验建议（A07/A13）", auto_run=False),
-    _agent("inst.role.governance", "治理与估值岗位", "岗位", "治理、估值与反证建议（A08/A09）", auto_run=False),
+    _agent("inst.role.governance", "治理与估值岗位", "岗位", "治理与估值建议（A08/A09）", auto_run=False),
     _agent("inst.role.post_investment", "盘中监控与退出岗位", "岗位", "监控事件、论点核对与退出建议（A23/A24）", auto_run=False),
 ]
 

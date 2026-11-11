@@ -147,7 +147,7 @@ def _memo_metrics(case: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[dict[str, Any]]:
-    """一页纸四张卡：价值区间、有效维、低置信维、PE，全部用确定性数据覆盖 AI 文案。"""
+    """一页纸三张卡：价值区间、有效维、PE，全部用确定性数据覆盖 AI 文案。"""
     dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
     valid = [
         d
@@ -155,18 +155,6 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
         if (d.get("score_10") is not None or d.get("rating") is not None)
         and str(d.get("gate") or "") != "fail"
     ]
-    low = []
-    for d in dims:
-        confidence = d.get("confidence")
-        rating = d.get("rating")
-        if (
-            confidence is not None
-            and float(confidence) < 0.66
-        ) or (
-            rating is not None
-            and float(rating) < 3.3
-        ):
-            low.append(d)
     valuation = version.get("valuation") or {}
     if any(valuation.get(k) is not None for k in ("low", "base", "high")):
         low_v = valuation.get("low")
@@ -191,7 +179,6 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
             "value": f"{len(valid)}/{len(dims) or 6}",
             "note": "有评分且 gate≠fail",
         },
-        {"label": "低置信维", "value": f"{len(low)} 项", "note": "confidence<0.66 或 rating<3.3"},
     ]
     symbol = str(case.get("symbol") or "")
     val = md.valuation_latest(symbol) or {}
@@ -218,7 +205,7 @@ def _merge_memo_metrics(
     by_label = {str(m.get("label") or ""): m for m in existing if m.get("label")}
     for item in required:
         by_label[item["label"]] = item
-    order = ["价值区间", "有效维", "低置信维", "PE_TTM"]
+    order = ["价值区间", "有效维", "PE_TTM"]
     merged = [by_label.pop(label) for label in order if label in by_label]
     merged.extend(by_label.values())
     memo["metrics"] = merged
@@ -1462,7 +1449,7 @@ def ai_role_run(
 AI_ROLE_CATALOG: tuple[tuple[str, str, str], ...] = (
     ("research", "研究统筹 / 产业 / 护城河", "inst.research_memo"),
     ("financial", "财务与取证", "inst.role.financial"),
-    ("governance", "治理 / 估值 / 反证", "inst.role.governance"),
+    ("governance", "治理 / 估值", "inst.role.governance"),
     ("debate", "看多 / 看空 / 主持", "inst.debate"),
     ("risk", "风控 / 合规 / 交易", "inst.risk_review"),
     ("post_investment", "投后 / 退出 / 复盘", "inst.role.post_investment"),

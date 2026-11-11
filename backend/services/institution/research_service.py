@@ -2290,7 +2290,7 @@ def _six_dim_list(value: Any) -> list[dict[str, Any]]:
 
 
 def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
-    """v3 研究定稿门禁：六维完整、低置信处理、数据门禁、证据与 hash。"""
+    """v3 研究定稿门禁：六维完整、数据门禁、证据与 hash。"""
     dims = _six_dim_list(version.get("six_dim"))
     by_key = {str(d.get("key")): d for d in dims if d.get("key")}
     checks: list[dict[str, Any]] = []
@@ -2305,25 +2305,6 @@ def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
         "detail": f"缺失：{', '.join(missing)}" if missing else "六维齐全",
     })
     blocking = blocking or bool(missing)
-
-    low: list[str] = []
-    for key in required:
-        d = by_key.get(key) or {}
-        rating = d.get("rating")
-        confidence = d.get("confidence")
-        resolved = ((version.get("dim_reviews") or {}).get(key) or {}).get("decision") == "approve"
-        is_low = (rating is not None and float(rating) < 3.3) or (
-            confidence is not None and float(confidence) < 0.66
-        )
-        if is_low and not resolved:
-            low.append(str(d.get("title") or key))
-    checks.append({
-        "key": "low_confidence",
-        "label": "低置信项已处理",
-        "status": "block" if low else "pass",
-        "detail": f"未处理：{'、'.join(low)}" if low else "无低置信项",
-    })
-    blocking = blocking or bool(low)
 
     data_fail: list[str] = []
     for key in required:
@@ -2366,7 +2347,7 @@ def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
 
 
 def research_gate(org_id: int, version_id: int) -> dict[str, Any]:
-    """只读预览 R3 门禁；锁定前页面据此显示缺口与需处理的低置信项。"""
+    """只读预览 R3 门禁；锁定前页面据此显示缺口与阻断项。"""
     with get_conn() as conn:
         row = conn.execute(
             """

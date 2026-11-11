@@ -30,6 +30,7 @@ DOC_FIELDS: dict[str, str] = {
     "commitment_history": "承诺兑现记录",
     "dividend_financing": "分红/回购/融资历史",
     "mgmt_change": "高管变动",
+    "inquiry_letter": "问询函及回复",
 }
 
 BUSINESS_DOC_FIELDS: tuple[str, ...] = (
@@ -61,7 +62,7 @@ GOVERNANCE_CORE_FIELDS: tuple[str, ...] = (
 
 DOC_DIM_MAP: dict[str, tuple[str, ...]] = {
     "business_model": BUSINESS_DOC_FIELDS,
-    "financial": ("cost_structure", "contract_liabilities"),
+    "financial": ("cost_structure", "contract_liabilities", "inquiry_letter"),
     "governance": GOVERNANCE_DOC_FIELDS,
 }
 

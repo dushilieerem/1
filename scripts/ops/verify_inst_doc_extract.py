@@ -29,6 +29,7 @@ FIELD_QA: dict[str, tuple[float, int, tuple[str, ...]]] = {
     "litigation_penalty": (0.65, 60, ("诉讼", "仲裁", "处罚", "监管")),
     "commitment_history": (0.65, 60, ("承诺",)),
     "mgmt_change": (0.60, 60, ("辞职", "聘任", "离任", "换届", "选举", "高级管理人员")),
+    "inquiry_letter": (0.70, 60, ("问询函", "关注函", "监管函", "审核意见函")),
 }
 
 BASE_SQL = """

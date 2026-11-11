@@ -688,6 +688,13 @@ def _data_completeness(
             financial_have.append(f"不适用：{label}（{reason}）")
         elif status == "pending":
             financial_missing.append(f"{label}（抽取结果待复核）")
+    inquiry_status = docs.get("inquiry_letter", "missing")
+    if inquiry_status == "have":
+        financial_have.append("交易所问询函及回复原文（已校验）")
+        if "问询函与回复" in financial_missing:
+            financial_missing.remove("问询函与回复")
+    elif inquiry_status == "pending":
+        financial_missing.append("问询函及回复（抽取结果待复核）")
     governance_have: list[str] = []
     governance_missing = [
         "实控人/董事长履历",

@@ -19,6 +19,7 @@ function fixture(handler?:(id:string)=>Promise<Response>|Response,permission='wr
  globalThis.fetch=async(input,init)=>{const path=new URL(String(input),'http://localhost').pathname;calls.push((init?.method||'GET')+' '+path);
   if(path.endsWith('/reference'))return Response.json({items:catalog.map((f,i)=>({id:i?'two':'one',source_library:f.library,source_factor_id:f.name,factor_name:f.name,display_name:f.display_name,definition:f.description,category:f.category_label,status:'imported_unreviewed',metrics_status:'pending',reference:null}))});
   if(path.endsWith('/assets'))return Response.json({assets:[]});if(path.endsWith('/re-catalog'))return Response.json({ok:true,factors:catalog});if(path.endsWith('/factor/index'))return Response.json({libraries:{}});
+  if(path.endsWith('/reports')){const id=path.split('/').at(-2)!;return Response.json({factor:{imported_id:id,library_name:'主因子库',factor_id:id==='one'?'SV01_0001':'SV02_0001'},history_summaries:[],saved_reports:[],private_reports_allowed:false});}
   if(path.endsWith('/source')){const id=path.split('/').at(-2)!;return handler?handler(id):Response.json(source(id,id==='one'?'SV01_0001':'SV02_0001'));}
   if(path.includes('/detect/projects')){const data=JSON.parse(String(init?.body));writes.push(data);return Response.json({project:{...data,id:'new-project'}});}
   throw Error('unexpected '+path);
@@ -52,7 +53,7 @@ test('看过与复制源码后建立研究仍用原库稳定ID，不提交自定
  const config=data.writes[1].config;assert.deepEqual(config.factorCodes,['SV01_0001']);assert.deepEqual(config.factorLibraries,{'SV01_0001':'主因子库'});assert.equal(config.draftFactor,undefined);assert.ok(!JSON.stringify(data.writes).includes(CODE));assert.ok(!data.calls.some(x=>/f0|backtest|source-check/.test(x)));
 });
 test('只读身份可看源码和空验证记录，不能建立研究',async()=>{
- fixture(undefined,'read');const view=render(<MemoryRouter><QuantFactorLibraryPage/></MemoryRouter>);const dialog=await open(view);assert.equal((within(dialog).getByRole('button',{name:'基于此因子建立研究'}) as HTMLButtonElement).disabled,true);fireEvent.click(within(dialog).getByRole('tab',{name:'验证记录'}));assert.ok(within(dialog).getByText('暂无本机构已登记的复现验证记录。'));assert.ok(within(dialog).getByText('暂无历史参考报告。'));fireEvent.click(within(dialog).getByRole('tab',{name:'实现代码'}));await within(dialog).findByLabelText('因子源码');
+ fixture(undefined,'read');const view=render(<MemoryRouter><QuantFactorLibraryPage/></MemoryRouter>);const dialog=await open(view);assert.equal((within(dialog).getByRole('button',{name:'基于此因子建立研究'}) as HTMLButtonElement).disabled,true);fireEvent.click(within(dialog).getByRole('tab',{name:'回测报告'}));assert.ok(within(dialog).getByText('暂无本机构已登记的复现验证记录。'));await within(dialog).findByText('暂无已保存的历史回测摘要。');fireEvent.click(within(dialog).getByRole('tab',{name:'实现代码'}));await within(dialog).findByLabelText('因子源码');
 });
 
 test('原生对话框复制回退仅选择内部textarea，失败时保留代码选区和手动提示',async()=>{

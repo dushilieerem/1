@@ -490,6 +490,19 @@ def imported_factor_source(imported_id:str,ctx=Depends(require_quant_user)):
     except SourceLookupError as exc:raise HTTPException(exc.status,{'code':exc.code,'error':str(exc)}) from None
 
 
+@router.get('/imports/{imported_id}/reports')
+def imported_factor_reports(imported_id:str,cursor:str|None=None,limit:int=50,ctx=Depends(require_quant_user)):
+    from services.quant_factor.library_reports import imported_reports
+    from services.quant_factor.library_source import SourceLookupError
+    try:return imported_reports(*identity(ctx),imported_id,bool(ctx.get('can_write')),cursor,limit)
+    except SourceLookupError as exc:raise HTTPException(exc.status,{'code':exc.code,'error':str(exc)}) from None
+
+@router.get('/assets/{asset_id}/reports/{phase}')
+def registered_asset_report(asset_id:str,phase:Literal['development','sealed'],ctx=Depends(require_quant_user)):
+    from services.quant_factor.assets import full_report
+    return invoke(full_report,*identity(ctx),asset_id,phase)
+
+
 class AutonomyEnableBody(BaseModel):
     model_config=ConfigDict(extra='forbid')
     scope_id:str=Field(min_length=1,max_length=100)

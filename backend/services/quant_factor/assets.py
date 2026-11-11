@@ -197,3 +197,8 @@ def detail(uid,org,asset_id,full=False,c=None):
         sealed=connection.execute('SELECT result,report_id FROM quant_factor_sealed_validations WHERE org_id=%s AND candidate_id=%s',(org,asset['candidate_id'])).fetchone()
     if not sealed or digest(sealed['result'])!=asset['sealed_report']['result_hash']:raise WorkflowError('封存报告与登记时的证据指纹不一致')
     return serialize(asset,org,full)
+
+
+def full_report(uid,org,asset_id,phase):
+    from .asset_reports import full_report as read_report
+    return read_report(uid,org,asset_id,phase)

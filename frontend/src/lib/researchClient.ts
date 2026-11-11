@@ -34,6 +34,10 @@ export function researchPagePath(path: string) {
   .replace(/^\/strategy\/research(?=\/|$)/, "/quant/strategy")
   .replace(/^\/(factor|strategy)\/library(?=\/|$)/, "/quant/$1/library");
 }
+const reportReadPaths = [
+ /^\/factor-workflow\/imports\/[^/]+\/reports$/,
+ /^\/factor-workflow\/assets\/[^/]+\/reports\/(development|sealed)$/,
+];
 const protectedPaths = [
  /^\/strategy-research\/topics(?:\/[^/]+(?:\/(ledger|branches))?)?$/,
  /^\/strategy-research\/branches\/[^/]+\/backtest$/,
@@ -91,7 +95,8 @@ export async function researchFetch(input: string | URL | Request, init?: Reques
    headers.delete("Authorization");
  } else {
    const relative = url.pathname.replace(/^\/api(?:\/inst\/quant)?/, "");
-   if (!url.pathname.startsWith("/api/") || !protectedPaths.some(p => p.test(relative))) throw new Error("此功能未开放给机构量化工作区");
+   if (!url.pathname.startsWith("/api/") || ![...protectedPaths,...reportReadPaths].some(p => p.test(relative))) throw new Error("此功能未开放给机构量化工作区");
+   if (reportReadPaths.some(p => p.test(relative)) && method !== "GET") throw new Error("报告入口仅支持只读查看");
    const s = getQuantSession();
    if (!s) throw new Error("请登录机构量化平台");
    if (method !== "GET" && s.permissions.quant !== "write" && !(method === "POST" && s.permissions.quant === "review" && /^\/factor-workflow\/reviews\/[^/]+(?:\/(claim|independent-opinion))?$/.test(relative))) throw new Error("当前机构角色没有写入权限");

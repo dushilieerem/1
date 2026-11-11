@@ -303,3 +303,21 @@
 .quant-shell .ff-library-drawer .ff-source-code{margin:14px 0;padding:16px;max-height:52dvh;overflow:auto;white-space:pre;tab-size:4;border:1px solid var(--border);border-radius:8px;background:var(--bg);font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace}
 .quant-shell .ff-library-drawer .ff-kv dd{overflow-wrap:anywhere}
 .quant-shell .ff-library-drawer .ff-kv dt{font-size:12px}
+
+/* UX106: real saved report summaries and immutable asset report links. */
+.quant-shell .ff-library-reports .ff-report-section{padding:0 0 22px;margin:0 0 22px;border-bottom:1px solid var(--line)}
+.quant-shell .ff-report-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.quant-shell .ff-report-heading h3{margin-top:0}.quant-shell .ff-library-reports h3{font-size:16px}
+.quant-shell .ff-library-reports .field select{width:100%;min-width:0}
+.quant-shell .ff-report-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 22px;margin:22px 0}
+.quant-shell .ff-report-stats dt{font-size:12px;color:var(--muted)}
+.quant-shell .ff-report-stats dd{margin:4px 0 0;font-size:21px;font-weight:600;font-variant-numeric:tabular-nums}
+.quant-shell .ff-saved-report{padding:16px 0;border-top:1px solid var(--line)}
+.quant-shell .ff-saved-report:first-child{border-top:0;padding-top:0}
+.quant-shell .ff-saved-report p{margin:8px 0;color:var(--muted);font-size:12px}
+.quant-shell .ff-saved-report .ff-report-heading>strong{font-size:14px;min-width:0;overflow-wrap:anywhere}
+.quant-shell .ff-saved-report .ff-report-heading>.btn{flex:none}
+.quant-shell .ff-asset-report-actions{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}
+@media(max-width:600px){.quant-shell .ff-report-stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.quant-shell .ff-report-stats dd{font-size:19px}}
+
+.quant-shell .ff-library-reports .ff-kv>div{display:contents}

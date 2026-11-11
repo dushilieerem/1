@@ -270,6 +270,7 @@ export default function App() {
           <Route path="/quant/factor/reports" element={<QuantFactorReportsPage />} />
           <Route path="/quant/factor/:projectId/reports" element={<QuantFactorReportsPage />} />
           <Route path="/quant/factor/report/:runId" element={<QuantFactorReportPage />} />
+          <Route path="/quant/factor/assets/:assetId/report/:phase" element={<QuantFactorReportPage />} />
           <Route path="/quant/factor/:projectId" element={<FactorWorkflowRedirect />} />
           <Route path="/quant/factor/library" element={<QuantFactorLibraryPage />} />
           <Route path="/quant/factor/ledger" element={<QuantFactorLedgerPage />} />

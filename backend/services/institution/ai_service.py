@@ -287,6 +287,8 @@ def _strip_gap_clauses(value: Any) -> str:
 
 def _humanize_memo_output(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data or {})
+    # 门禁只做内部元数据，不进入用户可见的一页纸（包括旧缓存）。
+    out.pop("data_gate_note", None)
     for field in _HUMAN_FIELDS:
         if out.get(field):
             text = _humanize_user_text(out[field])

@@ -416,8 +416,9 @@ export function InstV3DebatePage() {
   const adoptAdvice = () => {
     const f = advice?.framework;
     if (!f) return;
-    if (f.direction) setDirection(f.direction);
-    if (f.target_weight != null) setTarget(String(f.target_weight));
+    const nextDirection = String(f.direction || "");
+    if (["buy", "sell", "exit"].includes(nextDirection)) setDirection(nextDirection);
+    if (f.target_weight != null && Number(f.target_weight) > 0) setTarget(String(f.target_weight));
     setPriceLow(f.price_low != null ? String(f.price_low) : "");
     setPriceHigh(f.price_high != null ? String(f.price_high) : "");
     if (f.funding_source) setFunding(f.funding_source);
@@ -711,7 +712,12 @@ export function InstV3DebatePage() {
                     </dl>
                     <div className="v3-note" style={{ marginTop: 8 }}>投资意见：{advice.framework?.investment_opinion || "—"}</div>
                   </div>
-                  <button className="v3-btn primary" style={{ marginTop: 8 }} disabled={advice.recommendation === "avoid" || advice.recommendation === "hold"} onClick={adoptAdvice}>
+                  {advice.recommendation === "avoid" || advice.recommendation === "hold" ? (
+                    <div className="v3-note" style={{ marginTop: 8 }}>
+                      主持裁决为“补充研究”，AI 建议暂不买入。采纳只填入价格带、监控条件和投资意见；方向与仓位由投资经理自行判断后提交。
+                    </div>
+                  ) : null}
+                  <button className="v3-btn primary" style={{ marginTop: 8 }} disabled={!advice} onClick={adoptAdvice}>
                     采用建议填入议案
                   </button>
                 </div>

@@ -1090,6 +1090,18 @@ def monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     return {"ok": True, **svc.monitor(org_id)}
 
 
+@router.get("/monitor/exit-advice")
+def monitor_exit_advice(
+    symbol: str, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {"ok": True, **svc.exit_advice(org_id, symbol)}
+    except Exception as exc:
+        raise _handle(exc) from exc
+
+
 @router.post("/monitor/scan")
 def scan_monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     """自动扫描持仓：复核到期、价格异常，登记监控事件。"""

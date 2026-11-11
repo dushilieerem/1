@@ -108,6 +108,80 @@ def monitor(org_id: int) -> dict[str, Any]:
     return {"portfolio": portfolio(org_id), **repo.monitor(OrgScope(org_id))}
 
 
+def exit_advice(org_id: int, symbol: str) -> dict[str, Any]:
+    """组合经理 + 风控两个 Agent 的持仓建议，只给一个动作。"""
+    data = monitor(org_id)
+    positions = (data.get("portfolio") or {}).get("positions") or []
+    pos = next((p for p in positions if str(p.get("symbol")) == symbol), None)
+    if not pos:
+        return {"symbol": symbol, "stance": "hold", "label": "继续持有", "pm": "当前无持仓记录。", "risk": "无敞口，退出不触发硬约束。"}
+    company_id = pos.get("company_id")
+    with get_conn() as conn:
+        if not company_id:
+            row = conn.execute(
+                "SELECT id FROM inst_company WHERE org_id=%s AND symbol=%s LIMIT 1", (org_id, symbol)
+            ).fetchone()
+            company_id = int(row["id"]) if row else None
+    weight = float(pos.get("weight") or 0) * 100
+    cost = float(pos.get("cost") or 0)
+    last = float(pos.get("last_close") or pos.get("market_value") or 0)
+    pnl = ((last - cost) / cost * 100) if cost > 0 and last > 0 else 0.0
+    thesis = next(
+        (t for t in (data.get("theses") or []) if int(t.get("company_id") or 0) == int(company_id or 0)),
+        None,
+    )
+    events = [
+        e for e in (data.get("events") or [])
+        if int(e.get("company_id") or 0) == int(company_id or 0)
+    ][:3]
+    exits = [
+        x for x in (data.get("exits") or [])
+        if int(x.get("company_id") or 0) == int(company_id or 0) and str(x.get("status") or "") not in {"closed", "cancelled"}
+    ]
+    exposure = float(((data.get("portfolio") or {}).get("industry_exposure") or {}).get(pos.get("industry") or "", 0)) * 100
+    severe = any(str(e.get("severity") or "") in {"high", "critical"} for e in events)
+    review_due = str((thesis or {}).get("review_due") or "")[:10]
+    overdue = bool(review_due and review_due < date.today().isoformat())
+    if exits or severe or overdue or str((thesis or {}).get("status") or "") in {"invalid", "closed"}:
+        stance, label = "exit", "平仓"
+    elif weight > 10 or pnl < -10:
+        stance, label = "trim", "减仓持有"
+    else:
+        stance, label = "hold", "继续持有"
+    raw_event = events[0].get("detail") if events else ""
+    event_text = json.dumps(raw_event, ensure_ascii=False) if isinstance(raw_event, (dict, list)) else str(raw_event or "")
+    pm = f"仓位 {weight:.1f}%，现价较成本 {pnl:+.1f}%"
+    if overdue:
+        pm += f"，论点复核已逾期（{review_due}）"
+    elif event_text:
+        pm += f"；最近事件：{event_text[:36]}"
+    if stance == "exit":
+        pm += "，建议平仓。"
+    elif stance == "trim":
+        pm += "，建议减仓持有。"
+    else:
+        pm += "，建议继续持有。"
+    risk = f"单票 {weight:.1f}%"
+    risk += "，接近/超过 15% 上限，退出需分批。" if weight > 13 else "，低于 15% 单票上限"
+    if exposure:
+        risk += f"；行业敞口 {exposure:.1f}%。"
+    else:
+        risk += "。"
+    if stance == "exit":
+        risk += "硬约束不阻断平仓，可执行。"
+    elif stance == "trim":
+        risk += "减仓不触发硬约束。"
+    else:
+        risk += "当前退出可行性正常。"
+    return {
+        "symbol": symbol,
+        "stance": stance,
+        "label": label,
+        "pm": pm,
+        "risk": risk,
+    }
+
+
 def scan_holdings(org_id: int, *, actor_member_id: int | None = None) -> dict[str, Any]:
     """自动监控：复核到期与持仓价格异常，登记监控事件；7 天内同类不重复。"""
     with get_conn() as conn:

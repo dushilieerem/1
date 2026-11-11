@@ -6,6 +6,8 @@ export type AgentPanelDef = {
   tools?: string;
   output?: string;
   role?: string;
+  advice?: string;
+  adviceTone?: string;
   engine?: boolean;
 };
 
@@ -52,6 +54,7 @@ export function InstV3AgentRail({
           <span className={`v3-chip ${engine ? "info" : "gold"}`}>{engine ? "非 Agent · 确定性" : "当前 Agent"}</span>
         </div>
         <div className="ad-role">{active.role || "—"}</div>
+        {active.advice ? <div className={`v3-agent-advice ${active.adviceTone || ""}`}>{active.advice}</div> : null}
         <div className="ad-grid">
           <div><div className="ad-k">模型</div><div className="ad-v">{active.model || "—"}</div></div>
           <div><div className="ad-k">配置</div><div className="ad-v">已启用</div></div>

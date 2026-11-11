@@ -110,11 +110,24 @@ test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ 
           { id: "new-energy", name: "新能源", summary: "供需与价格周期", heat: 58, valuationPercentile: 35, turnoverPercentile: 61, riskTags: [{ label: "估值分位 35%", label_en: "Valuation percentile 35%", tone: "gray" }] },
         ],
         industryHeat: [
-          { id: "industry:电子", name: "电子", summary: "平均涨跌 +2.39%，成交额 5458 亿，主力净流入 -141.3 亿；近 7 日资讯 1794 条。", heat: 94.4, riskTags: [{ label: "平均 +2.39%", tone: "red" }, { label: "主力 -141.3 亿", tone: "green" }] },
-          { id: "industry:电力设备", name: "电力设备", summary: "平均涨跌 +3.79%，成交额 2109 亿。", heat: 95.1, riskTags: [{ label: "平均 +3.79%", tone: "red" }] },
-          { id: "industry:银行", name: "银行", summary: "平均涨跌 +1.20%，成交额 900 亿。", heat: 80.0, riskTags: [{ label: "平均 +1.20%", tone: "red" }] },
+          { id: "industry:电子", name: "电子", summary: "平均涨跌 +2.39%，成交额 5458 亿，主力净流入 -141.3 亿；近 7 日资讯 1794 条。", heat: 94.4, detailAvailable: true, riskTags: [{ label: "平均 +2.39%", tone: "red" }, { label: "主力 -141.3 亿", tone: "green" }] },
+          { id: "industry:电力设备", name: "电力设备", summary: "平均涨跌 +3.79%，成交额 2109 亿。", heat: 95.1, detailAvailable: true, riskTags: [{ label: "平均 +3.79%", tone: "red" }] },
+          { id: "industry:银行", name: "银行", summary: "平均涨跌 +1.20%，成交额 900 亿。", heat: 80.0, detailAvailable: true, riskTags: [{ label: "平均 +1.20%", tone: "red" }] },
         ],
         learn: { title: "估值分位：贵不贵，跟什么比？", titleEn: "Valuation percentile: expensive versus what?", link: "/learn" },
+      }),
+    }),
+  );
+  await page.route("**/api/invest/topic/**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "industry:电子", name: "电子", summary: "行业等权热度深读。", heat: 94.4,
+        valuationPercentile: null, turnoverPercentile: null, updatedAt: "2026-11-04",
+        facts: [{ title: "行业涨跌", detail: "电子行业等权平均上涨 2.39%。", source: "个股收盘", date: "2026-11-04" }],
+        keyPoints: [], risks: [], stocks: [], news: [], spark: [], isDemo: false,
+        dataSource: "全市场个股等权", newsIsDemo: false, detailAvailable: true,
+        baseRate: { medianReturn: null, maxDrawdown: null, winRate: null, sample: 0, period: "行业历史分布未提供" },
       }),
     }),
   );
@@ -128,6 +141,10 @@ test("首页改版：今日卡/概览/热点，底部不再有我的", async ({ 
   await expect(page.locator(".overview-row")).toHaveCount(3);
   await expect(page.getByRole("heading", { name: "今日行业热度" })).toBeVisible();
   await expect(page.locator(".hot-row")).toHaveCount(3);
+  await page.locator(".hot-row").first().click();
+  await expect(page.getByRole("heading", { name: "热点深读" })).toBeVisible({ timeout: 20_000 });
+  await page.goBack();
+  await expect(page.locator(".today-card")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".card")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "底部导航" }).getByText("我的")).toHaveCount(0);
   await page.getByRole("button", { name: "查看完整日报" }).click();
@@ -385,9 +402,11 @@ test("回测报告 AI 按六个板块渲染并展示表格/图表", async ({ pag
   await expect(bars).toHaveCount(2);
   const barStyle = await bars.evaluateAll((nodes) => nodes.map((node) => ({
     width: Number(node.getAttribute("width") || 0),
+    height: Number(node.getAttribute("height") || 0),
     fill: node.getAttribute("fill"),
   })));
   expect(barStyle.every((bar) => bar.width <= 40)).toBeTruthy();
+  expect(Math.max(...barStyle.map((bar) => bar.height))).toBeGreaterThan(40);
   expect(barStyle.map((bar) => bar.fill)).toContain("#16a34a");
   expect(barStyle.map((bar) => bar.fill)).toContain("#e54d42");
   await noHorizontalOverflow(page);

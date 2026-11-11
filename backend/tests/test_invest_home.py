@@ -130,7 +130,7 @@ def test_industry_heat_uses_turnover_change_flow_and_news():
     assert [x["name"] for x in out] == ["电子", "银行"]
     assert out[0]["heat"] > out[1]["heat"]
     assert out[0]["fundFlow"] == 5.0
-    assert out[0]["detailAvailable"] is False
+    assert out[0]["detailAvailable"] is True
 
 
 def test_build_topics_returns_risk_tags_and_spark(monkeypatch):

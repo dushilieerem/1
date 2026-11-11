@@ -26,21 +26,23 @@ function BarChart({ chart }: { chart: AiChartData }) {
   const plotBottom = 22;
   const plotW = w - plotLeft - plotRight;
   const plotH = h - plotTop - plotBottom;
-  const yMin = Math.min(0, ...values);
-  const yMax = Math.max(0, ...values);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const yMin = Math.min(0, rawMin);
+  const yMax = Math.max(0, rawMax) * 1.08;
   const span = yMax - yMin || 1;
   const y = (value: number) => plotTop + ((yMax - value) / span) * plotH;
   const zeroY = y(0);
   const slot = plotW / n;
   const barW = Math.min(40, slot * 0.55);
   const centerX = (i: number) => plotLeft + (i + 0.5) * slot;
-  const fmt = (value: number) => `${value.toFixed(Math.abs(value) < 1 ? 2 : 1)}${chart.unit || ""}`;
-  const ticks = Array.from(new Set([yMax, 0, yMin]));
+  const fmt = (value: number) => value.toFixed(1);
+  const ticks = Array.from(new Set([rawMax, 0, yMin]));
   return (
     <div className="ai-chart-box">
       <div className="card-title-row">
         <b>{t(chart.title || "数据图表", chart.title_en || "Data chart")}</b>
-        <span className="hint">{chart.source || chart.unit || ""}</span>
+        <span className="hint">{[chart.source, chart.unit].filter(Boolean).join(" · ")}</span>
       </div>
       <svg
         className="ai-bars-svg"

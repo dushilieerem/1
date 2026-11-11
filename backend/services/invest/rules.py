@@ -929,7 +929,106 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
     }
 
 
+
+def build_industry_topic(conn: Any, name: str) -> dict[str, Any] | None:
+    """行业热度深读：用现有行情、资金流、资讯计算，不依赖主题成分映射。"""
+    all_stocks = rows(conn, "SELECT * FROM stocks WHERE COALESCE(market,'CN')='CN'")
+    industry_stocks = [s for s in all_stocks if str(s.get("industry") or "") == name and s.get("price") is not None]
+    if not industry_stocks:
+        return None
+    data_date = latest_date(conn)
+    flow_rows = rows(
+        conn,
+        """
+        SELECT s.industry AS industry, SUM(f.main_net_inflow) AS amount
+          FROM md_fund_flow_daily f
+          JOIN stocks s ON s.code = split_part(f.symbol, '.', 1)
+         WHERE f.trade_date = (
+             SELECT MAX(trade_date) FROM md_fund_flow_daily WHERE trade_date <= ?::date
+         )
+         GROUP BY s.industry
+        """,
+        (data_date,),
+    )
+    flow_sector = [
+        {"name": str(r.get("industry")), "value": round(float(r.get("amount") or 0) / 1e8, 2)}
+        for r in flow_rows if r.get("industry")
+    ]
+    news_rows = rows(
+        conn,
+        """
+        SELECT s.industry AS industry, COUNT(*) AS n
+          FROM news n
+          JOIN stocks s ON s.code = n.code
+         WHERE n.published_at::timestamptz >= ?::date - INTERVAL '7 days'
+           AND n.published_at::timestamptz < ?::date + INTERVAL '1 day'
+         GROUP BY s.industry
+        """,
+        (data_date, data_date),
+    )
+    news_counts = {str(r.get("industry")): int(r.get("n") or 0) for r in news_rows if r.get("industry")}
+    heat_items = _industry_heat(all_stocks, flow_sector, news_counts, limit=100)
+    item = next((x for x in heat_items if x["name"] == name), None)
+    if not item:
+        return None
+    industry_stocks.sort(key=lambda s: (_num(s.get("market_cap")) or 0), reverse=True)
+    stock_cards = [
+        {
+            "code": s["code"], "name": s.get("name"), "industry": s.get("industry"),
+            "price": s.get("price"), "changePct": pct(_num(s.get("price")) or 0, _num(s.get("prev_close")) or _num(s.get("price")) or 0),
+        }
+        for s in industry_stocks[:8]
+    ]
+    codes = [s["code"] for s in industry_stocks[:20]]
+    news = rows(
+        conn,
+        "SELECT * FROM news WHERE code IN (SELECT code FROM stocks WHERE industry=? AND COALESCE(market,'CN')='CN') "
+        "ORDER BY published_at::timestamptz DESC LIMIT 6",
+        (name,),
+    )
+    # 行业等权走势：用成分股归一化后逐日平均，缺失日跳过。
+    series: dict[str, list[float]] = {}
+    for code in codes[:12]:
+        bars = stock_bars(conn, code, 90)
+        base = next((float(b["close"]) for b in bars if b.get("close")), None)
+        if not base:
+            continue
+        for b in bars:
+            if b.get("close") is None:
+                continue
+            series.setdefault(str(b["date"]), []).append(float(b["close"]) / base * 100)
+    spark = [{"time": day, "value": round(sum(vals) / len(vals), 2)} for day, vals in sorted(series.items()) if vals]
+    as_of = data_date
+    facts = [
+        {"title": "行业涨跌", "detail": f"{name} 全市场个股等权平均涨跌 {item['change']:+.2f}%。", "source": "个股收盘", "date": as_of},
+        {"title": "成交与资金", "detail": f"成交额 {item['amount']:.0f} 亿元" + (f"，主力净流入 {item['fundFlow']:+.2f} 亿元。" if item.get("fundFlow") is not None else "；主力资金未提供。"), "source": "行情 + 资金流", "date": as_of},
+        {"title": "资讯热度", "detail": f"近 7 日相关资讯 {item['newsCount']} 条，热度综合分 {item['heat']:.1f}。", "source": "公开资讯", "date": as_of},
+    ]
+    key_points = [
+        f"行业热度 {item['heat']:.1f}，平均涨跌 {item['change']:+.2f}%。",
+        f"成交额 {item['amount']:.0f} 亿元，近 7 日资讯 {item['newsCount']} 条。",
+        "热度是活动度描述，不是涨跌预测。",
+    ]
+    risks = [
+        {"title": "行业口径", "detail": "行业分类来自证券主数据；不同分类标准下成分可能不同。"},
+        {"title": "资金口径", "detail": "主力资金来自逐日汇总，未提供逐笔成交明细。"},
+        {"title": "样本与时效", "detail": f"数据截至 {as_of}，行业等权平均不代表指数收益。"},
+    ]
+    base_rate = {"medianReturn": None, "maxDrawdown": None, "winRate": None, "sample": 0, "period": "行业历史分布未提供", "note": "当前没有行业级 base rate。"}
+    return {
+        "id": f"industry:{name}", "name": name, "summary": item["summary"],
+        "heat": item["heat"], "valuationPercentile": None, "turnoverPercentile": None,
+        "updatedAt": as_of, "facts": facts, "keyPoints": key_points, "risks": risks,
+        "baseRate": base_rate, "stocks": stock_cards, "news": news,
+        "spark": spark[-60:], "disclaimer": DISCLAIMER, "isDemo": False,
+        "dataSource": "全市场个股等权：行业成分股收盘数据", "newsIsDemo": False,
+        "detailAvailable": True, "isIndustry": True,
+    }
+
+
 def build_topic(conn: Any, topic_id: str) -> dict[str, Any] | None:
+    if str(topic_id).startswith("industry:"):
+        return build_industry_topic(conn, str(topic_id).split(":", 1)[1])
     topic = one(conn, "SELECT * FROM topics WHERE id=?", (topic_id,))
     if not topic:
         return None
@@ -2095,7 +2194,7 @@ def _industry_heat(
                 + f"; {row['newsCount']} news items in 7 days."
             ),
             "riskTags": tags,
-            "detailAvailable": False,
+            "detailAvailable": True,
         })
     rows.sort(key=lambda x: x["heat"], reverse=True)
     return rows[:limit]

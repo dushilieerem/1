@@ -193,7 +193,7 @@ def _baseline_config() -> dict:
             'target': '未来1个交易日收益',
             'revision': 'agent-v0-' + str(uuid.uuid4()),
             'frequency': 'daily',
-            'maxTrials': 2,
+            'maxTrials': 5,
             'acceptance': _ACCEPTANCE,
             'hypothesis': HYPOTHESIS,
             'validationEnd': '2026-09-21',
@@ -204,11 +204,12 @@ def _baseline_config() -> dict:
             'fieldRestriction': 'ohlcv',
             'improvementScope': '只改进实现，不改变经济假设和方向',
             'candidateExpression': '',
+            'noveltyPolicy': {'scope': 'all_accessible', 'maxAbsCorrelation': 0.7, 'minDays': 60, 'minPairs': 30, 'minCoverage': 0.8},
         },
         'researchContext': {
             'question': HYPOTHESIS,
             'direction': 'agent-v0',
-            'background': '后端 Agent v0 自主起草；单并发、固定 40 只、固定视图、2 次研发/1 次封存。',
+            'background': '后端 Agent v0 自主起草；单并发、固定 40 只、固定视图、5 次研发授权/1 次封存。',
         },
         'agentV0': {
             'version': VERSION,

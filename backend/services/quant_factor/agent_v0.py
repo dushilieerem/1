@@ -37,6 +37,13 @@ HYPOTHESIS = (
     '次日存在正向反转；仅使用 OHLCV，不改变固定区间与门槛。'
 )
 _ACCEPTANCE = '方向 Rank IC ≥ 0.005，NW t ≥ t*(K)，有效观测 ≥ 60，最大回撤 ≤ 0.5'
+TEMPLATES = [
+    {'key': 'reversal_5d', 'title': '5日反转基线', 'window': 5, 'hypothesis': HYPOTHESIS},
+    {'key': 'reversal_1d', 'title': '1日反转基线', 'window': 1,
+     'hypothesis': '短周期反转基线：过去 1 个交易日跌幅最大的固定 40 只样本，次日存在正向反转；仅使用 OHLCV。'},
+    {'key': 'reversal_20d', 'title': '20日反转基线', 'window': 20,
+     'hypothesis': '短周期反转基线：过去 20 个交易日累计收益最低的固定 40 只样本，次日存在正向反转；仅使用 OHLCV。'},
+]
 
 _STATE_PATH = Path(env('QUANT_AGENT_V0_STATE', '') or (
     Path(__file__).resolve().parents[3] / 'institutional-workflow/runtime/agent-v0.json'
@@ -171,11 +178,13 @@ def _project(uid: int, project_id: str) -> dict:
     return get_project(uid, project_id)['project']
 
 
-def _baseline_config() -> dict:
+def _baseline_config(template: dict | None = None) -> dict:
     from services.factor.detect_store import _default_config
+    template = template or TEMPLATES[0]
+    window = int(template.get('window') or 5)
     cfg = _default_config([])
     cfg.update({
-        'customCombine': 'def combo_factor(self):\n    """自定义组合"""\n    return -self.close.pct_change(5)',
+        'customCombine': 'def combo_factor(self):\n    """自定义组合"""\n    return -self.close.pct_change(' + str(window) + ')',
         'universe': 'CSI500',
         'benchmark': 'CSI500',
         'rangeMode': 'custom',
@@ -195,7 +204,7 @@ def _baseline_config() -> dict:
             'frequency': 'daily',
             'maxTrials': 5,
             'acceptance': _ACCEPTANCE,
-            'hypothesis': HYPOTHESIS,
+            'hypothesis': template['hypothesis'],
             'validationEnd': '2026-09-21',
             'developmentEnd': '2025-09-30',
             'researchPurpose': 'discovery',
@@ -207,7 +216,7 @@ def _baseline_config() -> dict:
             'noveltyPolicy': {'scope': 'all_accessible', 'maxAbsCorrelation': 0.7, 'minDays': 60, 'minPairs': 30, 'minCoverage': 0.8},
         },
         'researchContext': {
-            'question': HYPOTHESIS,
+            'question': template['hypothesis'],
             'direction': 'agent-v0',
             'background': '后端 Agent v0 自主起草；单并发、固定 40 只、固定视图、5 次研发授权/1 次封存。',
         },
@@ -216,8 +225,7 @@ def _baseline_config() -> dict:
             'state': 'draft',
             'familyId': str(uuid.uuid4()),
             'createdAt': _now(),
-            'direction': 'short-term reversal',
-            'maxTasks': 1,
+            'direction': template.get('key') or 'short-term reversal',
             'createdBy': 'agent-v0',
         },
     })
@@ -226,13 +234,16 @@ def _baseline_config() -> dict:
 
 def _create_baseline_project(uid: int, org: int) -> dict:
     from services.factor.detect_store import upsert_project
-    name = 'Agent 自主研究：短周期反转基线 · ' + datetime.now().strftime('%m%d')
+    with get_conn() as c:
+        n = c.execute("SELECT COUNT(*) AS n FROM detect_projects WHERE user_id=%s AND config ? 'agentV0'", (uid,)).fetchone()['n']
+    template = TEMPLATES[int(n) % len(TEMPLATES)]
+    name = 'Agent 自主研究：' + template['title'] + ' · ' + datetime.now().strftime('%m%d')
     payload = {
         'id': str(uuid.uuid4()),
         'name': name,
         'factorName': 'custom_combo',
-        'description': HYPOTHESIS,
-        'config': _baseline_config(),
+        'description': template['hypothesis'],
+        'config': _baseline_config(template),
         'sample': False,
     }
     project = upsert_project(uid, payload)['project']
@@ -345,9 +356,33 @@ def tick(uid: int, org: int) -> dict:
                 (org,),
             ).fetchone()
             pending = _pending_project(c, uid)
+            topic = None
+            last_run = None
+            if pending:
+                topic = c.execute(
+                    'SELECT id,status FROM quant_factor_topics WHERE user_id=%s AND project_id=%s LIMIT 1',
+                    (uid, pending['id']),
+                ).fetchone()
+                if topic:
+                    last_run = c.execute(
+                        'SELECT status FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s '
+                        'ORDER BY created_at DESC LIMIT 1',
+                        (uid, org, topic['id']),
+                    ).fetchone()
         if active:
             _update_state(last_state='running', last_tick_at=_now())
             return {'state': 'running', 'reason': '已有研究在运行；同一时间只推进 1 项。'}
+        if pending and topic:
+            if last_run and last_run['status'] in ('queued', 'running'):
+                _update_state(last_state='running', last_tick_at=_now())
+                return {'state': 'running', 'reason': '已有研究在运行；同一时间只推进 1 项。'}
+            if last_run and last_run['status'] in ('stopped', 'failed', 'completed'):
+                # One task at a time: the previous research ended, so propose
+                # the next baseline instead of retrying the terminal topic.
+                project = _create_baseline_project(uid, org)
+                return _start_pending(uid, org, project, state)
+            project = _project(uid, pending['id'])
+            return _start_pending(uid, org, project, state)
         project = _project(uid, pending['id']) if pending else _create_baseline_project(uid, org)
         return _start_pending(uid, org, project, state)
 

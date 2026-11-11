@@ -53,10 +53,10 @@ class AgentV0Test(unittest.TestCase):
         pending.start()
         self.addCleanup(pending.stop)
 
-    def test_baseline_is_40_symbols_with_2_trials_and_1_seal(self):
+    def test_baseline_is_40_symbols_with_5_trials_and_1_seal(self):
         cfg = agent_v0._baseline_config()
         self.assertEqual(len(cfg['researchUniverseSymbols']), 40)
-        self.assertEqual(cfg['researchPlan']['maxTrials'], 2)
+        self.assertEqual(cfg['researchPlan']['maxTrials'], 5)
         self.assertEqual(cfg['researchPlan']['fieldRestriction'], 'ohlcv')
         self.assertEqual(cfg['agentV0']['version'], 'agent-v0')
 

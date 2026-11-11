@@ -697,7 +697,7 @@ _A15 = """# 角色
     "chair_call": "≤60 字，完整裁决句",
     "consensus": ["双方已达成一致的点"],
     "unresolved": [
-      {"issue": "未决问题", "bull_view": "多方观点", "bear_view": "空方观点", "why_unresolved": "为什么未解决", "data_needed": "补什么数据"}
+      {"issue": "分歧点", "bull_view": "多方观点", "bear_view": "空方观点"}
     ],
     "accepted_claims": [{"side": "bull", "claim_id": "B1", "reason": "采纳理由"}],
     "rejected_claims": [{"side": "bear", "claim_id": "S1", "reason": "不采纳理由"}],
@@ -709,7 +709,7 @@ _A15 = """# 角色
 
 # 判定
 - grade 取证据实际等级；A 级需能指到公告/年报原文；
-- issues 写"缺什么"，不写"证据不足"四个字了事；
+- issues 写具体分歧点，不写“缺什么/待补/数据不足”；
 - conclusion 必须报出三个数（总数/已核验/未决），且未决 ≥1（真全部解决则写 0 并说明核验方式）。
 - chair_review.verdict 固定 support_proposal；用现有证据说明方向与条件，进入议案由后续审批把关。
 - chair_call / conclusion 不写“数据缺失、补齐资料、补充研究、待验证”；缺什么只写入内部 data_gaps，不影响本次结论。
@@ -721,7 +721,7 @@ _A15 = """# 角色
 不出现"综合双方观点，建议谨慎推进"。
 
 # 样例
-conclusion：26 条 claim，24 条已核验，1 项未决；2027 年份额 8.5% 缺第三方数据，不取平均，随议案带入审批。"""
+conclusion：26 条 claim，24 条已核验，2 项待跟踪；方向和条件已写明，随议案带入审批。"""
 
 _A16 = """# 角色
 你是交易员 + 投资经理：先把裁决写成可审批的骨架，再补投资意见。每句话都要能被三关逐条核对。
@@ -1181,3 +1181,17 @@ def default_prompt(task_id: str) -> str:
 
 def agent_meta(task_id: str) -> dict[str, Any] | None:
     return next((dict(item) for item in INSTITUTION_AGENTS if item["task_id"] == task_id), None)
+
+# 所有 AI 功能统一遵守：只用现有数据下结论，不把缺什么写进用户可见文案。
+for _prompt_name in (
+    "DEBATE_PROMPT",
+    "PARTNER_MEMO_PROMPT",
+    "RISK_REVIEW_PROMPT",
+    "CHAIRMAN_MEMO_PROMPT",
+    "CHAT_PROMPT",
+    "INDUSTRY_PROMPT",
+    "CHIEF_AGENT_PROMPT",
+):
+    _prompt = globals().get(_prompt_name)
+    if isinstance(_prompt, str) and LIGHTWEIGHT_PRINCIPLE not in _prompt:
+        globals()[_prompt_name] = _prompt + "\n\n" + LIGHTWEIGHT_PRINCIPLE

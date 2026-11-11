@@ -380,6 +380,10 @@ export function InstV3ApprovalsPage() {
   const stageForRole: Record<string, string> = { partner: "partner_review", risk: "risk_precheck", chairman: "chairman_review" };
   const canAct = (kind: "partner" | "risk" | "chairman") =>
     role === kind && detail?.status === stageForRole[kind];
+  const roleStep = role === "partner" ? 1 : role === "risk" ? 2 : role === "chairman" ? 3 : role === "execution" ? 4 : 0;
+  const canViewStep = (step: number) => step === 0 || step === roleStep;
+  const progressForStep = (step: number) =>
+    step === 1 ? progress?.partner : step === 2 ? progress?.risk_precheck : step === 3 ? progress?.chairman : null;
   const chain = detail?.approval_chain || [];
   const snapshot = (detail?.current_version?.snapshot || {}) as Record<string, unknown>;
   const auth = detail?.authorization;
@@ -426,21 +430,48 @@ export function InstV3ApprovalsPage() {
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
 
           {viewStep === 0 ? (
+            <>
             <section className="v3-card">
-              <div className="v3-card-head"><div><h2>议案提交总览</h2><p>全公司已提交议案；点一条进入它当前所在关卡。</p></div><span className="v3-chip">{items.length} 份</span></div>
+              <div className="v3-card-head"><div><h2>议案提交总览</h2><p>全公司已提交议案；点一条查看议案内容，各角色只看自己的审批环节。</p></div><span className="v3-chip">{items.length} 份</span></div>
               <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
                 <div className="v3-kpi"><div className="k">已提交</div><div className="v">{items.length}</div></div>
                 <div className="v3-kpi"><div className="k">审批中</div><div className="v">{myPending}</div></div>
                 <div className="v3-kpi"><div className="k">已授权</div><div className="v">{items.filter((x) => ["authorized", "executed"].includes(x.status)).length}</div></div>
               </div>
             </section>
+            {detail ? (
+              <section className="v3-card">
+                <div className="v3-card-head"><div><h2>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h2><p>提案人提交内容 · 只读</p></div><span className={`v3-chip ${statusTone(detail.status)}`}>{detail.status}</span></div>
+                <dl>
+                  <div className="v3-kv"><dt>方向 / 目标仓位</dt><dd>{detail.direction} · {fmtPct(detail.target_weight)}</dd></div>
+                  <div className="v3-kv"><dt>价格区间</dt><dd>{snapshot.price_low != null ? `${snapshot.price_low} – ${snapshot.price_high}` : "—"}</dd></div>
+                  <div className="v3-kv"><dt>资金来源 / 有效期</dt><dd>{String(snapshot.funding_source || "—")} · {String(snapshot.valid_until || "—")}</dd></div>
+                  <div className="v3-kv"><dt>投资意见</dt><dd style={{ maxWidth: "70%" }}>{String(snapshot.investment_opinion || "—")}</dd></div>
+                </dl>
+              </section>
+            ) : null}
+            </>
           ) : null}
 
           {viewStep !== 0 && !detail ? (
             <section className="v3-card"><div className="v3-empty">当前没有可查看的议案。</div></section>
           ) : null}
 
-          {viewStep !== 0 && detail ? (
+          {viewStep !== 0 && detail && !canViewStep(viewStep) ? (
+            <section className="v3-card">
+              <div className="v3-card-head">
+                <div><h2>{STEPS[viewStep]?.name || "审批"} · 进度</h2><p>只显示该环节状态与完成人数；具体意见由该角色查看。</p></div>
+                <span className="v3-chip">{progressForStep(viewStep)?.status || (viewStep === 4 ? auth?.status : "—") || "—"}</span>
+              </div>
+              <dl>
+                <div className="v3-kv"><dt>环节</dt><dd>{STEPS[viewStep]?.name || "—"}</dd></div>
+                <div className="v3-kv"><dt>完成进度</dt><dd>{progressForStep(viewStep)?.reviewed ?? 0}/{progressForStep(viewStep)?.total ?? "—"}</dd></div>
+                <div className="v3-kv"><dt>当前议案状态</dt><dd>{detail.status}</dd></div>
+              </dl>
+            </section>
+          ) : null}
+
+          {viewStep !== 0 && detail && canViewStep(viewStep) ? (
             <>
               <section className="v3-card">
                 <div className="v3-card-head">

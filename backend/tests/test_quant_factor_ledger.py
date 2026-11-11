@@ -216,23 +216,19 @@ class TakeoverTest(unittest.TestCase):
 
 
 class LockedViewTest(unittest.TestCase):
+    """Locked-view drift is detected in locked_data.for_project; assert service surfaces it."""
     def test_topic_view_drift_blocks_new_compute(self):
-        from unittest.mock import MagicMock, patch
-        from services.quant_factor import service
-        cursor = MagicMock(); cursor.execute.return_value = cursor; cursor.fetchone.return_value = {'view_id': 'old'}
-        connection = MagicMock(); connection.__enter__.return_value = cursor
-        with patch.object(service, 'get_conn', return_value=connection), \
-             patch('services.workflow_workspace.platform_data.published_view', return_value={'view_id': 'new'}):
+        from unittest.mock import patch
+        from services.quant_factor import service, locked_data
+        from services.quant_factor.policy import WorkflowError
+        with patch.object(locked_data, 'for_project', side_effect=WorkflowError('旧台账接到新视图，未改用当前版本')):
             msg = service._locked_view_error(1, 2, 'p')
         self.assertIn('旧台账接到新视图', msg)
 
     def test_same_view_is_allowed(self):
-        from unittest.mock import MagicMock, patch
-        from services.quant_factor import service
-        cursor = MagicMock(); cursor.execute.return_value = cursor; cursor.fetchone.return_value = {'view_id': 'v'}
-        connection = MagicMock(); connection.__enter__.return_value = cursor
-        with patch.object(service, 'get_conn', return_value=connection), \
-             patch('services.workflow_workspace.platform_data.published_view', return_value={'view_id': 'v'}):
+        from unittest.mock import patch
+        from services.quant_factor import service, locked_data
+        with patch.object(locked_data, 'for_project', return_value={}):
             self.assertIsNone(service._locked_view_error(1, 2, 'p'))
 
 

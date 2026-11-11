@@ -10,7 +10,8 @@ REQUEST={'factor_name':'f','factor_code':'def f(self): return self.close','start
 EXPECTED={'data_release_id':'frozen-data','factor_source_hash':'frozen-source','spec_hash':'heldout-spec'}
 TARGET={'base':'http://127.0.0.1:18804','service':'ResearchEngine','service_version':'fixture','method_version':'fixture','method_code_hash':'a'*64,'policy_hash':'b'*64}
 RECEIPT={'allowed':True,'service_version':'fixture','version':'fixture','method_code_hash':'a'*64,'policy_hash':'b'*64}
-INTENT={'compute_backend':TARGET,'schema':sealed.INTENT_SCHEMA,'request':REQUEST,'request_hash':digest(REQUEST),'expected_identity':EXPECTED,'snapshot_hash':digest({'rules':{},'request':REQUEST}),'topic_id':'t1'}
+SNAP={'rules':{},'request':REQUEST,'plan':{}}
+INTENT={'compute_backend':TARGET,'schema':sealed.INTENT_SCHEMA,'request':REQUEST,'request_hash':digest(REQUEST),'expected_identity':EXPECTED,'snapshot_hash':digest(SNAP),'topic_id':'t1'}
 ROW={'id':'s1','candidate_id':'c1','user_id':1,'org_id':2,'topic_id':'t1','status':'queued','snapshot_hash':INTENT['snapshot_hash'],'result':{'intent':INTENT},'trial_ids':['t1']}
 
 class SealedTest(unittest.TestCase):
@@ -47,7 +48,7 @@ class SealedTest(unittest.TestCase):
 class SealedRunTest(unittest.TestCase):
  def execute(self,block=None,poll=None,submit=None):
   row=copy.deepcopy(ROW);row['result']=copy.deepcopy(block if block is not None else ROW['result']);writes=[]
-  snap={'rules':{},'request':REQUEST};cand={'snapshot':snap,'snapshot_hash':digest(snap),'evidence':{}}
+  snap=copy.deepcopy(SNAP);cand={'snapshot':snap,'snapshot_hash':digest(snap),'evidence':{}}
   c=MagicMock();c.execute.return_value.fetchall.return_value=[]
   @contextmanager
   def locked(*args):yield c,cand,{'id':'t1','primary_holding_period':1,'status':'active'}, {'id':'p'},row

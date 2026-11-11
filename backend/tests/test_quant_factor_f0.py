@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from services.quant_factor import f0, f0_agent
+from services.quant_factor import f0, f0_agent, locked_data
 from services.quant_factor.policy import WorkflowError
 
 TOPIC = {'id': 't', 'project_id': 'p', 'view_id': 'v', 'max_trials': 4,
@@ -23,11 +23,13 @@ class F0StartTest(unittest.TestCase):
     def test_view_drift_stops(self):
         w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None]
         with patch.object(f0, '_topic', return_value=TOPIC), patch.object(f0, 'get_conn', return_value=w), \
-             patch.object(f0, 'published_view', return_value={'view_id': 'new'}), \
+             patch('services.factor.detect_store.get_project', return_value={'project': {'id': 'p', 'config': {}}}), \
+             patch.object(locked_data, 'for_topic', side_effect=WorkflowError('旧台账接到新视图')), \
              patch.object(f0, '_record', return_value={'status': 'stopped'}) as rec:
             out = f0.start(1, 2, 't', 'b', 'k1')
         self.assertEqual(out['status'], 'stopped')
-        self.assertEqual(rec.call_args.args[6]['reason'], 'locked_view_drift')
+        self.assertEqual(rec.call_args.args[6]['technical_wait']['kind'], 'fixed_data_or_resources')
+        self.assertIn('旧台账接到新视图', rec.call_args.args[7])
 
     def test_budget_uses_k_not_candidates(self):
         w, c = conn(); c.fetchone.side_effect = [{'id': 'b', 'source': 'manual'}, None, None, None, {'n':0}]
@@ -42,9 +44,9 @@ class F0StartTest(unittest.TestCase):
     def test_exhausted_development_budget_still_allows_earned_seal(self):
         candidate={'status':'development_passed','snapshot':{'plan':{'researchPurpose':'discovery'}},'evidence':{'development':{'novelty':{'gate':{'complete':True,'passed':True}}}}}
         w,c=conn();c.fetchone.side_effect=[{'id':'b'},None,None,candidate,{'n':0}]
-        with patch.object(f0,'_topic',return_value={**TOPIC,'max_sealed':1}),patch.object(f0,'get_conn',return_value=w),patch.object(f0,'published_view',return_value={'view_id':'v'}),patch.object(f0.ledger,'_trials',return_value=[]),patch.object(f0.ledger,'current_k',return_value=4),patch.object(f0,'_record',return_value={'id':'run','status':'queued'}) as record,patch('services.quant_factor.resources.require_config') as development_preflight,patch.object(f0.POOL,'submit') as schedule,patch('services.factor.detect_store.get_project',return_value={'project':{'id':'p','config':{}}}):
+        with patch.object(f0,'_topic',return_value={**TOPIC,'max_sealed':1}),patch.object(f0,'get_conn',return_value=w),patch.object(locked_data,'for_topic',return_value={'view_id':'v'}),patch.object(f0.ledger,'_trials',return_value=[]),patch.object(f0.ledger,'current_k',return_value=4),patch.object(f0,'_record',return_value={'id':'run','status':'queued'}) as record,patch('services.quant_factor.resources.require_config',return_value={'allowed':True}) as development_preflight,patch.object(f0.POOL,'submit') as schedule,patch('services.factor.detect_store.get_project',return_value={'project':{'id':'p','config':{}}}):
             out=f0.start(1,2,'t','b','earned-seal')
-        self.assertEqual(out['status'],'queued');development_preflight.assert_not_called();schedule.assert_called_once()
+        self.assertEqual(out['status'],'queued');development_preflight.assert_called_once();schedule.assert_called_once()
 
     def test_duplicate_key_returns_existing(self):
         w, c = conn(fetchone={'id': 'run1', 'status': 'queued', 'user_id': 1, 'org_id': 2})
@@ -250,6 +252,7 @@ class F0ConcurrentStartTest(unittest.TestCase):
              patch.object(f0.ledger, '_trials', return_value=[]), \
              patch.object(f0.ledger, 'current_k', return_value=0), \
              patch.object(f0, '_record', side_effect=record), \
+             patch.object(locked_data, 'for_topic', return_value={'view_id': 'v'}), \
              patch('services.factor.detect_store.get_project',return_value={'project':{'config':{}}}), \
              patch('services.quant_factor.resources.require_config',return_value={'allowed':True}), \
              patch.object(f0.POOL, 'submit') as submit:

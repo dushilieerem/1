@@ -41,8 +41,24 @@ _ACCEPTANCE = '方向 Rank IC ≥ 0.005，NW t ≥ t*(K)，有效观测 ≥ 60�
 _STATE_PATH = Path(env('QUANT_AGENT_V0_STATE', '') or (
     Path(__file__).resolve().parents[3] / 'institutional-workflow/runtime/agent-v0.json'
 ))
+_AUDIT_PATH = Path(env('QUANT_AGENT_V0_AUDIT')) if env('QUANT_AGENT_V0_AUDIT') else None
 _STATE_LOCK = threading.RLock()
 _TICK_LOCK = threading.Lock()
+
+
+def _audit(action: str, **fields) -> None:
+    """Append-only local audit trail for who enabled/started what.
+
+    v0 has no DDL; this file is the durable record until CR-102 events land.
+    """
+    event = {'at': _now(), 'action': action, **fields}
+    path = _AUDIT_PATH or _STATE_PATH.with_name('agent-v0-audit.jsonl')
+    with _STATE_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open('a', encoding='utf-8') as stream:
+            stream.write(json.dumps(event, ensure_ascii=False) + '\n')
+            stream.flush()
+            os.fsync(stream.fileno())
 
 
 def _now() -> str:
@@ -218,7 +234,9 @@ def _create_baseline_project(uid: int, org: int) -> dict:
         'config': _baseline_config(),
         'sample': False,
     }
-    return upsert_project(uid, payload)['project']
+    project = upsert_project(uid, payload)['project']
+    _audit('drafted', user_id=uid, org_id=org, project_id=project['id'], name=project['name'])
+    return project
 
 
 def _topic_payload(view: dict) -> dict:
@@ -305,6 +323,7 @@ def _start_pending(uid: int, org: int, project: dict, state: dict) -> dict:
             (json.dumps(marker, ensure_ascii=False), uid, project['id']),
         )
     _update_state(last_state='running', last_error='', last_tick_at=_now(), active_topic_id=topic['id'])
+    _audit('started', user_id=uid, org_id=org, project_id=project['id'], topic_id=topic['id'], run_id=run.get('id'))
     return {'state': 'running', 'run': run}
 
 
@@ -342,6 +361,7 @@ def enable(uid: int, org: int) -> dict:
         'last_error': '',
     }
     _write_state(state)
+    _audit('enabled', user_id=uid, org_id=org)
     try:
         tick(uid, org)
     except Exception as exc:  # keep the switch on; surface the reason in status
@@ -356,6 +376,7 @@ def disable(uid: int, org: int) -> dict:
         state['disabled_at'] = _now()
         state['last_state'] = 'disabled'
         _write_state(state)
+        _audit('disabled', user_id=uid, org_id=org)
     return status(uid, org, can_control=True)
 
 

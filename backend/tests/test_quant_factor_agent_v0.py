@@ -119,3 +119,14 @@ class AgentV0Test(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AgentQuotaWaitTests(unittest.TestCase):
+    def test_same_day_quota_stop_does_not_draft_another_task(self):
+        self.assertTrue(agent_v0._quota_exhausted({'today': True, 'stop_reason': '今日账号模型调用次数已达上限，未预留新请求'}))
+
+    def test_previous_day_quota_stop_can_start_a_new_day_task(self):
+        self.assertFalse(agent_v0._quota_exhausted({'today': False, 'stop_reason': '今日账号模型调用次数已达上限，未预留新请求'}))
+
+    def test_ordinary_research_stop_still_allows_next_task(self):
+        self.assertFalse(agent_v0._quota_exhausted({'today': True, 'stop_reason': '试验预算已用尽'}))

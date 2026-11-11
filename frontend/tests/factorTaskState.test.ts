@@ -183,3 +183,9 @@ test('技术等待按真实原因区分，不再统一写研究暂遇技术条�
  const checkpoint=deriveFactorTaskState({...baseWait,dispatch_technical_wait:'interrupted_checkpoint',dispatch_stop_reason:'原物理调用结果待确认；不会重新发送'});
  assert.equal(checkpoint.label,'等待处理');assert.match(checkpoint.needsYou,/检查点/);
 });
+
+
+test('今日模型调用次数用尽显示等待额度，而不是笼统技术条件限制',()=>{
+ const s=deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'今日账号模型调用次数已达上限，未预留新请求'});
+ assert.equal(s.label,'等待模型调用额度');assert.match(s.needsYou,/次日 00:00 重置/);assert.ok(!s.needsYou.includes('技术条件限制'));
+});

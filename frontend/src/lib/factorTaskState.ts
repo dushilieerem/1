@@ -81,6 +81,9 @@ function technicalWait(kind: string | null | undefined, reason: string): { label
   if (k === 'fixed_data_or_resources') {
     return { label: '等待数据条件', needsYou: '固定数据或计算资源暂不可用；恢复后从原任务继续。' };
   }
+  if (/(模型调用次数|调用次数已达上限|ai.?quota)/.test(reason)) {
+    return { label: '等待模型调用额度', needsYou: '今日账号模型调用次数已用尽；次日 00:00 重置，已有证据和试验保留，不代表因子研究结论失败。' };
+  }
   if (/(已暂停|人工接手|manual takeover)/.test(reason)) {
     return { label: '已暂停', needsYou: '研究已暂停或由人工接手；已有计算与证据保留，恢复后继续。' };
   }

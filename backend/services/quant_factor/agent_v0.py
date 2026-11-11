@@ -132,10 +132,12 @@ def _public_state(uid: int, org: int, *, can_control: bool = False) -> dict:
         status = 'running'
         reason = '已有研究在运行；同一时间只推进 1 项。'
     elif pending and topic:
-        status = 'waiting_data' if state.get('last_state') == 'waiting_data' else 'pending_start'
-        reason = (state.get('last_error') if status == 'waiting_data' else '') or 'Agent 已起草任务，等待启动。'
+        wait_state = state.get('last_state')
+        status = 'waiting_quota' if wait_state == 'waiting_quota' else 'waiting_data' if wait_state == 'waiting_data' else 'pending_start'
+        reason = (state.get('last_error') if status in ('waiting_data', 'waiting_quota') else '') or 'Agent 已起草任务，等待启动。'
     elif pending:
-        status = 'waiting_data' if state.get('last_state') == 'waiting_data' else 'drafting'
+        wait_state = state.get('last_state')
+        status = 'waiting_quota' if wait_state == 'waiting_quota' else 'waiting_data' if wait_state == 'waiting_data' else 'drafting'
         reason = state.get('last_error') or 'Agent 已起草任务，等待固定数据。'
     else:
         status = 'idle'
@@ -486,6 +488,11 @@ def _start_pending(uid: int, org: int, project: dict, state: dict) -> dict:
     return {'state': 'running', 'run': run}
 
 
+def _quota_exhausted(run: dict | None) -> bool:
+    """Daily call-count quota is a same-day stop, not a reason to draft again."""
+    return bool(run and run.get('today') and '模型调用次数已达上限' in str(run.get('stop_reason') or ''))
+
+
 def tick(uid: int, org: int) -> dict:
     if not enabled():
         return {'state': 'not_enabled', 'reason': '自主研究功能未开启。'}
@@ -511,7 +518,8 @@ def tick(uid: int, org: int) -> dict:
                 ).fetchone()
                 if topic:
                     last_run = c.execute(
-                        'SELECT status FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s '
+                        'SELECT status,stop_reason,(updated_at::date = CURRENT_DATE) AS today '
+                        'FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s '
                         'ORDER BY created_at DESC LIMIT 1',
                         (uid, org, topic['id']),
                     ).fetchone()
@@ -523,6 +531,10 @@ def tick(uid: int, org: int) -> dict:
                 _update_state(last_state='running', last_tick_at=_now())
                 return {'state': 'running', 'reason': '已有研究在运行；同一时间只推进 1 项。'}
             if last_run and last_run['status'] in ('stopped', 'failed', 'completed'):
+                if _quota_exhausted(last_run):
+                    reason = '今日账号模型调用次数已达上限；次日 00:00 重置，未创建新任务'
+                    _update_state(last_state='waiting_quota', last_error=reason, last_tick_at=_now())
+                    return {'state': 'waiting_quota', 'reason': reason}
                 # One task at a time: the previous research ended, so propose
                 # the next baseline instead of retrying the terminal topic.
                 project = _create_baseline_project(uid, org)

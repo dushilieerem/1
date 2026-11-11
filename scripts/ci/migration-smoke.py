@@ -37,7 +37,10 @@ def main() -> int:
     if not check.get("ok") or check.get("pending"):
         print(f"[migration-smoke] pending after apply: {check}", file=sys.stderr)
         return 1
-    print(f"[migration-smoke] applied={applied.get('applied')} head={check.get('head')}")
+    print(
+        f"[migration-smoke] schema={applied.get('registry_schema')} "
+        f"applied={applied.get('applied_now')} head={check.get('head')}"
+    )
     return 0
 
 

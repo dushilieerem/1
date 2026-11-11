@@ -226,8 +226,8 @@ def bootstrap_schemas() -> None:
         from services.core.migrations import apply_migrations
 
         migration = apply_migrations()
-        if migration.get("applied"):
-            print(f"  数据库迁移已执行: {', '.join(migration['applied'])}")
+        if migration.get("applied_now"):
+            print(f"  数据库迁移已执行: {', '.join(migration['applied_now'])}")
         else:
             print(f"  数据库迁移已是最新（{migration.get('current') or 'baseline'}）")
     except Exception as exc:

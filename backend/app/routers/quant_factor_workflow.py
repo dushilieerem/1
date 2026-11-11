@@ -488,3 +488,37 @@ def imported_factor_source(imported_id:str,ctx=Depends(require_quant_user)):
     from services.quant_factor.library_source import imported_source,SourceLookupError
     try:return imported_source(*identity(ctx),imported_id)
     except SourceLookupError as exc:raise HTTPException(exc.status,{'code':exc.code,'error':str(exc)}) from None
+
+
+class AutonomyEnableBody(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    scope_id:str=Field(min_length=1,max_length=100)
+    scope_version:int=Field(strict=True,gt=0)
+    direction:str=Field(default='',max_length=1000)
+    request_key:str=Field(pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
+class AutonomyControlBody(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    enabled:bool
+    expected_version:int=Field(gt=0)
+    request_key:str=Field(pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
+def invoke_autonomy(fn,*args):
+    from services.quant_factor.autonomy import AutonomyError
+    try:return fn(*args)
+    except AutonomyError as exc:raise HTTPException(exc.status,{'code':exc.code,'error':str(exc)}) from None
+
+@router.get('/autonomy')
+def autonomy_status(ctx=Depends(require_quant_user)):
+    from services.quant_factor.autonomy import status
+    return invoke_autonomy(status,*identity(ctx))
+
+@router.post('/autonomy/authorizations')
+def autonomy_enable(body:AutonomyEnableBody,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor.autonomy import enable
+    return invoke_autonomy(enable,*identity(ctx),body.model_dump())
+
+@router.post('/autonomy/authorizations/{authorization_id}/control')
+def autonomy_control(authorization_id:str,body:AutonomyControlBody,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor.autonomy import control
+    return invoke_autonomy(control,*identity(ctx),authorization_id,body.model_dump())

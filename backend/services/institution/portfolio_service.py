@@ -603,12 +603,14 @@ def pipeline(org_id: int) -> dict[str, Any]:
                 """
                 SELECT DISTINCT d.case_id
                   FROM inst_debate_session d
+                  JOIN inst_research_case c ON c.id=d.case_id AND c.org_id=%s
                   JOIN LATERAL (
                     SELECT id FROM inst_research_version
                      WHERE case_id=d.case_id ORDER BY version_no DESC LIMIT 1
                   ) v ON v.id=d.research_version_id
                  WHERE d.status='completed'
-                """
+                """,
+                (org_id,),
             ).fetchall()
         }
         proposal_cases = {
@@ -616,9 +618,10 @@ def pipeline(org_id: int) -> dict[str, Any]:
             for r in conn.execute(
                 """
                 SELECT DISTINCT case_id FROM inst_proposal
-                 WHERE stale_at IS NULL
+                 WHERE org_id=%s AND stale_at IS NULL
                    AND status IN ('partner_review','risk_precheck','chairman_review','authorized')
-                """
+                """,
+                (org_id,),
             ).fetchall()
         }
         auth_cases = {
@@ -629,21 +632,33 @@ def pipeline(org_id: int) -> dict[str, Any]:
                   FROM inst_authorization a
                   JOIN inst_proposal_version pv ON pv.id=a.proposal_version_id
                   JOIN inst_proposal p ON p.id=pv.proposal_id
-                 WHERE a.status='qualified'
-                """
+                 WHERE p.org_id=%s AND a.status='qualified'
+                """,
+                (org_id,),
+            ).fetchall()
+        }
+        # 退出研究案属于投后/退出流程，不能回到价值分析列。
+        exit_cases = {
+            int(r["case_id"])
+            for r in conn.execute(
+                "SELECT DISTINCT case_id FROM inst_exit_case "
+                " WHERE org_id=%s AND status NOT IN ('closed','rejected')",
+                (org_id,),
             ).fetchall()
         }
         position_symbols = {
             str(r["symbol"])
             for r in conn.execute(
                 """
-                SELECT p.symbol FROM inst_position_snapshot p
-                 WHERE p.qty > 0
-                   AND p.as_of=(
+                SELECT ps.symbol FROM inst_position_snapshot ps
+                  JOIN inst_portfolio po ON po.id=ps.portfolio_id
+                 WHERE po.org_id=%s AND ps.qty > 0
+                   AND ps.as_of=(
                      SELECT MAX(p2.as_of) FROM inst_position_snapshot p2
-                      WHERE p2.portfolio_id=p.portfolio_id
+                      WHERE p2.portfolio_id=ps.portfolio_id
                    )
-                """
+                """,
+                (org_id,),
             ).fetchall()
         }
     by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
@@ -655,12 +670,15 @@ def pipeline(org_id: int) -> dict[str, Any]:
         company_id = int(card.get("company_id") or 0)
         symbol = str(card.get("symbol") or "")
         stage = int(card.get("stage_no") or 0)
-        if case_id in debate_cases:
-            stage = max(stage, 2)
-        if case_id in proposal_cases:
-            stage = max(stage, 3)
-        if case_id in auth_cases:
-            stage = max(stage, 4)
+        if case_id in exit_cases:
+            stage = 5
+        else:
+            if case_id in debate_cases:
+                stage = max(stage, 2)
+            if case_id in proposal_cases:
+                stage = max(stage, 3)
+            if case_id in auth_cases:
+                stage = max(stage, 4)
         # 持仓只覆盖已进入执行/管理阶段的案；同一标的的新研究案仍留在研究阶段。
         if symbol and symbol in position_symbols and stage >= 4:
             stage = 5

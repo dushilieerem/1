@@ -233,6 +233,15 @@ def test_exit_flow_state_machine_and_direction_guard(fixture) -> None:
     assert int(proposal["exit_case"]["id"]) == exit_id
     assert _exit_status(fixture, exit_id) == "submitted"
 
+    # 退出研究案属于投后管理，不能在流水线/价值分析里重新出现。
+    pipe = _ok(client.get("/api/inst/pipeline", headers=_h(manager)))
+    stage_items = {
+        int(s["stage_no"]): {int(x["case_id"]) for x in s["items"] if x.get("case_id")}
+        for s in pipe["stages"]
+    }
+    assert case_id in stage_items[5]
+    assert case_id not in stage_items[1]
+
     detail = _ok(client.get(f"/api/inst/proposals/{proposal_id}", headers=_h(manager)))
     assert detail["exit_case"]["case_id"] == case_id
     assert detail["exit_case"]["status"] == "submitted"

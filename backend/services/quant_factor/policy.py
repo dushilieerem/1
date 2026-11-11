@@ -41,6 +41,11 @@ def snapshot(project):
     if p['rules'].get('icMetric') is not None:
         if p['rules']['icMetric'] not in ('ic','rank_ic'): raise WorkflowError('请选择已实现的IC口径')
         rules['icMetric']=p['rules']['icMetric']
+    if p['rules'].get('alpha') is not None:
+        rules['alpha']=number(p['rules']['alpha'],'统计显著性alpha',0.000001,0.999999)
+    if p['rules'].get('acceptanceMode') is not None:
+        if p['rules']['acceptanceMode'] not in ('formal','flow_test'): raise WorkflowError('验收模式只能是 formal 或 flow_test')
+        rules['acceptanceMode']=p['rules']['acceptanceMode']
     if rules['direction'] not in ('positive','negative'): raise WorkflowError('请选择预设因子方向')
     if rules['minObservations']!=int(rules['minObservations']): raise WorkflowError('观测数必须为整数')
     from .novelty_policy import policy as novelty_policy
@@ -97,11 +102,14 @@ def evaluate(result, rules, k=None, lags=None):
             try:
                 nw=newey_west_t(raw, lags=lags)
                 signed_t=nw['t']*(1 if rules['direction']=='positive' else -1)
-                required=threshold(k if isinstance(k,int) and k>=1 else 1)
+                required=threshold(k if isinstance(k,int) and k>=1 else 1, rules.get('alpha',0.05))
                 checks.append({'name':'方向 NW t','actual':signed_t,'operator':'>=','threshold':required,'passed':signed_t>=required})
             except ValueError as exc:
                 checks.append({'name':'方向 NW t','actual':None,'operator':'可计算','threshold':True,'passed':False,'reason':str(exc)})
-    return {'passed':all(x['passed'] for x in checks),'checks':checks,'sealed':False,'metric_type':metric,'k_used':k if isinstance(k,int) and not isinstance(k,bool) and k>=1 else 1,
+    return {'passed':all(x['passed'] for x in checks),'checks':checks,'sealed':False,'metric_type':metric,
+            'alpha':rules.get('alpha',0.05),'acceptance_mode':rules.get('acceptanceMode','formal'),
+            'flow_test':rules.get('acceptanceMode')=='flow_test',
+            'k_used':k if isinstance(k,int) and not isinstance(k,bool) and k>=1 else 1,
             'limitation':'样本外复验；当前数据权限未封存，不构成独立封存验证或投资准入。'}
 
 def compare_identity(development,validation):

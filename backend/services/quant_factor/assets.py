@@ -75,6 +75,15 @@ def validate_evidence(row,facts):
     observations=next((c['actual'] for c in dev_gate['checks'] if c['name']=='有效IC观测数'),0)
     sealed_gate=evaluate(sealed_result,snap['rules'],k,lags=default_lags(int(observations)))
     if not sealed_gate['passed']:raise WorkflowError('独立验证的实际数值门槛未达标')
+    kind=snap.get('plan',{}).get('researchPurpose')
+    if (snap.get('rules') or {}).get('acceptanceMode')=='flow_test':
+        # Isolated UI flow test: gates are real, but novelty/library-admission
+        # evidence is intentionally out of scope. Registration is blocked later.
+        return {'k':k,'threshold':threshold(k,(snap.get('rules') or {}).get('alpha',0.05)),
+                'development_gate':dev_gate,'sealed_gate':sealed_gate,
+                'novelty_gate':{'passed':True,'complete':True,'flow_test':True,'limitation':'流程测试不执行查重'},
+                'topic':topic,'sealed':sealed,'method':method,'kind':kind,'flow_test':True,
+                'limitation':'流程测试，不可入库，不作研究结论'}
     n=dev.get('novelty') or {};refs=evidence.get('library_reference') or {};ng=n.get('gate') or {}
     if snap.get('plan',{}).get('diagnostic') or n.get('diagnostic') or refs.get('diagnostic') or n.get('reference_scope')=='diagnostic':
         raise WorkflowError('小范围诊断不能替代完整准入证据')
@@ -93,7 +102,7 @@ def validate_evidence(row,facts):
         req=snap.get('request') or {}
         if not req.get('library_name') or req.get('factor_code'):raise WorkflowError('复现记录缺少明确的既有因子身份，或实现已改变')
     elif kind!='discovery':raise WorkflowError('历史研究类型未明确，不能自动升级为机构资产')
-    return {'k':k,'threshold':threshold(k),'development_gate':dev_gate,'sealed_gate':sealed_gate,'novelty_gate':actual,'topic':topic,'sealed':sealed,'method':method,'kind':kind}
+    return {'k':k,'threshold':threshold(k,(snap.get('rules') or {}).get('alpha',0.05)),'development_gate':dev_gate,'sealed_gate':sealed_gate,'novelty_gate':actual,'topic':topic,'sealed':sealed,'method':method,'kind':kind}
 
 
 def eligibility(row,c=None,for_submission=False):
@@ -150,6 +159,7 @@ def approve(uid,org,cid,note,metadata,acknowledged):
                'category':category,'tags':list(dict.fromkeys(t.strip() for t in tags)),
                'classification_source':{'kind':'reviewer_confirmed','actor_id':uid,'at':now},
                'approval':{'reviewer_id':uid,'at':now,'note':note.strip()},'purpose':'research_only',
+               **({'flow_test':True} if (row['snapshot'].get('rules') or {}).get('acceptanceMode')=='flow_test' else {}),
                'development_result_hash':digest(dev['result']),'novelty_result_hash':digest(dev['novelty']),
                'development_report':_report(dev,facts['development_gate']),
                'sealed_report':{'report_id':seal['report_id'],'run_id':seal['result']['run_id'],'passed':True,'result_hash':digest(seal['result']),'summary':_report({**seal['result'],'report_id':seal['report_id']},facts['sealed_gate'])},

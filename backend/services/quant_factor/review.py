@@ -126,13 +126,15 @@ def _ledger_context(org,project_id):
         branches=[dict(row) for row in c.execute(
             "SELECT * FROM quant_factor_branches WHERE org_id=%s AND topic_id=%s ORDER BY created_at",
             (org,topic['id'])).fetchall()]
+        project=c.execute("SELECT config FROM detect_projects WHERE id=%s",(topic['project_id'],)).fetchone()
+    alpha=(((project or {}).get('config') or {}).get('researchPlan') or {}).get('rules',{}).get('alpha',0.05)
     labels=ledger._branch_labels(topic['user_id'],org,topic['id'],branches)
     for trial in trials:
         trial['branch_label']=labels.get(trial.get('branch_id'),'H?')
         trial['counts_toward_k']=ledger.counts_toward_k(trial,topic['primary_holding_period'])
     k=ledger.current_k(trials,topic['primary_holding_period'])
     return {'topic':ledger._public(topic),'trials':[ledger._public(row) for row in trials],
-            'k':k,'threshold':threshold(max(k,1)),'threshold_k':max(k,1)}
+            'k':k,'threshold':threshold(max(k,1),alpha),'threshold_k':max(k,1)}
 
 
 def open_seal_failed_review(uid,org,cid,reason,controller=None):

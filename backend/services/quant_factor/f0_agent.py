@@ -133,8 +133,9 @@ def _context(uid, org, topic, run_id):
     ctx = {
         "run_id": run_id, "runner_epoch":((run_row or {}).get("decision") or {}).get("runner_epoch"), "decision_step":len(((run_row or {}).get("decision") or {}).get("steps") or [])+1,"topic": {k: topic.get(k) for k in (
             "id", "project_id", "view_id", "primary_holding_period", "max_trials", "status")},
-        # No trial yet still has a bar: the K=1 threshold (t*=1.96), never null.
-        "k": k, "t_critical": threshold(max(k, 1)), "t_critical_k": max(k, 1),
+        # No trial yet still has a bar; flow-test plans may lower alpha explicitly.
+        "k": k, "t_critical": threshold(max(k, 1), (plan.get('rules') or {}).get('alpha', 0.05)),
+        "t_critical_k": max(k, 1),
         "remaining": max(0, int(topic["max_trials"]) - k),
         "trials": [{k: t.get(k) for k in (
             "trial_no", "branch_id", "kind", "outcome", "returned_metrics", "rerun_of", "report_id")}
@@ -158,7 +159,7 @@ def _context(uid, org, topic, run_id):
         "field_limits": "行业为当前分类版本，不是历史 PIT；流通市值暂不可用；pe_ttm 有前视已移除",
     }
     contract=plan.get('researchContract')
-    ctx['next_new_trial_k']=k+1;ctx['next_new_trial_threshold']=threshold(k+1)
+    ctx['next_new_trial_k']=k+1;ctx['next_new_trial_threshold']=threshold(k+1, (plan.get('rules') or {}).get('alpha', 0.05))
     if contract:
         from .research_contract import check_fields,METHOD_VERSION,fingerprint
         from .research_contract import check_project

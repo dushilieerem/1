@@ -304,16 +304,24 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
             return
         novelty_status=None
         if phase=='development' and snap['plan'].get('researchPurpose') in ('discovery','replication'):
-            if store.update(uid,org,cid,running,event('novelty_assessment_started',message='核对查重条件，未执行的对照不会视为完成')) is False:return
-            # Persist numerical evidence before a dependent service is called.
-            if store.update(uid,org,cid,running,event('numerical_checks_completed',passed=gate['passed']),{phase:data}) is False:return
-            novelty=_compare_library(uid,org,cid,row,data)
-            data['novelty']=novelty;novelty_status=novelty['status']
-            numerical_passed=gate['passed']
-            gate={**gate,'numerical_passed':numerical_passed,'passed':numerical_passed and (snap['plan'].get('researchPurpose')=='replication' or novelty.get('gate',{}).get('passed') is True)}
-            data['gate']=gate
-            store.update(uid,org,cid,running,event('novelty_status_updated',status=novelty_status,message=novelty['message']))
-            if snap['plan'].get('researchPurpose')=='replication':novelty_status=None
+            if snap['rules'].get('acceptanceMode')=='flow_test':
+                # Isolated flow test: no novelty comparison and the gate only
+                # records the real metrics; it is never admissible as an asset.
+                data['novelty']={'status':'skipped_flow_test','message':'流程测试：不执行全库查重，不代表新颖性合格','gate':{'passed':True,'complete':True,'limitation':'流程测试'},'reference_count':0,'reference_hash':'flow_test'}
+                gate={**gate,'numerical_passed':gate['passed'],'flow_test':True}
+                data['gate']=gate
+                store.update(uid,org,cid,running,event('flow_test_novelty_skipped',message='流程测试不执行查重'))
+            else:
+                if store.update(uid,org,cid,running,event('novelty_assessment_started',message='核对查重条件，未执行的对照不会视为完成')) is False:return
+                # Persist numerical evidence before a dependent service is called.
+                if store.update(uid,org,cid,running,event('numerical_checks_completed',passed=gate['passed']),{phase:data}) is False:return
+                novelty=_compare_library(uid,org,cid,row,data)
+                data['novelty']=novelty;novelty_status=novelty['status']
+                numerical_passed=gate['passed']
+                gate={**gate,'numerical_passed':numerical_passed,'passed':numerical_passed and (snap['plan'].get('researchPurpose')=='replication' or novelty.get('gate',{}).get('passed') is True)}
+                data['gate']=gate
+                store.update(uid,org,cid,running,event('novelty_status_updated',status=novelty_status,message=novelty['message']))
+                if snap['plan'].get('researchPurpose')=='replication':novelty_status=None
         final_status=phase+('_error' if novelty_status in ('unavailable','incomplete','resource_pending') else '_passed' if gate['passed'] else '_failed')
         with get_conn() as c:
             locked=c.execute('SELECT status FROM quant_factor_candidates WHERE id=%s FOR UPDATE',(cid,)).fetchone()
@@ -458,6 +466,7 @@ def register_asset(uid,org,cid,library_id):
         row=c.execute('SELECT * FROM quant_factor_candidates WHERE id=%s AND user_id=%s AND org_id=%s FOR UPDATE',(cid,uid,org)).fetchone()
         if not row:raise KeyError(cid)
         if not row['archive']:raise WorkflowError('请先保存研究因子卡与证据')
+        if (row['archive'].get('research_asset') or {}).get('flow_test'):raise WorkflowError('流程测试候选不可登记入库；该候选仅用于验证审批流程')
         if row['archive'].get('factor'):return public(dict(row))
         req=row['snapshot']['request'];code=req.get('factor_code')
         if not code:raise WorkflowError('内置因子无需复制入库，可直接在已有库中复用；冻结研究证据已留档')

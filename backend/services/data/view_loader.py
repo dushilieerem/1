@@ -244,11 +244,17 @@ def _to_ytd(income):
     for col in ("revenue", "oper_profit", "net_profit_excl_min_int_inc"):
         if col not in income.columns:
             continue
-        # 缺失季度保留 NaN，不用累计值冒充
-        ytd = income.groupby(["symbol", "_fy"], sort=False)[col].transform(
-            lambda s: s.cumsum().where(s.notna().cumsum() > 0)
+        # 缺失季度保留 NaN，不用累计值冒充。
+        # 用向量化 groupby.cumsum：逐组 Python lambda 在 ~10 万个 组上要跑几分钟。
+        ytd = income.groupby(["symbol", "_fy"], sort=False)[col].cumsum()
+        seen = (
+            income[col]
+            .notna()
+            .groupby([income["symbol"], income["_fy"]], sort=False)
+            .cumsum()
+            > 0
         )
-        income[col] = ytd.where(income[col].notna() & ~annual_only)
+        income[col] = ytd.where(seen).where(income[col].notna() & ~annual_only)
     if "gross_margin" in income.columns:
         income["gross_profit"] = income["revenue"] * income["gross_margin"] / 100.0
     return income.drop(columns=["_fy"])
@@ -360,6 +366,29 @@ def _copy_rows(conn, table: str, columns: list[str], rows: list[tuple]) -> None:
             copy.write(buffer.read())
 
 
+def _day_col(series):
+    """向量化版 _iso_day：YYYYMMDD → YYYY-MM-DD，NaN/空串 → NA。"""
+    import pandas as pd
+
+    out = series.astype("string").str.strip()
+    out = out.str.replace(r"\.0$", "", regex=True)
+    out = out.mask(out.isin(["", "nan", "NaN", "NaT", "None", "<NA>"]))
+    return out.str.replace(r"^(\d{4})(\d{2})(\d{2})$", r"\1-\2-\3", regex=True)
+
+
+def _copy_frame(conn, table: str, columns: list[str], frame) -> int:
+    """整表写 CSV 再 COPY：比逐行 Python 拼串快一个数量级。"""
+    buffer = io.StringIO()
+    frame.to_csv(buffer, index=False, header=False, na_rep="", lineterminator="\n")
+    buffer.seek(0)
+    with conn.cursor() as cur:
+        with cur.copy(
+            f"COPY {table} ({','.join(columns)}) FROM STDIN WITH (FORMAT csv, NULL '')"
+        ) as copy:
+            copy.write(buffer.read())
+    return len(frame)
+
+
 def load_financials(
     symbols: Iterable[str] | None = None, *, root: Path | None = None
 ) -> dict[str, int]:
@@ -371,120 +400,110 @@ def load_financials(
     today = date.today().isoformat()
     source = "svquant-data"
 
-    def _day(value):
-        return _iso_day(value)
+    def base(frame, kind: str):
+        return pd.DataFrame(
+            {
+                "symbol": frame["symbol"].astype(str),
+                "report_date": _day_col(frame["m_timetag"]),
+                "notice_date": _day_col(frame["m_anntime"]),
+                "statement_type": kind,
+            }
+        )
 
-    inc_rows = [
-        (
-            row.symbol,
-            _day(row.m_timetag),
-            _day(row.m_anntime),
-            "income",
-            None if pd.isna(row.revenue) else float(row.revenue),
-            None if pd.isna(row.oper_profit) else float(row.oper_profit),
-            None if pd.isna(row.net_profit_excl_min_int_inc) else float(row.net_profit_excl_min_int_inc),
-            None if pd.isna(row.gross_profit) else float(row.gross_profit),
-            None if pd.isna(row.tot_profit) else float(row.tot_profit),
-            None if pd.isna(row.s_fa_eps_basic) else float(row.s_fa_eps_basic),
-            source,
-            today,
-        )
-        for row in income.itertuples(index=False)
-        if _day(row.m_anntime)
-    ]
-    bal_rows = [
-        (
-            row.symbol,
-            _day(row.m_timetag),
-            _day(row.m_anntime),
-            "balance",
-            None if pd.isna(row.tot_assets) else float(row.tot_assets),
-            None if pd.isna(row.tot_liab) else float(row.tot_liab),
-            None if pd.isna(row.total_equity) else float(row.total_equity),
-            None if pd.isna(row.total_current_assets) else float(row.total_current_assets),
-            None if pd.isna(row.total_current_liability) else float(row.total_current_liability),
-            None if pd.isna(row.cash_equivalents) else float(row.cash_equivalents),
-            None if pd.isna(row.inventories) else float(row.inventories),
-            None if pd.isna(row.account_receivable) else float(row.account_receivable),
-            source,
-            today,
-        )
-        for row in balance.itertuples(index=False)
-        if _day(row.m_anntime)
-    ]
-    cf_rows = []
-    for row in cashflow.itertuples(index=False):
-        ocf = None if pd.isna(row.net_cash_flows_oper_act) else float(row.net_cash_flows_oper_act)
-        capex = None if pd.isna(row.cash_pay_acq_const_fiolta) else float(row.cash_pay_acq_const_fiolta)
-        fcf = (ocf - capex) if (ocf is not None and capex is not None) else None
-        if _day(row.m_anntime):
-            cf_rows.append(
-                (
-                    row.symbol,
-                    _day(row.m_timetag),
-                    _day(row.m_anntime),
-                    "cashflow",
-                    ocf,
-                    None if pd.isna(row.net_cash_flows_inv_act) else float(row.net_cash_flows_inv_act),
-                    None if pd.isna(row.net_cash_flows_fnc_act) else float(row.net_cash_flows_fnc_act),
-                    fcf,
-                    capex,
-                    source,
-                    today,
-                )
-            )
-    ind_rows = [
-        (
-            row.symbol,
-            _day(row.m_timetag),
-            _day(row.m_anntime),
-            None if pd.isna(row.equity_roe) else float(row.equity_roe) / 100.0,
-            None if pd.isna(row.gross_margin) else float(row.gross_margin) / 100.0,
-            None if pd.isna(row.net_margin) else float(row.net_margin) / 100.0,
-            None if pd.isna(row.s_fa_eps_basic) else float(row.s_fa_eps_basic),
-            None if pd.isna(row.inc_revenue_rate) else float(row.inc_revenue_rate) / 100.0,
-            None if pd.isna(row.inc_net_profit_rate) else float(row.inc_net_profit_rate) / 100.0,
-            source,
-            today,
-        )
-        for row in indicator.itertuples(index=False)
-        if _day(row.m_anntime)
-    ]
+    inc = base(income, "income")
+    for col, out_col in (
+        ("revenue", "revenue"),
+        ("oper_profit", "operating_profit"),
+        ("net_profit_excl_min_int_inc", "net_profit"),
+        ("gross_profit", "gross_profit"),
+        ("tot_profit", "total_profit"),
+        ("s_fa_eps_basic", "eps"),
+    ):
+        inc[out_col] = pd.to_numeric(income[col], errors="coerce")
+    inc["source"] = source
+    inc["as_of"] = today
+    inc = inc[inc["notice_date"].notna()]
+
+    bal = base(balance, "balance")
+    for col, out_col in (
+        ("tot_assets", "total_assets"),
+        ("tot_liab", "total_liabilities"),
+        ("total_equity", "total_equity"),
+        ("total_current_assets", "current_assets"),
+        ("total_current_liability", "current_liabilities"),
+        ("cash_equivalents", "cash"),
+        ("inventories", "inventory"),
+        ("account_receivable", "receivables"),
+    ):
+        bal[out_col] = pd.to_numeric(balance[col], errors="coerce")
+    bal["source"] = source
+    bal["as_of"] = today
+    bal = bal[bal["notice_date"].notna()]
+
+    cf = base(cashflow, "cashflow")
+    ocf = pd.to_numeric(cashflow["net_cash_flows_oper_act"], errors="coerce")
+    capex = pd.to_numeric(cashflow["cash_pay_acq_const_fiolta"], errors="coerce")
+    cf["operating_cf"] = ocf
+    cf["investing_cf"] = pd.to_numeric(cashflow["net_cash_flows_inv_act"], errors="coerce")
+    cf["financing_cf"] = pd.to_numeric(cashflow["net_cash_flows_fnc_act"], errors="coerce")
+    cf["free_cash_flow"] = (ocf - capex).where(ocf.notna() & capex.notna())
+    cf["capex"] = capex
+    cf["source"] = source
+    cf["as_of"] = today
+    cf = cf[cf["notice_date"].notna()]
+
+    ind = base(indicator, "indicator").drop(columns=["statement_type"])
+    for col, out_col in (
+        ("equity_roe", "roe"),
+        ("gross_margin", "gross_margin"),
+        ("net_margin", "net_margin"),
+        ("s_fa_eps_basic", "eps_ttm"),
+        ("inc_revenue_rate", "revenue_yoy"),
+        ("inc_net_profit_rate", "profit_yoy"),
+    ):
+        series = pd.to_numeric(indicator[col], errors="coerce")
+        ind[out_col] = series / 100.0 if out_col in {"roe", "gross_margin", "net_margin", "revenue_yoy", "profit_yoy"} else series
+    ind["source"] = source
+    ind["as_of"] = today
+    ind = ind[ind["notice_date"].notna()]
+
     with get_conn() as conn:
         scope = " WHERE symbol = ANY(%s)" if symbols else ""
         params = ([str(s).upper() for s in symbols],) if symbols else ()
         for table in ("fin_income_statement", "fin_balance_sheet", "fin_cash_flow", "fin_indicator"):
             conn.execute(f"DELETE FROM {table}{scope}", params)
-        _copy_rows(
-            conn,
-            "fin_income_statement",
-            ["symbol", "report_date", "notice_date", "statement_type", "revenue", "operating_profit",
-             "net_profit", "gross_profit", "total_profit", "eps", "source", "as_of"],
-            inc_rows,
-        )
-        _copy_rows(
-            conn,
-            "fin_balance_sheet",
-            ["symbol", "report_date", "notice_date", "statement_type", "total_assets", "total_liabilities",
-             "total_equity", "current_assets", "current_liabilities", "cash", "inventory", "receivables",
-             "source", "as_of"],
-            bal_rows,
-        )
-        _copy_rows(
-            conn,
-            "fin_cash_flow",
-            ["symbol", "report_date", "notice_date", "statement_type", "operating_cf", "investing_cf",
-             "financing_cf", "free_cash_flow", "capex", "source", "as_of"],
-            cf_rows,
-        )
-        _copy_rows(
-            conn,
-            "fin_indicator",
-            ["symbol", "report_date", "notice_date", "roe", "gross_margin", "net_margin",
-             "eps_ttm", "revenue_yoy", "profit_yoy", "source", "as_of"],
-            ind_rows,
-        )
-    return {"income": len(inc_rows), "balance": len(bal_rows), "cashflow": len(cf_rows), "indicator": len(ind_rows)}
+        counts = {
+            "income": _copy_frame(
+                conn,
+                "fin_income_statement",
+                ["symbol", "report_date", "notice_date", "statement_type", "revenue", "operating_profit",
+                 "net_profit", "gross_profit", "total_profit", "eps", "source", "as_of"],
+                inc,
+            ),
+            "balance": _copy_frame(
+                conn,
+                "fin_balance_sheet",
+                ["symbol", "report_date", "notice_date", "statement_type", "total_assets", "total_liabilities",
+                 "total_equity", "current_assets", "current_liabilities", "cash", "inventory", "receivables",
+                 "source", "as_of"],
+                bal,
+            ),
+            "cashflow": _copy_frame(
+                conn,
+                "fin_cash_flow",
+                ["symbol", "report_date", "notice_date", "statement_type", "operating_cf", "investing_cf",
+                 "financing_cf", "free_cash_flow", "capex", "source", "as_of"],
+                cf,
+            ),
+            "indicator": _copy_frame(
+                conn,
+                "fin_indicator",
+                ["symbol", "report_date", "notice_date", "roe", "gross_margin", "net_margin",
+                 "eps_ttm", "revenue_yoy", "profit_yoy", "source", "as_of"],
+                ind,
+            ),
+        }
+    return counts
 
 
 def valuation_frame(

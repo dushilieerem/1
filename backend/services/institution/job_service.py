@@ -27,6 +27,17 @@ def _row(row: Any) -> dict[str, Any] | None:
     return out
 
 
+def recover_interrupted_jobs() -> int:
+    """服务启动时把上一次进程遗留的 running 任务标为失败，避免页面永远转圈。"""
+    ensure_inst_business_schema()
+    with get_conn() as conn:
+        result = conn.execute(
+            "UPDATE inst_ai_job SET status='failed', error='服务重启，任务中断，请重新生成', "
+            "finished_at=NOW(), updated_at=NOW() WHERE status='running'"
+        )
+    return int(result.rowcount or 0)
+
+
 def create_job(
     org_id: int,
     case_id: int,

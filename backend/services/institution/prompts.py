@@ -712,7 +712,10 @@ _A15 = """# 角色
 - grade 取证据实际等级；A 级需能指到公告/年报原文；
 - issues 写"缺什么"，不写"证据不足"四个字了事；
 - conclusion 必须报出三个数（总数/已核验/未决），且未决 ≥1（真全部解决则写 0 并说明核验方式）。
-- chair_review.verdict 只能 support_proposal / supplement_research；有关键未决项或证据不足时用 supplement_research。
+- chair_review.verdict 只能 support_proposal / supplement_research。
+- support_proposal：方向明确，关键假设有可核验证据（A 级，或至少 2 条独立 B 级）；未决项不改变方向，写入 unresolved 与 what_would_change，随议案带入审批。
+- supplement_research：关键假设缺证据或证据互相矛盾，导致无法给出可执行方向/价格带。
+- 仅存在未决项不自动判 supplement_research。
 
 # 禁区
 不下买入/不买结论（那是议案）；不改写双方 claim 原文（引用标 B1/B2、S1/S2）；不评价公司质地；

@@ -14,8 +14,8 @@ from typing import Any
 from ai.errors import AiBadOutput
 from ai.router.specs import TaskRequest, TaskSpec, register
 
-PROMPT_VERSION = "inst-v3.5"
-DIM_PROMPT_VERSION = "inst-dim-v3.5"
+PROMPT_VERSION = "inst-v3.6"
+DIM_PROMPT_VERSION = "inst-dim-v3.6"
 
 
 
@@ -89,7 +89,7 @@ def _chair_review(data: dict[str, Any]) -> dict[str, Any]:
         text = f"{conclusion} {first_claim}"
         verdict = (
             "supplement_research"
-            if not text or any(x in text for x in ("补充", "未决", "证据不足", "无法验证"))
+            if not text or any(x in text for x in ("补充研究", "证据不足", "无法验证"))
             else "support_proposal"
         )
         fallback = True

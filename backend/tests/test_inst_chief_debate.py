@@ -106,3 +106,19 @@ def test_get_debate_keeps_nested_chief_review_objects(monkeypatch) -> None:
     assert chief["accepted_claims"][0]["claim_id"] == "B1"
     assert "经营现金流/净利润" in out["arguments"][0]["claim"]
     assert "存货周转天数" in out["arguments"][0]["falsifier"]
+
+
+def test_unresolved_alone_does_not_force_supplement() -> None:
+    out = validate_debate(
+        json.dumps(
+            {
+                "bull": [{"claim": "看多", "evidence_ids": [1]}],
+                "bear": [{"claim": "看空", "evidence_ids": [2]}],
+                "chair": [{"claim": "核心假设可核验，未决项随议案跟踪", "evidence_ids": [1]}],
+                "conclusion": "26 条 claim，24 条已核验，1 项未决；随议案带入审批。",
+            },
+            ensure_ascii=False,
+        ),
+        TaskRequest(variables={"evidence_ids": [1, 2]}),
+    )
+    assert out["chair_review"]["verdict"] == "support_proposal"

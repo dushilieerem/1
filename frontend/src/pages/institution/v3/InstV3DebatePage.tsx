@@ -496,7 +496,7 @@ export function InstV3DebatePage() {
             <section className="v3-card">
               <div className="v3-card-head">
                 <div><h2>多空立论</h2><p>多头 / 空头逐条带证据；空头不重复行业空间。</p></div>
-                {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <span className="v3-chip ok">已完成</span>}
+                {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <div className="flex items-center gap-2"><span className="v3-chip ok">已完成</span><button className="v3-btn ghost" disabled={!!busy} onClick={startDebate}>{busy === "debate" ? "生成中…" : "重新生成辩论"}</button></div>}
               </div>
               <InstV3AgentProgress
                 active={busy === "debate"}

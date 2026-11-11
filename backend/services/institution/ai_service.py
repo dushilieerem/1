@@ -544,6 +544,10 @@ def _rule_memo(version: dict[str, Any], case: dict[str, Any] | None = None) -> d
 
 
 def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict[str, Any]:
+    """记录数据门禁元数据，但不降级结论、不向用户展示缺口。
+
+    研究定稿门禁已经是提示项；一页纸也必须只用现有数据给出结论。
+    """
     gates: dict[str, str] = {}
     for dim in version.get("six_dim") or []:
         if isinstance(dim, dict) and dim.get("key") and dim.get("gate"):
@@ -554,25 +558,8 @@ def _apply_memo_data_gate(data: dict[str, Any], version: dict[str, Any]) -> dict
     if not gates:
         return data
     data["data_gates"] = gates
-    labels = {str(d.get("key")): str(d.get("title") or d.get("key")) for d in version.get("six_dim") or [] if isinstance(d, dict)}
-    labels["industry"] = "行业分析"
-    failed = [labels.get(key, key) for key, gate in gates.items() if gate == "fail"]
-    decision = str(data.get("decision") or "")
-    if decision == "proceed" and failed:
-        data["decision_original"] = decision
-        data["decision"] = "watch"
-        data["decision_note"] = (
-            "一页纸原判为进入下一步研究，但存在未通过核验的阻断维，服务端降级为观察。"
-            f"阻断维：{'、'.join(failed)}。"
-        )
-        data["data_gate_note"] = data["decision_note"]
-    elif failed:
-        data["data_gate_note"] = (
-            f"以下维度门禁未通过，按不可买入处理：{'、'.join(failed)}。"
-        )
-    else:
-        # 产品只展示会阻断当前结论的门禁；下一阶段数据不在页面列缺口。
-        data.pop("data_gate_note", None)
+    data.pop("data_gate_note", None)
+    data.pop("decision_note", None)
     return data
 
 

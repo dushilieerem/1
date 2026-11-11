@@ -383,13 +383,15 @@ export function InstV3ResearchPage() {
     busy === "full" ||
     busy === "industry" ||
     busy === "memo" ||
+    busy === "auto-research" ||
+    busy === "auto-memo" ||
     DIMS.some(([key]) => key === busy);
   const aiTitle =
-    busy === "full"
-      ? "AI 正在生成六维结论"
+    busy === "full" || busy === "auto-research"
+      ? "AI 正在生成行业分析与六维结论"
       : busy === "industry"
         ? "AI 正在生成行业分析"
-        : busy === "memo"
+        : busy === "memo" || busy === "auto-memo"
           ? "AI 研究经理正在生成一页纸"
           : `AI 正在重跑${DIMS.find(([key]) => key === busy)?.[1] || "该维度"}`;
 
@@ -499,9 +501,9 @@ export function InstV3ResearchPage() {
           <InstV3AgentProgress
             active={aiBusy}
             title={aiTitle}
-            detail={busy === "full" ? "六位专业 Agent 并行分析；每完成一维会在这里打勾。" : "正在调用模型并整理证据，完成后自动刷新。"}
+            detail={busy === "full" || busy === "auto-research" ? "六位专业 Agent 并行分析；每完成一维会在这里打勾。" : "正在调用模型并整理证据，完成后自动刷新。"}
             steps={
-              busy === "full"
+              busy === "full" || busy === "auto-research"
                 ? (detail.tasks || []).map((t) => ({
                     key: t.task_key,
                     label: t.title || t.task_key,
@@ -537,6 +539,11 @@ export function InstV3ResearchPage() {
                     </div>
                   ) : null}
                   {version.industry_analysis.data_used?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>使用数据：{version.industry_analysis.data_used.join("；")}</p> : null}
+                </div>
+              ) : busy === "industry" || busy === "auto-research" || busy === "full" ? (
+                <div className="v3-ai-inline">
+                  <span className="v3-spinner" aria-hidden="true" />
+                  <div><b>AI 正在生成行业分析与六维结论…</b><span>通常需要 1–3 分钟；完成后本页自动刷新，请勿关闭页面。</span></div>
                 </div>
               ) : (
                 <div className="v3-empty">
@@ -596,6 +603,11 @@ export function InstV3ResearchPage() {
                     </div>
                   ) : <div className="v3-empty">该维还没有结论。</div>}
                 </>
+              ) : busy === "full" || busy === "auto-research" ? (
+                <div className="v3-ai-inline">
+                  <span className="v3-spinner" aria-hidden="true" />
+                  <div><b>六位研究员正在并行分析…</b><span>每完成一维会自动打勾；通常需要 1–3 分钟，请勿关闭页面。</span></div>
+                </div>
               ) : (
                 <div className="v3-empty">还没有六维结论。<button className="v3-btn primary" style={{ marginLeft: 8 }} disabled={!!busy} onClick={() => runResearch("full", "full")}>{busy === "full" ? "生成中…" : "生成六维分析"}</button></div>
               )}

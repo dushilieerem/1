@@ -809,3 +809,14 @@
 .inst-v3 .v3-ai-step-count { font-size: 12px; color: var(--v3-faint); }
 .inst-v3 .v3-ai-progress-hint { margin-top: 6px; font-size: 12px; color: var(--v3-muted); }
 @keyframes v3-spin { to { transform: rotate(360deg); } }
+.inst-v3 .v3-ai-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px 18px;
+  border: 1px dashed #e3c2d1;
+  border-radius: 10px;
+  background: #fdf7fa;
+}
+.inst-v3 .v3-ai-inline b { display: block; font-size: 14px; color: var(--v3-ink); }
+.inst-v3 .v3-ai-inline span:not(.v3-spinner) { display: block; margin-top: 4px; font-size: 12px; color: var(--v3-muted); }

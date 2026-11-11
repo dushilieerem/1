@@ -437,6 +437,13 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
         case["industry"] = _mapped_industry(
             conn, str(case.get("symbol") or ""), case.get("industry")
         )
+        case["is_exit"] = bool(
+            conn.execute(
+                "SELECT 1 FROM inst_exit_case WHERE case_id=%s AND org_id=%s "
+                "AND status NOT IN ('closed','rejected')",
+                (case_id, org_id),
+            ).fetchone()
+        )
         tasks = conn.execute(
             "SELECT * FROM inst_research_task WHERE case_id=%s ORDER BY id", (case_id,)
         ).fetchall()

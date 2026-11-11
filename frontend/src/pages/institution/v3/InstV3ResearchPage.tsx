@@ -123,6 +123,7 @@ type CaseItem = {
   version_status?: string | null;
   updated_at?: string | null;
   overall_score?: number | null;
+  is_exit?: boolean;
   versions?: Version[];
   tasks?: Array<{ task_key: string; title?: string; status?: string; progress?: number }>;
 };
@@ -506,7 +507,7 @@ export function InstV3ResearchPage() {
       <div className="v3-page-head">
         <div>
           <div className="v3-eyebrow">RESEARCH</div>
-          <h1>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span></h1>
+          <h1>{detail.company_name} <span className="font-mono text-[12px] font-normal text-[#6b6370]">{detail.symbol}</span>{detail.is_exit ? <span className="v3-chip bad" style={{ marginLeft: 8 }}>退出案</span> : null}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="v3-chip info">版本 {version?.version_no ?? detail.version_no ?? "—"}</span>
@@ -528,7 +529,7 @@ export function InstV3ResearchPage() {
           <div className="pl-head"><span>在研项目</span><span>{cases.length}</span></div>
           {cases.map((c) => (
             <button key={c.id} className={`pl-item${c.id === detail.id ? " on" : ""}`} onClick={() => selectCase(c.id)}>
-              <b>{c.company_name}</b>
+              <b>{c.company_name}{c.is_exit ? <span className="v3-chip bad" style={{ marginLeft: 6 }}>退出案</span> : null}</b>
               <span>{c.symbol} · 版本 {c.version_no ?? "—"} · {c.stage_no === 2 ? "已定稿" : "价值分析"}</span>
             </button>
           ))}

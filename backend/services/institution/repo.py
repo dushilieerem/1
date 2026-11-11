@@ -26,7 +26,12 @@ def company(scope: OrgScope, company_id: int, *, conn=None) -> dict[str, Any] | 
 def cases(scope: OrgScope, *, company_id: int | None = None, conn=None) -> list[dict[str, Any]]:
     sql = """
         SELECT c.*, co.symbol, co.name AS company_name, co.market, co.industry,
-               v.version_no, v.status AS version_status, v.conclusion
+               v.version_no, v.status AS version_status, v.conclusion,
+               EXISTS (
+                 SELECT 1 FROM inst_exit_case x
+                  WHERE x.case_id=c.id AND x.org_id=c.org_id
+                    AND x.status NOT IN ('closed','rejected')
+               ) AS is_exit
           FROM inst_research_case c
           JOIN inst_company co ON co.id=c.company_id
           LEFT JOIN LATERAL (

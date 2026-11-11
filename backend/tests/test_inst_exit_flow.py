@@ -233,14 +233,20 @@ def test_exit_flow_state_machine_and_direction_guard(fixture) -> None:
     assert int(proposal["exit_case"]["id"]) == exit_id
     assert _exit_status(fixture, exit_id) == "submitted"
 
-    # 退出研究案属于投后管理，不能在流水线/价值分析里重新出现。
+    # 退出案仍在自己的当前流程阶段并明确标记；持仓未退出前，
+    # 投资管理阶段始终保留一张“持仓中”卡片。
     pipe = _ok(client.get("/api/inst/pipeline", headers=_h(manager)))
-    stage_items = {
-        int(s["stage_no"]): {int(x["case_id"]) for x in s["items"] if x.get("case_id")}
-        for s in pipe["stages"]
-    }
-    assert case_id in stage_items[5]
-    assert case_id not in stage_items[1]
+    all_items = [x for s in pipe["stages"] for x in s["items"]]
+    exit_cards = [x for x in all_items if int(x.get("case_id") or 0) == case_id]
+    assert exit_cards and all(x.get("is_exit") is True for x in exit_cards)
+    assert all(int(x.get("stage_no") or 0) < 5 for x in exit_cards)
+    assert any(
+        x.get("symbol") == "600519.SH"
+        and x.get("is_holding") is True
+        and int(x.get("stage_no") or 0) == 5
+        and not x.get("case_id")
+        for x in all_items
+    )
 
     detail = _ok(client.get(f"/api/inst/proposals/{proposal_id}", headers=_h(manager)))
     assert detail["exit_case"]["case_id"] == case_id

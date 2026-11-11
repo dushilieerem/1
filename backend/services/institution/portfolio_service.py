@@ -661,6 +661,28 @@ def pipeline(org_id: int) -> dict[str, Any]:
                 (org_id,),
             ).fetchall()
         }
+        # 持仓卡直接来自组合持仓；即使买入案已关闭，只要未真正退出，
+        # 投资管理阶段仍要显示这只持仓（退出案另在其当前流程阶段显示）。
+        holding_rows = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT DISTINCT ON (co.symbol)
+                       co.id AS company_id, co.symbol, co.name AS company_name,
+                       co.market, co.industry, ps.qty, ps.as_of
+                  FROM inst_position_snapshot ps
+                  JOIN inst_portfolio po ON po.id=ps.portfolio_id
+                  JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=po.org_id
+                 WHERE po.org_id=%s AND ps.qty > 0
+                   AND ps.as_of=(
+                     SELECT MAX(p2.as_of) FROM inst_position_snapshot p2
+                      WHERE p2.portfolio_id=ps.portfolio_id
+                   )
+                 ORDER BY co.symbol, ps.as_of DESC, ps.id DESC
+                """,
+                (org_id,),
+            ).fetchall()
+        ]
     by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
     selected: dict[int, tuple[tuple[int, str, int], dict[str, Any]]] = {}
     case_company_ids: set[int] = set()
@@ -670,15 +692,13 @@ def pipeline(org_id: int) -> dict[str, Any]:
         company_id = int(card.get("company_id") or 0)
         symbol = str(card.get("symbol") or "")
         stage = int(card.get("stage_no") or 0)
-        if case_id in exit_cases:
-            stage = 5
-        else:
-            if case_id in debate_cases:
-                stage = max(stage, 2)
-            if case_id in proposal_cases:
-                stage = max(stage, 3)
-            if case_id in auth_cases:
-                stage = max(stage, 4)
+        if case_id in debate_cases:
+            stage = max(stage, 2)
+        if case_id in proposal_cases:
+            stage = max(stage, 3)
+        if case_id in auth_cases:
+            stage = max(stage, 4)
+        card["is_exit"] = case_id in exit_cases
         # 持仓只覆盖已进入执行/管理阶段的案；同一标的的新研究案仍留在研究阶段。
         if symbol and symbol in position_symbols and stage >= 4:
             stage = 5
@@ -698,6 +718,42 @@ def pipeline(org_id: int) -> dict[str, Any]:
             case_company_ids.add(company_id)
     for _, card in selected.values():
         by_stage[int(card["stage_no"])].append(card)
+    # 持仓中的标的始终保留一张 05 投资管理卡；退出案同时保留在其当前流程阶段。
+    managed_company_ids = {
+        int(card["company_id"])
+        for card in by_stage[5]
+        if card.get("company_id")
+    }
+    for row in holding_rows:
+        company_id = int(row.get("company_id") or 0)
+        if not company_id or company_id in managed_company_ids:
+            continue
+        stage_def = _stage_def(5)
+        by_stage[5].append(
+            {
+                "key": f"holding:{row.get('symbol')}",
+                "case_id": None,
+                "company_id": company_id,
+                "symbol": row.get("symbol"),
+                "company_name": row.get("company_name"),
+                "industry": row.get("industry"),
+                "stage_no": 5,
+                "stage_key": stage_def["key"],
+                "stage_name": stage_def["name"],
+                "gate": stage_def["gate"],
+                "version_no": None,
+                "version_status": None,
+                "conclusion": None,
+                "proposal_status": None,
+                "owner_member_id": None,
+                "updated_at": _iso(row.get("as_of")),
+                "stale": False,
+                "is_exit": False,
+                "is_holding": True,
+            }
+        )
+        managed_company_ids.add(company_id)
+        case_company_ids.add(company_id)
     # stage 0：量化推送 + 观察池，排除已建研究案的公司。
     push = ideas_push(org_id, limit=12).get("items") or []
     watch = list_companies(org_id, pool_status="watch", limit=20).get("items") or []

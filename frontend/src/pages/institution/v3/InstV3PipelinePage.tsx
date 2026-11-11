@@ -21,10 +21,13 @@ function ProjectCard({
   const stageLine = item.stage_no === 0
     ? "当前阶段：机会发现 · 待进入价值分析"
     : `当前阶段：${item.stage_name}`;
+  const target = item.is_holding && item.symbol
+    ? `/inst/manage?key=${encodeURIComponent(`holding:${item.symbol}`)}`
+    : `/inst/pipeline/result?key=${encodeURIComponent(item.key)}`;
   return (
     <div className="v3-project">
-      <Link className="v3-project-link" to={`/inst/pipeline/result?key=${encodeURIComponent(item.key)}`}>
-        <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
+      <Link className="v3-project-link" to={target}>
+        <span className="nm">{title}{item.is_exit ? <span className="v3-chip bad">退出案</span> : null}{item.is_holding ? <span className="v3-chip ok">持仓中</span> : null}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
         <span className="cd">{item.symbol} {item.industry ? `· ${item.industry}` : ""}</span>
         <span className="ms">{stageLine}</span>
         <span className="ft">

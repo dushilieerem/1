@@ -96,6 +96,7 @@ type ProposalDetail = ProposalListItem & {
   current_version?: { id: number; version_no: number; snapshot?: Record<string, unknown> };
   progress?: { partner: StageSummary; risk_precheck: StageSummary; chairman: StageSummary };
   risk_checks?: RiskCheck[];
+  risk_blocks?: string[];
   approval_chain?: ApprovalItem[];
   my_decision?: { decision?: string; comment?: string; conditions?: string[] } | null;
   authorization?: { id: number; status: string; issued_at?: string } | null;
@@ -272,7 +273,7 @@ export function InstV3ApprovalsPage() {
   const loadList = async () => {
     // 审批工作台只列当前待办；已执行/已驳回/草稿属于其他阶段或历史，不混入当前项目。
     const pending = await instApi<{ items: ProposalListItem[] }>("/proposals?scope=active");
-    const active = new Set(["partner_review", "risk_precheck", "chairman_review"]);
+    const active = new Set(["partner_review", "risk_precheck", "chairman_review", "frozen"]);
     const rows = (pending.items || []).filter((p) => active.has(String(p.status || "")));
     setItems(dedupeBy(rows, (p) => p.id));
     return rows;
@@ -394,6 +395,7 @@ export function InstV3ApprovalsPage() {
 
   const progress = detail?.progress;
   const riskChecks = dedupeBy(detail?.risk_checks || [], (c) => c.key);
+  const hardBlocks = riskChecks.filter((c) => c.status === "block");
   const stageForRole: Record<string, string> = { partner: "partner_review", risk: "risk_precheck", chairman: "chairman_review" };
   const canAct = (kind: "partner" | "risk" | "chairman") =>
     role === kind && detail?.status === stageForRole[kind];
@@ -456,6 +458,11 @@ export function InstV3ApprovalsPage() {
 
         <div className="v3-work-main">
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
+          {detail?.status === "frozen" ? (
+            <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
+              风控已否决，议案已冻结{(detail.risk_blocks?.length || hardBlocks.length) ? `：${(detail.risk_blocks?.length ? detail.risk_blocks : hardBlocks.map((c) => c.label || c.key)).join("；")}` : ""}；Chairman 不能批准。
+            </div>
+          ) : null}
 
           {viewStep === 0 ? (
             <>
@@ -549,7 +556,7 @@ export function InstV3ApprovalsPage() {
                 <section className="v3-card">
                   <div className="v3-card-head"><div><h2>硬约束核查</h2><p>任何一项否决，议案即时终止；Chairman 不能越过。</p></div><span className="v3-chip">{riskChecks.length} 项</span></div>
                   {riskChecks.map((c) => (
-                    <div className="v3-kv" key={c.key}><dt>{c.label}</dt><dd>{c.value || "—"} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status}</span></dd></div>
+                    <div className="v3-kv" key={c.key}><dt>{c.label}</dt><dd>{c.value || "—"} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status === "pass" ? "通过" : c.status === "warn" ? "关注" : "阻断"}</span></dd></div>
                   ))}
                   {!riskChecks.length ? <div className="v3-empty">当前议案还没有风控核查数据。</div> : null}
                   {role === "risk" && !canAct("risk") ? (
@@ -559,6 +566,11 @@ export function InstV3ApprovalsPage() {
                         : `当前议案状态为 ${proposalStatusLabel(detail.status)}，风控环节尚未轮到或已结束，不能操作。`}
                     </div>
                   ) : null}
+                  {role === "risk" && canAct("risk") && hardBlocks.length ? (
+                    <div className="v3-note" style={{ marginTop: 8, borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
+                      硬约束未通过：{hardBlocks.map((c) => c.label || c.key).join("；")}。放行会被系统自动否决，议案将立即冻结。
+                    </div>
+                  ) : null}
                   {role === "risk" && canAct("risk") ? (
                     <>
                       <div className="v3-form-grid" style={{ marginTop: 8 }}>
@@ -566,9 +578,15 @@ export function InstV3ApprovalsPage() {
                         <div className="v3-field span-2"><label>附条件（有条件放行时必填，每行一条）</label><textarea value={conditions} onChange={(e) => setConditions(e.target.value)} /></div>
                       </div>
                       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                        <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "pass")}><Check className="h-3.5 w-3.5" />放行</button>
-                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "conditional")}>有条件放行</button>
-                        <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />否决（终局）</button>
+                        {hardBlocks.length ? (
+                          <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />确认否决（硬约束）</button>
+                        ) : (
+                          <>
+                            <button className="v3-btn primary" disabled={!!busy} onClick={() => act("risk", "pass")}><Check className="h-3.5 w-3.5" />放行</button>
+                            <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "conditional")}>有条件放行</button>
+                            <button className="v3-btn ghost" disabled={!!busy} onClick={() => act("risk", "veto")}><X className="h-3.5 w-3.5" />否决（终局）</button>
+                          </>
+                        )}
                       </div>
                     </>
                   ) : null}

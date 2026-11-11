@@ -841,8 +841,8 @@ def list_proposals_for_member(
             )
             params.append(member_id)
         elif scope == "active":
-            # 已表决但仍在途的议案也保留，页面据此展示后续环节进度。
-            sql += " AND p.status IN ('partner_review','risk_precheck','chairman_review')"
+            # 已表决但仍在途的议案也保留；风控否决后的冻结案保留结果，避免直接消失。
+            sql += " AND p.status IN ('partner_review','risk_precheck','chairman_review','frozen')"
         else:
             sql += (
                 " AND p.status IN ('draft','partner_review')"
@@ -860,8 +860,8 @@ def list_proposals_for_member(
             )
             params.append(member_id)
         elif scope == "active":
-            # 风控放行后、Chairman 批准前仍可追加否决，列表必须保留。
-            sql += " AND p.status IN ('risk_precheck','chairman_review')"
+            # 风控放行后、Chairman 批准前仍可追加否决；已否决的冻结案保留结果。
+            sql += " AND p.status IN ('risk_precheck','chairman_review','frozen')"
         else:
             sql += (
                 " AND p.status IN ('risk_precheck','chairman_review')"
@@ -969,6 +969,14 @@ def get_proposal_for_member(
             for r in rows
         )
 
+    def risk_block_labels() -> list[str]:
+        # 只回传触发阻断的硬约束名称，不回传具体核查值。
+        return [
+            str(c.get("label") or c.get("key") or "硬约束")
+            for c in (data.get("risk_checks") or [])
+            if str(c.get("status") or "") == "block"
+        ]
+
     if role == "manager":
         if created_by != int(member_id):
             raise PermissionError("该议案不在你当前角色的审批范围")
@@ -976,6 +984,7 @@ def get_proposal_for_member(
         with get_conn() as conn:
             out["progress"] = _proposal_progress(conn, org_id, rows)
         out["authorization"] = _authorization_summary(data)
+        out["risk_blocks"] = risk_block_labels()
         return out
 
     if role == "partner":
@@ -990,6 +999,7 @@ def get_proposal_for_member(
                 if data.get("case_id")
                 else None
             )
+        out["risk_blocks"] = risk_block_labels()
         return out
 
     if role == "risk":

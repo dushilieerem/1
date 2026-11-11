@@ -440,6 +440,16 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         client.post(f"/api/inst/proposals/{blocked_id}/risk-check", json={}, headers=_h(risk))
     )
     assert risk_blocked["status"] == "frozen"
+    # 风控否决后仍保留在风控/合伙人的审批列表里，显示冻结结果与原因。
+    for token in (risk, partner):
+        active = _ok(
+            client.get("/api/inst/proposals?scope=active", headers=_h(token))
+        )
+        row = next(
+            (x for x in active["items"] if int(x["id"]) == blocked_id), None
+        )
+        assert row is not None, active
+        assert row.get("status") == "frozen"
     assert (
         client.post(
             f"/api/inst/proposals/{blocked_id}/chairman",

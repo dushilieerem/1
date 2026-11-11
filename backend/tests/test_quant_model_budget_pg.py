@@ -63,11 +63,11 @@ class IsolatedBudgetPostgresTests(IsolatedAssetPostgresTests):
    c.execute('DELETE FROM quant_ai_budget_supplements')
    c.execute("INSERT INTO quant_ai_budget_accounts(org_id,scope,limit_tokens,baseline_state,historical_tokens,unknown_history) VALUES(%s,'space',1000000,'pending',180331,'{\"unknown\":true}'),(%s,'factor',200000,'pending',180331,'{\"unknown\":true}')",(self.org,self.org))
   with self.assertRaisesRegex(WorkflowError,'历史模型用量尚待核对'):self.reserve()
- def test_account_daily_limit_is_not_expanded_by_grant(self):
+ def test_daily_call_counter_does_not_block_research_but_is_recorded(self):
   row=self.reserve()
   with self.connection() as c:c.execute('UPDATE users SET ai_quota_daily=0 WHERE id=%s',(self.uid,))
-  with self.assertRaisesRegex(WorkflowError,'账号模型调用次数'):b.claim(self.uid,self.org,row['id'])
-  with self.connection() as c:self.assertEqual(c.execute('SELECT COUNT(*) n FROM ai_usage').fetchone()['n'],0)
+  self.assertTrue(b.claim(self.uid,self.org,row['id']))
+  with self.connection() as c:self.assertEqual(c.execute('SELECT COUNT(*) n FROM ai_usage').fetchone()['n'],1)
 
  def test_real_runner_persists_response_then_replays_without_second_physical_request(self):
   import io

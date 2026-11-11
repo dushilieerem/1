@@ -51,10 +51,10 @@ class IsolatedUnlimitedTests(IsolatedBudgetPostgresTests):
   self.install();row=self.reserve('unknown');self.assertTrue(b.claim(self.uid,self.org,row['id']));b.unresolved(self.uid,self.org,row['id'],'lost receipt')
   again=self.reserve('unknown');self.assertEqual(again['id'],row['id']);self.assertEqual(again['status'],'unresolved');self.assertFalse(b.claim(self.uid,self.org,row['id']))
   out=b.status(self.uid,self.org);self.assertEqual(out['usage']['unresolved_calls'],1);self.assertEqual(out['usage']['held_tokens'],3100)
- def test_unlimited_does_not_expand_shared_account_daily_calls(self):
+ def test_unlimited_and_legacy_daily_counter_do_not_block_token_governed_calls(self):
   self.install();row=self.reserve()
   with self.connection() as c:c.execute('UPDATE users SET ai_quota_daily=0 WHERE id=%s',(self.uid,))
-  with self.assertRaisesRegex(WorkflowError,'账号模型调用次数'):b.claim(self.uid,self.org,row['id'])
+  self.assertTrue(b.claim(self.uid,self.org,row['id']))
  def test_changed_authorization_is_rejected_and_original_event_remains(self):
   first=self.install();self.record['recorded_at_utc']='different';self.file.write_text(json.dumps(self.record))
   with self.assertRaisesRegex(WorkflowError,'不同的研究政策授权'):self.install()

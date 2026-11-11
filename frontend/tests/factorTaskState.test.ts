@@ -185,7 +185,7 @@ test('技术等待按真实原因区分，不再统一写研究暂遇技术条�
 });
 
 
-test('今日模型调用次数用尽显示等待额度，而不是笼统技术条件限制',()=>{
+test('旧模型调用次数限制显示已停用，而不是笼统技术条件限制',()=>{
  const s=deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'今日账号模型调用次数已达上限，未预留新请求'});
- assert.equal(s.label,'等待模型调用额度');assert.match(s.needsYou,/次日 00:00 重置/);assert.ok(!s.needsYou.includes('技术条件限制'));
+ assert.equal(s.label,'旧调用配额已停用');assert.match(s.needsYou,/重新启动研究/);assert.ok(!s.needsYou.includes('技术条件限制'));
 });

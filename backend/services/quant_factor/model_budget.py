@@ -50,9 +50,9 @@ def reserve(uid,org,project_id,call_key,task_id,request_hash,prompt_upper,max_ou
   if prior:
    if prior['user_id']!=uid or prior['project_id']!=project_id or prior['request_hash']!=request_hash or (supplement is not None and prior['supplement_id']!=supplement):raise WorkflowError('此模型调用身份已用于另一输入或额度，未覆盖原记录')
    return dict(prior)
-  quota=c.execute('SELECT ai_quota_daily FROM users WHERE id=%s',(uid,)).fetchone()
-  used=c.execute("SELECT COUNT(*) AS n FROM ai_usage WHERE user_id=%s AND created_at>=date_trunc('day',NOW())",(uid,)).fetchone()['n']
-  if not quota or used>=int(quota['ai_quota_daily'] or 0):raise WorkflowError('今日账号模型调用次数已达上限，未预留新请求')
+  # Product decision 2026-11-11: factor research is governed by token budget /
+  # authorization, not the legacy daily call counter. ai_usage is still written
+  # on claim for accounting and for the future weekly token quota.
   grant=c.execute("SELECT * FROM quant_ai_budget_supplements WHERE org_id=%s AND module='factor' AND status='authorized' "+("AND id=%s " if supplement else '')+"ORDER BY created_at DESC LIMIT 1 FOR UPDATE",(org,supplement) if supplement else (org,)).fetchone()
   if grant:supplement=grant['id']
   from . import token_policy
@@ -85,13 +85,10 @@ def claim(uid,org,call_id):
  with get_conn() as c:
   c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f'quant-ai-account-quota:{uid}',))
   _lock(c,org)
-  quota=c.execute('SELECT ai_quota_daily FROM users WHERE id=%s',(uid,)).fetchone()
-  used=c.execute("SELECT COUNT(*) AS n FROM ai_usage WHERE user_id=%s AND created_at>=date_trunc('day',NOW())",(uid,)).fetchone()['n']
-  if not quota or used>=int(quota['ai_quota_daily'] or 0):raise WorkflowError('今日账号模型调用次数已达上限，未发起新请求')
   row=c.execute("UPDATE quant_ai_budget_calls SET status='dispatched',updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status='reserved' RETURNING task_id",(call_id,uid,org)).fetchone()
   if not row:return False
-  # Count each claimed provider attempt in the existing account daily-call gate.
-  # The ledger retains that these initial zero tokens are unconfirmed, not free.
+  # Keep per-attempt accounting for the future weekly token quota; this is not
+  # a factor-research admission gate.
   c.execute('INSERT INTO ai_usage(user_id,run_id,skill,tokens_in,tokens_out) VALUES(%s,%s,%s,0,0)',(uid,call_id,row['task_id']))
   return True
 

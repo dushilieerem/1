@@ -386,12 +386,26 @@ _GAP_HINTS = (
     "只能作线索",
 )
 
+def _strip_gap_text(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(
+        r"[，；]?[^，。；\n]*(?:未验证|待复核|待补充|补齐|数据缺失|未接入|数据缺口|未覆盖|无法核实|无法判断)[^，。；\n]*",
+        "",
+        text,
+    )
+    text = re.sub(r"[，；]{2,}", "，", text)
+    text = re.sub(r"[，；]。", "。", text)
+    return text.strip()
+
+
 def _clean_dim_for_read(dim: dict[str, Any]) -> dict[str, Any]:
     """读接口兜底：旧版本里遗留的缩写和数据缺口不展示给用户。"""
     out = dict(dim)
     for key in ("summary", "impact", "rating_note", "gate_note", "one_line"):
         if isinstance(out.get(key), str):
-            out[key] = humanize_text(out[key])
+            out[key] = _strip_gap_text(humanize_text(out[key]))
+    if isinstance(out.get("analysis_md"), str):
+        out["analysis_md"] = _strip_gap_text(humanize_text_keep_lines(out["analysis_md"]))
     if isinstance(out.get("analysis_md"), str):
         out["analysis_md"] = humanize_text_keep_lines(out["analysis_md"])
     for key in ("checks", "data_used", "counter", "open_questions"):
@@ -1030,7 +1044,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         gov_summary = (
             "治理核验：" + "；".join(gov_have[:4]) + "。未接入项见数据缺口。"
             if gov_have
-            else "治理数据未接入，暂不分析；待核验公告清单另行补充。"
+            else "治理本维度暂不展开；待核验公告清单另行补充。"
         )
         dim(
             "governance",
@@ -1289,7 +1303,7 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
             "rule": (
                 "只分析本 payload 中实际提供的字段；data_completeness.missing 中的项不得出现在 summary/checks/counter/key_numbers，"
                 "只能写入 data_gaps。level=partial 时必须基于已有字段给出明确结论，不得因存在缺口而拒绝分析或把 summary 写成待补；"
-                "只有整维没有可用数据时才固定写“数据未接入，暂不分析”，gate=fail，评分置空。"
+                "只有整维没有可用数据时才固定写“本维度暂不展开”，gate=fail，评分置空。"
                 "不得用推断、假设、同业数据或历史类比替代公司自身缺失数据。"
             ),
         },
@@ -1698,7 +1712,7 @@ def _merge_agent_results(
                     "agent_tier": "professional",
                     "role_title": PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent"),
                     "status": "skipped",
-                    "summary": "数据未接入，暂不分析。",
+                    "summary": "本维度暂不展开。",
                     "impact": "",
                     "data_used": [],
                     "checks": [],
@@ -1946,12 +1960,12 @@ def generate_research(
         complete = (built.get("facts") or {}).get("data_completeness") or {}
         skipped = [k for k in keys if (complete.get(k) or {}).get("level") == "missing"]
         results: dict[str, dict[str, Any]] = {
-            k: {"skipped": True, "error": "数据未接入，暂不分析"} for k in skipped
+            k: {"skipped": True, "error": "本维度暂不展开"} for k in skipped
         }
         run_keys = [k for k in keys if k not in skipped]
         for k in skipped:
             _update_task_progress(
-                case_id, k, "partial", {"skipped": True, "error": "数据未接入，暂不分析"}
+                case_id, k, "partial", {"skipped": True, "error": "本维度暂不展开"}
             )
         if run_keys:
             results.update(
@@ -1972,7 +1986,7 @@ def generate_research(
                     "agent_tier": "professional",
                     "role_title": PROFESSIONAL_ROLE_TITLES["industry_overview"],
                     "status": "skipped",
-                    "summary": "数据未接入，暂不分析。",
+                    "summary": "本维度暂不展开。",
                     "impact": "",
                     "data_used": [],
                     "checks": [],

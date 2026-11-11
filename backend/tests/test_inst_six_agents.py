@@ -364,7 +364,7 @@ def test_merge_agent_results_skips_missing_dimension_without_score() -> None:
     dim = merged["dims"][0]
     assert dim["status"] == "skipped"
     assert dim["engine"] == "skipped"
-    assert dim["summary"] == "数据未接入，暂不分析。"
+    assert dim["summary"] == "本维度暂不展开。"
     assert dim["score_10"] is None and dim["rating"] is None
     assert dim["gate"] == "fail"
     assert merged["agent_states"]["governance"] == "skipped"

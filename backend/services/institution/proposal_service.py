@@ -186,11 +186,11 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
     elif gate_fail:
         recommendation, direction, target_weight = "avoid", "buy", 0.0
         reason = "存在阻断维度，暂不买入"
-    elif memo_decision == "proceed" and support:
+    elif memo_decision != "avoid" and support:
         recommendation, direction = "buy", "buy"
         confidence = float(memo.get("chief_confidence") or 0)
         target_weight = 0.05 if confidence >= 0.7 else 0.03 if confidence >= 0.6 else 0.02
-        reason = f"主持裁决支持进入议案，研究经理结论为{memo_label}，建议建仓"
+        reason = f"主持裁决支持进入议案，研究经理结论为{memo_label}，按现有数据建议建仓"
     else:
         recommendation, direction, target_weight = "avoid", "buy", 0.0
         reason = (

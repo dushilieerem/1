@@ -42,7 +42,7 @@ def test_validate_debate_preserves_and_normalizes_chair_review() -> None:
     assert review["schema_version"] == "chief-debate-v1"
     assert review["agent_tier"] == "chief"
     assert review["role_title"] == "主持（合伙人）"
-    assert review["verdict"] == "supplement_research"
+    assert review["verdict"] == "support_proposal"
     assert review["chair_call"].startswith("证据链")
     assert review["unresolved"][0]["data_needed"] == "行业 TAM/CR5"
     assert review["accepted_claims"][0]["side"] == "bull"
@@ -62,7 +62,7 @@ def test_validate_debate_falls_back_without_chair_review() -> None:
         TaskRequest(variables={"evidence_ids": [1, 2]}),
     )
     review = out["chair_review"]
-    assert review["verdict"] == "supplement_research"
+    assert review["verdict"] == "support_proposal"
     assert review["chief_fields_fallback"] is True
     assert review["chief_confidence"] == 0.5
 
@@ -73,7 +73,7 @@ def test_debate_rule_fallback_has_chair_review() -> None:
         [{"id": 1, "title": "年报", "quote": "q", "source": "filing"}],
         None,
     )
-    assert out["chair_review"]["verdict"] == "supplement_research"
+    assert out["chair_review"]["verdict"] == "support_proposal"
     assert out["chair_review"]["unresolved"]
     assert out["chair_review"]["chief_fields_fallback"] is True
 

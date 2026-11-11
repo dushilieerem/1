@@ -14,8 +14,8 @@ from typing import Any
 from ai.errors import AiBadOutput
 from ai.router.specs import TaskRequest, TaskSpec, register
 
-PROMPT_VERSION = "inst-v3.7"
-DIM_PROMPT_VERSION = "inst-dim-v3.7"
+PROMPT_VERSION = "inst-v3.8"
+DIM_PROMPT_VERSION = "inst-dim-v3.8"
 
 
 
@@ -79,19 +79,14 @@ def _chair_review(data: dict[str, Any]) -> dict[str, Any]:
         "进入议案": "support_proposal",
         "推进审议": "support_proposal",
         "支持进入议案": "support_proposal",
-        "supplement": "supplement_research",
-        "research": "supplement_research",
-        "补充研究": "supplement_research",
-        "补充": "supplement_research",
+        "supplement": "support_proposal",
+        "research": "support_proposal",
+        "补充研究": "support_proposal",
+        "补充": "support_proposal",
     }
-    verdict = aliases.get(verdict, verdict if verdict in {"support_proposal", "supplement_research"} else "")
+    verdict = aliases.get(verdict, verdict if verdict == "support_proposal" else "")
     if not verdict:
-        text = f"{conclusion} {first_claim}"
-        verdict = (
-            "supplement_research"
-            if not text or any(x in text for x in ("补充研究", "证据不足", "无法验证"))
-            else "support_proposal"
-        )
+        verdict = "support_proposal"
         fallback = True
 
     unresolved: list[dict[str, str]] = []

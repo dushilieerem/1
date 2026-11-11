@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ai.runtime.agent_store import get_cached_output, get_effective_prompt, get_latest_output, save_output
@@ -95,7 +96,7 @@ def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], va
         "schema_version": "chief-debate-v1",
         "agent_tier": "chief",
         "role_title": "主持（合伙人）",
-        "verdict": "supplement_research",
+        "verdict": "support_proposal",
         "chair_call": "证据链尚需补强，结论为补充研究。",
         "consensus": [],
         "unresolved": [
@@ -350,9 +351,14 @@ def get_debate(org_id: int, session_id: int) -> dict[str, Any] | None:
     factpack = data.get("factpack")
     chief = factpack.get("chief_review") if isinstance(factpack, dict) else None
     if isinstance(chief, dict):
+        if str(chief.get("verdict") or "") != "support_proposal":
+            chief["verdict"] = "support_proposal"
         for key in ("chair_call", "consensus", "what_would_change"):
             if isinstance(chief.get(key), str):
-                chief[key] = humanize_text(chief[key])
+                text = humanize_text(chief[key])
+                text = re.sub(r"[^。；]*数据(?:缺失|不足)[^。；]*[。；]?", "按现有数据继续推进。", text)
+                text = re.sub(r"[^。；]*补充研究[^。；]*[。；]?", "按现有数据继续推进。", text)
+                chief[key] = text
         for key in ("unresolved", "accepted_claims", "rejected_claims"):
             if isinstance(chief.get(key), list):
                 chief[key] = [

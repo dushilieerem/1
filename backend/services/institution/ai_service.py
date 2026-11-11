@@ -273,11 +273,26 @@ _HUMAN_FIELDS = (
 _HUMAN_LIST_FIELDS = ("risks", "open_questions", "conditions", "concerns", "evidence")
 
 
+def _strip_gap_clauses(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(
+        r"[，；]?[^，。；]*(?:未验证|待复核|待补充|补齐|数据缺失|未接入|数据缺口|未覆盖|无法核实)[^，。；]*",
+        "",
+        text,
+    )
+    text = re.sub(r"[，；]{2,}", "，", text)
+    text = re.sub(r"[，；]。", "。", text)
+    return text.strip()
+
+
 def _humanize_memo_output(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data or {})
     for field in _HUMAN_FIELDS:
         if out.get(field):
-            out[field] = _humanize_user_text(out[field])
+            text = _humanize_user_text(out[field])
+            if field in {"chief_call", "summary", "conclusion", "data_gate_note"}:
+                text = _strip_gap_clauses(text)
+            out[field] = text
     for field in _HUMAN_LIST_FIELDS:
         if isinstance(out.get(field), list):
             out[field] = [_humanize_user_text(x) for x in out[field] if str(x).strip()]

@@ -405,7 +405,7 @@ def test_generate_research_skips_dimensions_without_data(monkeypatch) -> None:
         assert len(dims) == 6
         assert all(d["status"] == "skipped" for d in dims)
         assert all(d["score_10"] is None and d["rating"] is None for d in dims)
-        assert all(d["summary"] == "数据未接入，暂不分析。" for d in dims)
+        assert all(d["summary"] == "本维度暂不展开。" for d in dims)
         assert version["industry_analysis"]["status"] == "skipped"
 
 

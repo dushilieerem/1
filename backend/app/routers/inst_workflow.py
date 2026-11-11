@@ -797,8 +797,8 @@ def proposals(
 ) -> dict[str, Any]:
     org_id, member_id, role = _ctx(ctx)
     _require_ws(ctx, "approvals")
-    if scope not in {"pending", "reviewed"}:
-        raise HTTPException(status_code=422, detail="scope 必须是 pending/reviewed")
+    if scope not in {"pending", "reviewed", "active"}:
+        raise HTTPException(status_code=422, detail="scope 必须是 pending/reviewed/active")
     items = svc.list_proposals_for_member(
         org_id, int(member_id or 0), role, scope=scope
     )

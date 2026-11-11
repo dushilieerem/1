@@ -216,6 +216,23 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
     )
     assert risk_out["status"] == "chairman_review"
 
+    # 风控放行后仍在自己的审批列表里（标记我已放行），直到 Chairman 批完；
+    # 合伙人也继续看到后续进度，避免流程中项目突然消失。
+    for token, decision in ((risk, "pass"), (partner, "approve")):
+        active = _ok(
+            client.get("/api/inst/proposals?scope=active", headers=_h(token))
+        )
+        row = next(
+            (x for x in active["items"] if int(x["id"]) == proposal_id), None
+        )
+        assert row is not None, active
+        assert row.get("status") == "chairman_review"
+        assert row.get("my_decision") == decision
+    chairman_active = _ok(
+        client.get("/api/inst/proposals?scope=active", headers=_h(chairman))
+    )
+    assert any(int(x["id"]) == proposal_id for x in chairman_active["items"])
+
     precheck = _ok(
         client.get(
             f"/api/inst/proposals/{proposal_id}/ai/chairman-precheck", headers=_h(chairman)

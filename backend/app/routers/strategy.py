@@ -64,6 +64,25 @@ def strategy_joinquant_precheck(body: dict[str, Any], uid: int = Depends(require
     )
 
 
+
+def _re_missing_detail(data: Any) -> dict[str, Any]:
+    """把 RE 的 404 解析成可区分的错误：expired / unknown（兼容旧字符串 detail）。"""
+    detail = data.get("detail") if isinstance(data, dict) else None
+    if isinstance(detail, dict):
+        status = str(detail.get("status") or "unknown")
+        message = str(detail.get("message") or "")
+    else:
+        status = "expired_or_unknown"
+        message = str(detail or "")
+    if status == "expired":
+        message = message or "回测任务结果已过期（异步结果保留 24 小时）"
+    elif status == "unknown":
+        message = message or "回测任务不存在：run_id 无效或服务已重启"
+    else:
+        message = message or "回测任务不存在或已过期"
+    return {"error": "run_not_found", "status": status, "message": message}
+
+
 @router.get("/api/strategy/capabilities")
 def strategy_capabilities(uid: int = Depends(require_db_user_id)) -> dict:
     """RE 聚宽方言能力清单（带缓存）；RE 不可用时返回 null，前端回退本地规则。"""
@@ -121,7 +140,7 @@ def strategy_joinquant_run(body: dict[str, Any], uid: int = Depends(require_db_u
 def strategy_joinquant_run_status(run_id: str, uid: int = Depends(require_db_user_id)) -> dict:
     status, _headers, data = forward_re("GET", f"/api/backtest/strategy/async/{run_id}", timeout=20)
     if status == 404:
-        raise HTTPException(status_code=404, detail="回测任务已过期或不存在")
+        raise HTTPException(status_code=404, detail=_re_missing_detail(data))
     if status != 200 or not isinstance(data, dict):
         raise HTTPException(status_code=502, detail="RE 状态查询失败")
     return {"ok": True, **data}
@@ -131,7 +150,7 @@ def strategy_joinquant_run_status(run_id: str, uid: int = Depends(require_db_use
 def strategy_joinquant_run_cancel(run_id: str, uid: int = Depends(require_db_user_id)) -> dict:
     status, _headers, data = forward_re("DELETE", f"/api/backtest/strategy/async/{run_id}", timeout=20)
     if status == 404:
-        raise HTTPException(status_code=404, detail="回测任务已过期或不存在")
+        raise HTTPException(status_code=404, detail=_re_missing_detail(data))
     if status not in (200, 202) or not isinstance(data, dict):
         raise HTTPException(status_code=502, detail="RE 取消失败")
     return {"ok": True, **data}

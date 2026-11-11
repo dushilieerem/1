@@ -398,7 +398,7 @@ test("回测报告 AI 按六个板块渲染并展示表格/图表", async ({ pag
   await expect(page.getByRole("heading", { name: "测试回测" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".ai-analysis-section")).toHaveCount(6);
   await expect(page.locator(".ai-panel .data-table")).toHaveCount(6);
-  const bars = page.locator(".ai-panel .ai-bars-svg rect.bar");
+  const bars = page.locator(".ai-panel .ai-bars-svg rect.ai-bar");
   await expect(bars).toHaveCount(2);
   const barStyle = await bars.evaluateAll((nodes) => nodes.map((node) => ({
     width: Number(node.getAttribute("width") || 0),
@@ -486,7 +486,7 @@ test("个股五维 AI 分析按章节与分点展示，不显示图表", async (
   await expect(page.locator(".ai-panel .ai-analysis-p")).toHaveCount(5);
   await expect(page.locator(".ai-panel .ai-points li")).toHaveCount(6);
   await expect(page.locator(".ai-panel").getByText("资金", { exact: true })).toBeVisible();
-  await expect(page.locator(".ai-panel .ai-bars-svg rect.bar")).toHaveCount(0);
+  await expect(page.locator(".ai-panel .ai-bars-svg rect.ai-bar")).toHaveCount(0);
   await expect(page.locator(".ai-panel .ai-expand-toggle")).toContainText("收起五维分析");
   await expect(page.getByRole("button", { name: "生成 AI 解读" })).toHaveCount(0);
   await noHorizontalOverflow(page);
@@ -522,7 +522,7 @@ test("个股 AI 规则降级也以分点结论展示", async ({ page }) => {
   await page.locator(".ai-panel .ai-expand-toggle").click();
   await expect(page.locator(".ai-panel .ai-analysis-section")).toHaveCount(5);
   await expect(page.locator(".ai-panel .ai-analysis-p")).toHaveCount(5);
-  await expect(page.locator(".ai-panel .ai-bars-svg rect.bar")).toHaveCount(0);
+  await expect(page.locator(".ai-panel .ai-bars-svg rect.ai-bar")).toHaveCount(0);
   await expect(page.locator(".ai-panel .ai-metric")).toHaveCount(0);
   await noHorizontalOverflow(page);
 });
@@ -673,7 +673,7 @@ test("AI 管家今日复盘按六个部分渲染", async ({ page }) => {
   await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("今天复盘");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.locator(".ai-msg.ai .ai-section")).toHaveCount(6, { timeout: 20_000 });
-  await expect(page.locator(".ai-msg.ai .ai-bars-svg rect.bar")).toHaveCount(3);
+  await expect(page.locator(".ai-msg.ai .ai-bars-svg rect.ai-bar")).toHaveCount(3);
   await noHorizontalOverflow(page);
 });
 
@@ -695,7 +695,7 @@ test("AI 回答自动渲染毛利率柱图与估值分位", async ({ page }) => 
   await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
   await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("贵州茅台毛利率怎么样");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.locator(".ai-bars-svg rect.bar")).toHaveCount(4, { timeout: 20_000 });
+  await expect(page.locator(".ai-bars-svg rect.ai-bar")).toHaveCount(4, { timeout: 20_000 });
   await expect(page.locator(".ai-percentile")).toBeVisible();
   await expect(page.getByText("40% 分位")).toBeVisible();
   await noHorizontalOverflow(page);

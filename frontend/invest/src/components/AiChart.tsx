@@ -70,7 +70,7 @@ function BarChart({ chart }: { chart: AiChartData }) {
           return (
             <g key={`bar-${i}`}>
               <rect
-                className="bar"
+                className="ai-bar"
                 x={x}
                 y={top}
                 width={barW}

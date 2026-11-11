@@ -252,7 +252,7 @@ export function InstV3DebatePage() {
 
   const loadCases = async () => {
     const res = await instApi<{ items: CaseItem[] }>("/cases");
-    const rows = (res.items || []).filter((c) => Number(c.stage_no ?? 1) >= 2 && Number(c.stage_no ?? 1) <= 3);
+    const rows = (res.items || []).filter((c) => Number(c.stage_no ?? 1) === 2);
     setCases(latestByKey(rows, (c) => c.symbol, (c) => `${c.updated_at || ""}|${String(c.id).padStart(12, "0")}`));
     return rows;
   };

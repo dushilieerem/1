@@ -137,6 +137,8 @@ def start_debate(
         ).fetchone()
         if not case:
             raise LookupError("研究案不存在")
+        if int(case.get("stage_no") or 1) >= 3:
+            raise PermissionError("已进入议案/审批阶段，不能再次发起辩论")
         version = conn.execute(
             "SELECT * FROM inst_research_version "
             "WHERE case_id=%s AND status='approved' AND superseded_at IS NULL "

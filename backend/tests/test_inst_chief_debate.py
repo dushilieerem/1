@@ -76,3 +76,33 @@ def test_debate_rule_fallback_has_chair_review() -> None:
     assert out["chair_review"]["verdict"] == "supplement_research"
     assert out["chair_review"]["unresolved"]
     assert out["chair_review"]["chief_fields_fallback"] is True
+
+
+def test_get_debate_keeps_nested_chief_review_objects(monkeypatch) -> None:
+    import services.institution.debate_service as ds
+
+    monkeypatch.setattr(
+        ds.repo,
+        "debate",
+        lambda scope, session_id: {
+            "factpack": {
+                "chief_review": {
+                    "chair_call": "OCF 不足，补充研究",
+                    "unresolved": [
+                        {"issue": "估值为演示口径", "bull_view": "先跟踪", "bear_view": "缺 DCF", "reason": "OCF/净利 0.2"}
+                    ],
+                    "accepted_claims": [{"side": "bull", "claim_id": "B1", "claim": "PE 处低分位", "reason": "证据可核验"}],
+                }
+            },
+            "arguments": [{"claim": "OCF/净利 0.2", "falsifier": "DIO 回落"}],
+        },
+    )
+    out = ds.get_debate(1, 1)
+    chief = out["factpack"]["chief_review"]
+    assert isinstance(chief["unresolved"][0], dict)
+    assert chief["unresolved"][0]["issue"] == "估值为演示口径"
+    assert "经营现金流/净利润" in chief["unresolved"][0]["reason"]
+    assert isinstance(chief["accepted_claims"][0], dict)
+    assert chief["accepted_claims"][0]["claim_id"] == "B1"
+    assert "经营现金流/净利润" in out["arguments"][0]["claim"]
+    assert "存货周转天数" in out["arguments"][0]["falsifier"]

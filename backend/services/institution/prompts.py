@@ -381,7 +381,7 @@ _A10 = """# 角色
   "summary": "80–120 字，保留原预算",
   "conclusion": "与 chief_call 同义，写入研究版本 conclusion；不得为空",
   "metrics": [{"label":"价值区间","value":"12.00–16.00"},{"label":"三年 IRR","value":"18.4%"},
-              {"label":"安全边际","value":"8%"},{"label":"有效维","value":"5/6"}],
+              {"label":"安全边际","value":"8%"},{"label":"股息率","value":"2.1%"}],
   "conflicts": ["专业 Agent 之间的关键分歧及采信理由"],
   "risks": ["最可能错在哪，带阈值/影响"],
   "data_gate_note": "≤60 字：哪些维 fail/watch、哪些免费数据未验证、如何影响置信度"

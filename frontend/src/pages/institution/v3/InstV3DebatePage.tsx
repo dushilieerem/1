@@ -571,13 +571,16 @@ export function InstV3DebatePage() {
                       {(chiefReview.accepted_claims?.length || chiefReview.rejected_claims?.length) ? (
                         <div style={{ marginTop: 8 }}>
                           <div className="v3-eyebrow">采纳与不采纳</div>
-                          {[...(chiefReview.accepted_claims || []), ...(chiefReview.rejected_claims || [])].map((c, i) => (
-                            <div className="v3-claim" key={`${c.claim_id || c.claim || "claim"}-${i}`}>
-                              <div className="who">{c.side === "bull" ? "多方" : c.side === "bear" ? "空方" : c.side || "—"} {c.claim_id || ""}</div>
-                              {c.claim ? <p>{c.claim}</p> : null}
-                              {c.reason ? <div className="fs">{c.reason}</div> : null}
-                            </div>
-                          ))}
+                          {[...(chiefReview.accepted_claims || []), ...(chiefReview.rejected_claims || [])].map((c, i) => {
+                            const claimText = c.claim || (debate?.arguments || []).find((a) => a.claim_id === c.claim_id)?.claim || "";
+                            return (
+                              <div className="v3-claim" key={`${c.claim_id || c.claim || "claim"}-${i}`}>
+                                <div className="who">{c.side === "bull" ? "多方" : c.side === "bear" ? "空方" : c.side || "—"} {c.claim_id || ""}</div>
+                                {claimText ? <p>{claimText}</p> : null}
+                                {c.reason ? <div className="fs">{c.reason}</div> : null}
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : null}
                       {chiefReview.what_would_change?.length ? (

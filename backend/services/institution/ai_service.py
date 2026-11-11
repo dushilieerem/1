@@ -147,14 +147,8 @@ def _memo_metrics(case: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[dict[str, Any]]:
-    """一页纸三张卡：价值区间、有效维、PE，全部用确定性数据覆盖 AI 文案。"""
+    """一页纸卡片：价值区间、PE，全部用确定性数据覆盖 AI 文案。"""
     dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
-    valid = [
-        d
-        for d in dims
-        if (d.get("score_10") is not None or d.get("rating") is not None)
-        and str(d.get("gate") or "") != "fail"
-    ]
     valuation = version.get("valuation") or {}
     if any(valuation.get(k) is not None for k in ("low", "base", "high")):
         low_v = valuation.get("low")
@@ -174,11 +168,6 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
         price_note = reason
     metrics: list[dict[str, Any]] = [
         {"label": "价值区间", "value": price_text, "note": price_note},
-        {
-            "label": "有效维",
-            "value": f"{len(valid)}/{len(dims) or 6}",
-            "note": "有评分且 gate≠fail",
-        },
     ]
     symbol = str(case.get("symbol") or "")
     val = md.valuation_latest(symbol) or {}
@@ -201,11 +190,14 @@ def _merge_memo_metrics(
         required = _one_pager_metrics(version, case)
     except Exception:
         return memo
-    existing = [m for m in (memo.get("metrics") or []) if isinstance(m, dict)]
+    existing = [
+        m for m in (memo.get("metrics") or [])
+        if isinstance(m, dict) and str(m.get("label") or "") not in {"有效维", "低置信维"}
+    ]
     by_label = {str(m.get("label") or ""): m for m in existing if m.get("label")}
     for item in required:
         by_label[item["label"]] = item
-    order = ["价值区间", "有效维", "PE_TTM"]
+    order = ["价值区间", "PE_TTM"]
     merged = [by_label.pop(label) for label in order if label in by_label]
     merged.extend(by_label.values())
     memo["metrics"] = merged

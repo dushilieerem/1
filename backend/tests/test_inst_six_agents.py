@@ -392,7 +392,7 @@ def test_one_pager_metrics_are_deterministic() -> None:
     metrics = ai_service._one_pager_metrics(version, {"symbol": ""})
     by_label = {m["label"]: m for m in metrics}
     assert by_label["价值区间"]["value"] == "43.43–72.38 元"
-    assert by_label["有效维"]["value"] == "5/6"
+    assert "有效维" not in by_label
     assert "低置信维" not in by_label
 
 

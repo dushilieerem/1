@@ -320,7 +320,16 @@ def get_debate(org_id: int, session_id: int) -> dict[str, Any] | None:
                 chief[key] = humanize_text(chief[key])
         for key in ("unresolved", "accepted_claims", "rejected_claims"):
             if isinstance(chief.get(key), list):
-                chief[key] = [humanize_text(x) for x in chief[key] if str(x).strip()]
+                chief[key] = [
+                    {
+                        k: humanize_text(v) if isinstance(v, str) else v
+                        for k, v in item.items()
+                    }
+                    if isinstance(item, dict)
+                    else humanize_text(item)
+                    for item in chief[key]
+                    if str(item).strip()
+                ]
     return data
 
 __all__ = [

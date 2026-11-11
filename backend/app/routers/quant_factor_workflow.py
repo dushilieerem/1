@@ -295,6 +295,11 @@ def topic_resume(tid:str,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger
     return invoke_ledger(ledger.set_topic_status,*identity(ctx),tid,'active')
 
+@router.post('/topics/{tid}/archive')
+def topic_archive(tid:str,ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import ledger
+    return invoke_ledger(ledger.archive_topic,*identity(ctx),tid)
+
 @router.post('/topics/{tid}/branches/{bid}/activate')
 def branch_activate(tid:str,bid:str,body:BranchBindingBody,ctx=Depends(require_quant_researcher)):
     from services.quant_factor import ledger

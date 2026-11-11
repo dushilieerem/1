@@ -335,6 +335,29 @@ def set_topic_status(uid: int, org: int, topic_id: str, status: str) -> dict:
     return _public(row)
 
 
+def archive_topic(uid: int, org: int, topic_id: str) -> dict:
+    """Hide a finished topic without deleting its evidence.
+
+    Archive is refused while work is in flight or while a candidate still needs
+    review/registration, so the shortcut cannot hide an actionable result.
+    """
+    topic = _topic(uid, org, topic_id)
+    if topic["status"] == "archived":
+        return _public(topic)
+    with get_conn() as c:
+        c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
+        c.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))',(f"quant-factor-start:{uid}:{org}:{topic_id}",))
+        active=c.execute("SELECT id FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s AND status IN ('queued','running') LIMIT 1",(uid,org,topic_id)).fetchone()
+        if active:raise ValueError('当前任务仍有在途研究，不能归档')
+        pending=c.execute("SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s AND (archive->'review'->>'status'='requested' OR archive->'research_asset' IS NOT NULL) LIMIT 1",(uid,org,topic['project_id'])).fetchone()
+        if pending:raise ValueError('仍有待审批或已登记成果，不能归档')
+        c.execute("UPDATE detect_projects SET config=jsonb_set(COALESCE(config,'{}'::jsonb),'{v5ControlEpoch}',to_jsonb(%s::text)),updated_at=NOW() WHERE user_id=%s AND id=%s",(str(uuid.uuid4()),uid,topic['project_id']))
+        from .research_advice import close_pending
+        close_pending(c,uid,org,topic_id=topic_id,reason='未采用：任务已归档')
+        row=c.execute("UPDATE quant_factor_topics SET status='archived',updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s RETURNING *",(topic_id,uid,org)).fetchone()
+    return _public(row)
+
+
 def list_org_topics(uid: int, org: int) -> list[dict]:
     """All topics visible to the current quant member, newest first."""
     with get_conn() as c:

@@ -292,6 +292,7 @@ export function QuantFactorHomePage(){
   const q=taskQuery.trim().toLowerCase();
   return [...topics].filter(t=>{
    const s=taskStateOf(t);
+   if(t.status==='archived'&&taskFilter!=='all')return false;
    if(taskFilter==='recent'&&['ended','admitted'].includes(s.key)&&t.id!==selected)return false;
    if(taskFilter==='ended'&&!['ended','admitted'].includes(s.key))return false;
    return !q||(t.project_name||'').toLowerCase().includes(q);
@@ -530,7 +531,7 @@ export function QuantFactorHomePage(){
      <aside className="ff-task-list" aria-label="挖掘任务列表">
       <h2>我的挖掘任务</h2>
       <input className="ff-task-filter" value={taskQuery} onChange={e=>setTaskQuery(e.target.value)} aria-label="搜索挖掘任务" placeholder="搜索任务"/>
-      <select className="ff-task-filter" value={taskFilter} onChange={e=>setTaskFilter(e.target.value as 'recent'|'all'|'ended')} aria-label="任务状态"><option value="recent">运行与待处理</option><option value="all">全部任务</option><option value="ended">已结束</option></select>
+      <select className="ff-task-filter" value={taskFilter} onChange={e=>setTaskFilter(e.target.value as 'recent'|'all'|'ended')} aria-label="任务状态"><option value="recent">运行与待处理</option><option value="all">全部任务（含已归档）</option><option value="ended">已结束</option></select>
       <p className="fine">默认只显示运行与待处理；已结束任务请切到“全部任务”或“已结束”。</p>
       <div className="ff-task-items">{topicCards.length?topicCards:<div className="empty">没有匹配的任务</div>}</div>
      </aside>

@@ -9,9 +9,12 @@ import re
 
 _PRIMARY = (
     re.compile(r'r(\d+)_i,t'),
-    re.compile(r'过去\s*(\d+)\s*个交易日'),
-    re.compile(r'(\d+)\s*日反转'),
+    # An explicit return formula is the primary window. A hypothesis may also
+    # mention a longer volatility/overlay lookback ("过去20个交易日...标准差"),
+    # which must not be mistaken for the return horizon.
     re.compile(r'close_i,t-(\d+)'),
+    re.compile(r'(\d+)\s*日反转'),
+    re.compile(r'过去\s*(\d+)\s*个交易日'),
 )
 
 

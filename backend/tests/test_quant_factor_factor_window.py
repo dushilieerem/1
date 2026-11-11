@@ -23,3 +23,11 @@ def test_hypothesis_code_window_mismatch_is_blocked():
 def test_neutral_task_name_and_matching_windows_are_allowed():
     assert conflict('收盘价对成交额隐含均价的偏离', '使用过去 4 个交易日的收益', 'self.close.shift(4)') == ''
     assert conflict('反转基线', 'r4_i,t = close_i,t / close_i,t-4 - 1', 'self.close.shift(1)') != ''
+
+
+def test_volatility_overlay_is_not_mistaken_for_the_return_horizon():
+    hypothesis = ('令 r_i,t = close_i,t / close_i,t-1 - 1；令 sigma_i,t 为截至 t-1 过去 20 个交易日'
+                  '日收益 r 的样本标准差；signal_i,t = -r_i,t / (sigma_i,t + 1e-4)')
+    assert declared_window('Agent 自主研究：1日反转基线 · 1111') == 1
+    assert declared_window(hypothesis) == 1
+    assert conflict('Agent 自主研究：1日反转基线 · 1111', hypothesis, 'self.close.pct_change(1)') == ''

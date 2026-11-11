@@ -72,6 +72,8 @@ wait_http() {
   return 1
 }
 
+# 机构端 6 个 spec 共用一台后端，按分钟窗口很容易超默认登录/写限流；
+# 仅对本轮 E2E 后端放宽容忍度，生产默认值不变。
 log "启动后端 :$BACKEND_PORT"
 (
   cd "$ROOT_DIR/backend"
@@ -79,6 +81,9 @@ log "启动后端 :$BACKEND_PORT"
   YG_RE_BASE="${YG_RE_BASE:-http://127.0.0.1:9527}" \
   SVQUANT_BACKEND_PORT="$BACKEND_PORT" \
   DEV_SKIP_AUTH=0 \
+  AUTH_LOGIN_RATE_LIMIT="${AUTH_LOGIN_RATE_LIMIT:-1000}" \
+  INST_LOGIN_RATE_LIMIT="${INST_LOGIN_RATE_LIMIT:-1000}" \
+  WRITE_RATE_LIMIT="${WRITE_RATE_LIMIT:-100000}" \
   INST_E2E_ALLOW_WRITE=1 \
   INST_SEED_DEMO=1 \
   INST_DEMO_PASSWORD="${INST_PASSWORD:-inst123456}" \
@@ -145,8 +150,12 @@ fi
 
 log "运行 Playwright：$MODE / $SUITE"
 cd "$E2E_DIR"
+# 机构端用例（e2e-09..14）默认连 9533/8771 的个人开发环境；不显式指到本轮端口，
+# 门禁实际测的是那台常驻开发后端，还会被它的登录限流打成 429。
 R5_FE_BASE="http://127.0.0.1:$FE_PORT" \
 R5_H5_BASE="http://127.0.0.1:$H5_PORT" \
 R5_API_BASE="http://127.0.0.1:$BACKEND_PORT" \
+INST_BASE="http://127.0.0.1:$FE_PORT" \
+INST_API="http://127.0.0.1:$BACKEND_PORT" \
 INST_E2E_ALLOW_WRITE=1 \
 ./node_modules/.bin/playwright test "${ARGS[@]}" --reporter=line

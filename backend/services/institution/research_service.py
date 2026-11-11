@@ -903,6 +903,35 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         )
         return idx
 
+    # 年报/公告页级抽取进入证据包，主持与辩论可直接引用页码和原文。
+    for field_key, block in (doc_summary.get("fields") or {}).items():
+        if not isinstance(block, dict) or block.get("status") != "have":
+            continue
+        for item in (block.get("items") or [])[:2]:
+            quote = str(item.get("quote") or "").strip()
+            if not quote:
+                continue
+            idx = len(evidence)
+            available = str(item.get("available_time") or data_as_of)[:10]
+            evidence.append(
+                {
+                    "title": f"年报/公告：{block.get('label') or field_key}",
+                    "quote": quote[:1000],
+                    "source": "filing",
+                    "evidence_type": "filing",
+                    "grade": "A",
+                    "as_of": available,
+                    "event_time": available,
+                    "available_time": available,
+                    "cutoff": available,
+                    "document_id": item.get("doc_id"),
+                    "page_ref": item.get("page_no"),
+                    "source_uri": item.get("source_url"),
+                    "hash": _hash([field_key, item.get("doc_id"), item.get("page_no"), quote[:500]]),
+                    "_idx": idx,
+                }
+            )
+
     ev_price = add_ev(f"{symbol} 最新收盘价", f"{price}", "market") if price else None
     ev_pe = add_ev(
         "PE_TTM 与近 3 年分位",

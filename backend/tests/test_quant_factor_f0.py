@@ -301,3 +301,22 @@ class LateSealReviewTests(unittest.TestCase):
    gc.return_value.__enter__.return_value.execute.return_value.fetchone.return_value=cand
    out=f0_agent.execute(1,2,'r',TOPIC,f0_agent.Decision(action='request_seal',rationale='研发已通过，申请封存'),1,worker_epoch='original')
   self.assertEqual(out['status'],'stopped');self.assertIn('未继续自动送审',out['reason']);self.assertEqual(review.call_args.kwargs['controller'],{'run_id':'r','worker_epoch':'original'})
+
+
+class UnusableDevelopmentTests(unittest.TestCase):
+    def test_external_failure_without_result_cannot_be_reused_as_terminal_trial(self):
+        cand={'status':'development_error','evidence':{'development':{
+            'external_status':'failed',
+            'message':'外部计算已失败: RuntimeError: DataManifestError: Frozen input path mapping changed during computation'}}}
+        reason=f0_agent._unusable_development(cand)
+        self.assertIn('未产生可检验报告',reason)
+        self.assertIn('Frozen input path mapping changed',reason)
+
+    def test_novelty_error_with_numerical_result_stays_diagnosable(self):
+        cand={'status':'development_error','evidence':{'development':{
+            'external_status':'completed','result':{'ic':0.01},'gate':{'passed':False}}}}
+        self.assertEqual(f0_agent._unusable_development(cand),'')
+
+    def test_recoverable_interrupted_candidate_is_not_treated_as_terminal_failure(self):
+        cand={'status':'development_error','evidence':{'development':{'interrupted':True}}}
+        self.assertEqual(f0_agent._unusable_development(cand),'')

@@ -360,6 +360,14 @@ def _equivalent_candidate(uid,org,project):
     return None
 
 
+def _unusable_development(cand):
+    """External failure that produced neither result nor gate, so it can never become a trial."""
+    development=(cand.get('evidence') or {}).get('development') or {}
+    if cand.get('status')=='development_error' and development.get('external_status') in ('failed','cancelled') and not development.get('result'):
+        return '研发计算未产生可检验报告：'+str(development.get('message') or development.get('external_status'))
+    return ''
+
+
 def _run_test(uid, org, project_id, f0_run_id=None,expected_snapshot_hash=None,expected_control_epoch=None,expected_run_epoch=None):
     project=get_project(uid,project_id)['project']
     # Existing real evidence stays attached to its original E/H and snapshot.
@@ -368,7 +376,13 @@ def _run_test(uid, org, project_id, f0_run_id=None,expected_snapshot_hash=None,e
     if duplicate:return {**duplicate,'reused_evidence':True}
     _phase(uid,org,f0_run_id,'market_test',expected_run_epoch)
     cand = service.create(uid, org, project_id, expected_snapshot_hash=expected_snapshot_hash,executor='agent', f0_run_id=f0_run_id,expected_control_epoch=expected_control_epoch,expected_run_epoch=expected_run_epoch)
-    return _wait_candidate(uid, org, cand['id'])
+    cand = _wait_candidate(uid, org, cand['id'])
+    # An external computation that failed before producing result/gate cannot
+    # be diagnosed or turned into a trial. Reusing the same frozen snapshot
+    # would make the planner select run_test forever without increasing K.
+    reason=_unusable_development(cand)
+    if reason:raise service.WorkflowError(reason)
+    return cand
 
 
 def _diagnose(uid,org,topic,run_id,step,candidate_id):

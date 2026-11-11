@@ -220,6 +220,8 @@ def run(uid, org, run_id):
 
         def stop_when(decision, result):
             if result.get('action')=='request_seal':return '独立验证完成，交人工审查'
+            if result.get('candidate_status')=='development_error':
+                return '研发计算异常，未产生可检验报告；已停止自动重试并保留技术原因'
             # Statistical failures inform the next planner; they are not a fixed
             # rule to abandon the research direction after three attempts.
             return ''

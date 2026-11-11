@@ -2050,6 +2050,14 @@ def generate_research(
                 """,
                 (case_id, key, title, f"AI-{key}"),
             )
+    # 行业分析不依赖六维结果，和六维并行跑；否则六维先完成、行业还在生成，
+    # 前端会看到“6/6 已完成”后继续空等一段时间。
+    industry_pool: ThreadPoolExecutor | None = None
+    industry_future = None
+    industry_complete = (built.get("facts") or {}).get("data_completeness", {}).get("industry") or {}
+    if run_industry and str(industry_complete.get("level") or "") != "missing":
+        industry_pool = ThreadPoolExecutor(max_workers=1)
+        industry_future = industry_pool.submit(_run_industry_agent, built["facts"])
     if keys:
         complete = (built.get("facts") or {}).get("data_completeness") or {}
         skipped = [k for k in keys if (complete.get(k) or {}).get("level") == "missing"]
@@ -2071,7 +2079,6 @@ def generate_research(
             )
         built = _merge_agent_results(built, results, keys)
     if run_industry:
-        industry_complete = (built.get("facts") or {}).get("data_completeness", {}).get("industry") or {}
         if str(industry_complete.get("level") or "") == "missing":
             block = dict(built.get("industry_analysis") or {})
             missing = list(industry_complete.get("missing") or [])
@@ -2094,7 +2101,17 @@ def generate_research(
             )
             built["industry_analysis"] = block
         else:
-            industry_result = _run_industry_agent(built["facts"])
+            try:
+                industry_result = (
+                    industry_future.result()
+                    if industry_future is not None
+                    else {"error": "行业 Agent 未启动"}
+                )
+            except Exception as exc:  # noqa: BLE001
+                industry_result = {"error": str(exc)}
+            finally:
+                if industry_pool is not None:
+                    industry_pool.shutdown(wait=False)
             built["industry_analysis"] = _merge_industry(
                 built, industry_result, built.get("industry_analysis") or {}
             )

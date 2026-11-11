@@ -17,10 +17,17 @@ export function ResearchGateSummary({gate,phase='development'}:{gate:ResearchGat
  const passed=gate.numerical_passed??gate.passed;const number=formatGateNumber;const stage=phase==='sealed'?'独立验证':'研发';
  return <section className={'qr-gate qr-gate-summary '+(passed?'passed':'failed')} aria-label={stage+'门槛结论'}><h3>{passed?stage+'数值条件通过':stage+'检验未通过'}</h3><div className="qr-gate-checks">{gate.checks.map((c,i)=><div className="qr-gate-check" key={i}><strong>{c.name}</strong><span className={c.passed?'pass':'fail'}>{c.passed?'通过':'未通过'}</span><span title={String(c.actual)}>实际值 <b>{number(c.actual)}</b></span><span title={String(c.threshold)}>门槛 {c.operator} {number(c.threshold)}</span>{c.reason&&<p>{c.reason}</p>}</div>)}</div></section>;
 }
+function factorWindow(code:string):number|undefined{
+ const pct=code.match(/pct_change\(\s*(\d+)\s*\)/);if(pct)return Number(pct[1]);
+ const shift=code.match(/shift\(\s*(\d+)\s*\)/);if(shift)return Number(shift[1]);
+ return undefined;
+}
 function explainFactorCode(code:string):string[]{
  const notes:string[]=[];
  const pct=code.match(/pct_change\(\s*(\d+)\s*\)/);
  if(pct)notes.push(`使用过去 ${pct[1]} 个交易日的收益率（pct_change(${pct[1]})）。`);
+ const shift=code.match(/shift\(\s*(\d+)\s*\)/);
+ if(shift)notes.push(`使用前第 ${shift[1]} 个交易日的值（shift(${shift[1]})），实际形成期为 ${shift[1]} 日。`);
  if(/\.rank\(\s*axis=1\s*,\s*pct=True\s*\)/.test(code))notes.push('在每个交易日横截面内做百分位排名（0—1）。');
  if(/rolling\(\s*window=\s*(\d+)/.test(code)){const m=code.match(/rolling\(\s*window=\s*(\d+)/);if(m)notes.push(`使用 ${m[1]} 日滚动窗口计算波动/统计量。`);}
  if(/amount/.test(code))notes.push('使用成交额（amount）构造价格/强度代理。');
@@ -42,9 +49,19 @@ function FactorDefinitionCard({run,request,plan,hypothesis,background,summary,pl
  const description=hypothesis|| (typeof plan?.hypothesis==='string'?plan.hypothesis:'') || run.description?.replace(/ \/ (development|validation)$/,'') || '该报告未保存研究假设；请查看下方实现或输入与来源。';
  const fields=Array.isArray(contract.allowed_fields)?contract.allowed_fields.map(String):[];
  const notes=explainFactorCode(code);
+ const window=factorWindow(code);
+ const ranked=/\.rank\(/.test(code);
+ const formula=window&&/close/.test(code)?`S_i,t = -${ranked?'rank_pct':'1'} × (close_i,t / close_i,t-${window} - 1)`:undefined;
+ const hypothesisWindow=(()=>{const h=description;const m=h.match(/r(\d+)_i,t/)||h.match(/过去\s*(\d+)\s*个交易日/)||h.match(/(\d+)\s*个交易日/);return m?Number(m[1]):undefined;})();
+ const taskWindow=(()=>{const m=(run.description||'').match(/(\d+)\s*日/);return m?Number(m[1]):undefined;})();
+ const mismatch=window!=null&&hypothesisWindow!=null&&window!==hypothesisWindow;
+ const nameMismatch=window!=null&&taskWindow!=null&&window!==taskWindow;
  return <section className="card qr-section" aria-label="因子说明"><h3>因子说明</h3>
   <p><b>因子名称：</b>{name}{planner&&<small className="fine"> · {planner==='model'?'模型策划':'模板回退'}</small>}</p>
   <p><b>研究假设：</b>{description}</p>
+  {formula&&<p><b>实现公式（按代码）：</b><code>{formula}</code></p>}
+  {mismatch&&<p className="hint warning">实现实际使用 {window} 日窗口，研究假设写的是 {hypothesisWindow} 日；请核对实现与假设是否一致，不能只看任务名称。</p>}
+  {nameMismatch&&<p className="hint warning">任务名称写的是 {taskWindow} 日，但实现/冻结假设实际是 {window} 日；以代码和假设为准，任务名称只是历史标签。</p>}
   {background&&<p><b>研究背景：</b>{background}</p>}
   {summary&&<p><b>提案摘要：</b>{summary}</p>}
   <p><b>实现要点：</b></p><ul>{notes.map((n,i)=><li key={i}>{n}</li>)}</ul>

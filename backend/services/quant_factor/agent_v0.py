@@ -240,8 +240,9 @@ def _create_baseline_project(uid: int, org: int) -> dict:
     return project
 
 
-def _topic_payload(view: dict) -> dict:
+def _topic_payload(view: dict, project: dict | None = None) -> dict:
     dates = [d.get('date_max') for d in (view.get('datasets') or {}).values() if d.get('date_max')]
+    plan = ((project or {}).get('config') or {}).get('researchPlan') or {}
     return {
         'view_id': view['view_id'],
         'release_id': '',
@@ -255,8 +256,8 @@ def _topic_payload(view: dict) -> dict:
         'validation_end': '2026-09-21',
         'primary_holding_period': 1,
         'policy_version': 'v5-p0',
-        'max_trials': 2,
-        'max_sealed': 1,
+        'max_trials': int(plan.get('maxTrials') or 2),
+        'max_sealed': int(plan.get('maxSealed') or 1),
     }
 
 
@@ -290,7 +291,7 @@ def _start_pending(uid: int, org: int, project: dict, state: dict) -> dict:
         ).fetchone()
     if not topic:
         try:
-            topic = ledger.create_topic(uid, org, project['id'], _topic_payload(view))
+            topic = ledger.create_topic(uid, org, project['id'], _topic_payload(view, project))
             topic = topic['topic'] if isinstance(topic, dict) and 'topic' in topic else topic
         except (ValueError, WorkflowError, KeyError) as exc:
             _update_state(last_state='waiting_data', last_error=str(exc), last_tick_at=_now())

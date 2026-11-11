@@ -352,14 +352,21 @@ export function QuantFactorHomePage(){
   );
  }
 
- const topicCards=filteredTopics.map(t=>{const s=taskStateOf(t);const stageName=s.stages.find(x=>x.id===s.currentStage)?.label||'';return (
+ const agentDraftCard=agent?.pending&&!agent.pending.topic_id?(
+  <button key="agent-draft" className="ff-task" onClick={()=>setNotice(agent.reason||'Agent 已起草，等待固定数据。')}>
+   <div className="ff-task-row"><span className="badge gray">等待固定数据</span><small>Agent</small></div>
+   <strong>{agent.pending.name}</strong>
+   <small>已起草 · 固定数据修好后自动创建并启动</small>
+  </button>
+ ):null;
+ const topicCards=[...(agentDraftCard?[agentDraftCard]:[]),...filteredTopics.map(t=>{const s=taskStateOf(t);const stageName=s.stages.find(x=>x.id===s.currentStage)?.label||'';return (
   <button key={t.id} className={'ff-task'+(selected===t.id?' selected':'')} onClick={()=>setSelected(t.id)} aria-current={selected===t.id?'true':undefined}>
    <div className="ff-task-row"><span className={'badge '+s.tone}>{s.label}</span><small>日频</small></div>
    <strong>{t.project_name||'未命名挖掘任务'}</strong>
    <small>{stageName} · 已检验 {t.trial_count} 次 / 上限 {t.max_trials} 次</small>
    {t.updated_at||t.created_at?<time>{new Date(t.updated_at||t.created_at||'').toLocaleString()}</time>:null}
   </button>
- );});
+ );})];
 
  const tree=(ledger?.branches||[]).length>0?<div className="tree" ref={treeRef}>{treeLines.length>0&&<svg className="tree-lines" aria-hidden="true">{treeLines.map((d,i)=><path key={i} d={d} fill="none" stroke="#cbb8dc" strokeWidth="1" strokeDasharray="4 4"/>)}</svg>}{(children.get('root')||[]).map(b=>branchNode(b))}</div>:<div className="empty"><b>挖掘任务还没有分支</b>真实空态：无分支时不显示模拟节点。</div>;
 
@@ -461,6 +468,19 @@ export function QuantFactorHomePage(){
 
   </section>
  ):null;
+ const agentWaitingMain=agent?.pending&&!agent.pending.topic_id?(
+  <div className="ff-columns">
+   <aside className="ff-task-list" aria-label="挖掘任务列表">
+    <h2>我的挖掘任务</h2>
+    <div className="ff-task-items">{agentDraftCard}</div>
+   </aside>
+   <section className="card card-pad">
+    <h2>{agent.pending.name}</h2>
+    <p className="hint" role="status">{agent.reason||'固定数据版本尚未确认。'}</p>
+    <p className="fine">Agent 已起草项目，但固定数据 preflight 未通过，所以还没有创建可运行的任务/topic。数据修好后会自动创建并启动，不需要再点一次。</p>
+   </section>
+  </div>
+ ):null;
 
  return (
   <>
@@ -499,13 +519,13 @@ export function QuantFactorHomePage(){
    {error&&<div className="card card-pad"><p className="hint error" role="alert">{error}</p></div>}
    {loading?(
     <div className="card card-pad"><p role="status">正在读取挖掘任务…</p></div>
-   ):topics.length===0?(
+   ):topics.length===0?(agentWaitingMain||(
     <div className="card card-pad">
      <h2>还没有挖掘任务</h2>
      <p className="hint">没有真实任务时保留空态，不用原型数据填充。可以启动挖掘，或从因子库选择已授权因子发起研究。</p>
      <div className="actions" style={{marginTop:12}}><button className="btn primary" disabled={!canWrite} onClick={()=>{setCreatedTask(undefined);createdRun.current=undefined;setCreateErr('');setCreating(true);}}>启动挖掘</button><Link className="btn" to="/quant/factor/library">从因子库开始</Link></div>
     </div>
-   ):(
+   )):(
     <div className="ff-columns">
      <aside className="ff-task-list" aria-label="挖掘任务列表">
       <h2>我的挖掘任务</h2>

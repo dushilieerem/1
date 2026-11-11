@@ -48,3 +48,21 @@ def test_relative_pb_fallback_when_dcf_unavailable() -> None:
     assert out["method"] == "relative_pb"
     assert out["base"] > 0
     assert out["shares_source"] == "share_capital"
+
+
+def test_relative_ps_fallback_for_loss_making_company() -> None:
+    out = svc._relative_valuation(
+        {
+            "revenue": 1_000_000_000.0,
+            "report_date": "2026-12-31",
+            "net_profit": -50_000_000.0,
+            "total_equity": -10_000_000.0,
+        },
+        {"pb_median": None, "pe_median": None, "ps_median": 2.0},
+        100_000_000.0,
+        30.0,
+        "share_capital",
+    )
+    assert out is not None
+    assert out["method"] == "relative_ps"
+    assert out["base"] == 20.0

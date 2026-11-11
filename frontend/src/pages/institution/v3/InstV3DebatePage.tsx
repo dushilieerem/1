@@ -154,6 +154,10 @@ const VALUATION_LABELS: Record<string, string> = {
   equity_value: "股权价值",
   enterprise_value: "企业价值",
   net_debt_proxy: "净债务桥",
+  shares_source: "股本口径",
+  peer_pb_median: "同业 PB 中位",
+  peer_pe_median: "同业 PE 中位",
+  peer_ps_median: "同业 PS 中位",
   discount_rate: "折现率",
   revenue_growth: "收入增速",
   terminal_growth: "永续增长率",
@@ -162,6 +166,9 @@ const VALUATION_LABELS: Record<string, string> = {
 
 const METHOD_LABELS: Record<string, string> = {
   relative_only: "相对估值（PB / ROE）",
+  relative_pb: "相对估值（同业 PB）",
+  relative_pe: "相对估值（同业 PE）",
+  relative_ps: "相对估值（同业 PS）",
   owner_earnings_proxy_net_debt: "所有者收益 + 净债务桥",
   dcf: "现金流折现（DCF）",
   unavailable: "暂不可估值",
@@ -192,6 +199,16 @@ function valuationRows(value: Record<string, unknown>): Array<{ label: string; t
   const rows: Array<{ label: string; text: string }> = [];
   const method = String(value.method || "");
   if (method) rows.push({ label: VALUATION_LABELS.method, text: METHOD_LABELS[method] || "综合估值" });
+  const sharesSource = String(value.shares_source || "");
+  if (sharesSource) {
+    const label = {
+      share_capital: "PIT 总股本",
+      total_shares: "总股本缓存",
+      "total_mv/price": "总市值 / 价格",
+      "float_mv/price": "流通市值 / 价格（代理）",
+    }[sharesSource] || sharesSource;
+    rows.push({ label: VALUATION_LABELS.shares_source, text: label });
+  }
   const unavailableReason = String(value.reason || value.error || "").trim();
   if (unavailableReason) rows.push({ label: "不可用原因", text: sanitizeText(unavailableReason) });
   for (const key of ["low", "base", "high", "per_share"] as const) {
@@ -202,6 +219,12 @@ function valuationRows(value: Record<string, unknown>): Array<{ label: string; t
       .filter(([key]) => ["discount_rate", "revenue_growth", "terminal_growth", "cash_flow_margin"].includes(key))
       .map(([key, val]) => `${VALUATION_LABELS[key]} ${key === "cash_flow_margin" ? (val == null ? "未提供" : pctValue(val)) : pctValue(val)}`);
     if (parts.length) rows.push({ label: VALUATION_LABELS.assumptions, text: parts.join("；") });
+    for (const key of ["peer_pb_median", "peer_pe_median", "peer_ps_median"] as const) {
+      const raw = (value.assumptions as Record<string, unknown>)[key];
+      if (raw != null && Number.isFinite(Number(raw))) {
+        rows.push({ label: VALUATION_LABELS[key], text: `${Number(raw).toFixed(2)}x` });
+      }
+    }
   }
   if (value.equity_value != null) rows.push({ label: VALUATION_LABELS.equity_value, text: yiValue(value.equity_value) });
   if (value.enterprise_value != null) rows.push({ label: VALUATION_LABELS.enterprise_value, text: yiValue(value.enterprise_value) });

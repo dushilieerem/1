@@ -625,6 +625,22 @@ def _median(values: list[Any]) -> float | None:
     return nums[mid] if len(nums) % 2 else (nums[mid - 1] + nums[mid]) / 2
 
 
+def _annualized_revenue(fin: dict[str, Any] | None) -> float | None:
+    """把最新报告期收入年化，供 PS/EV-Sales 相对估值使用。"""
+    if not fin:
+        return None
+    try:
+        revenue = float(fin.get("revenue") or 0)
+    except (TypeError, ValueError):
+        return None
+    if revenue <= 0:
+        return None
+    report = str(fin.get("report_date") or "")[:10]
+    month = report[5:7]
+    factor = {"03": 4.0, "06": 2.0, "09": 4.0 / 3.0, "12": 1.0}.get(month)
+    return revenue * factor if factor else None
+
+
 def _peer_summary(peers: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "count": len(peers),
@@ -636,6 +652,14 @@ def _peer_summary(peers: list[dict[str, Any]]) -> dict[str, Any]:
         "roe_median": _median([p.get("roe") for p in peers]),
         "pe_median": _median([p.get("pe_ttm") for p in peers if p.get("pe_ttm") is not None and float(p["pe_ttm"]) > 0]),
         "pb_median": _median([p.get("pb_mrq") for p in peers if p.get("pb_mrq") is not None and float(p["pb_mrq"]) > 0]),
+        "ps_median": _median([
+            float(p["total_mv"]) / rev
+            for p in peers
+            if p.get("total_mv")
+            and (rev := _annualized_revenue({"revenue": p.get("revenue"), "report_date": p.get("revenue_report_date")}))
+            and rev > 0
+            and float(p["total_mv"]) > 0
+        ]),
         "sample_symbols": [p.get("symbol") for p in peers[:10]],
         "note": "同业中位数仅作对照，不代表公司自身数据；样本为同申万一级行业、按市值靠前的公司。",
     }
@@ -805,6 +829,30 @@ def _relative_valuation(
                 "high": base * 1.20,
                 "shares_source": shares_source,
                 "note": "相对估值：同业 PE 中位 × 每股收益；不是 DCF 目标价，未计治理/流动性折价。",
+            }
+    revenue = _annualized_revenue(latest_fin)
+    ps_median = peer_summary.get("ps_median")
+    if not prefer_pb and revenue and ps_median is not None:
+        try:
+            sales_per_share = float(revenue) / float(shares)
+            base = sales_per_share * float(ps_median)
+        except (TypeError, ValueError, ZeroDivisionError):
+            base = None
+        if base and _valuation_usable(base, price, shares_source):
+            return {
+                "available": True,
+                "method": "relative_ps",
+                "is_demo": True,
+                "assumptions": {
+                    "peer_ps_median": float(ps_median),
+                    "sales_per_share": round(sales_per_share, 4),
+                },
+                "per_share": base,
+                "low": base * 0.75,
+                "base": base,
+                "high": base * 1.25,
+                "shares_source": shares_source,
+                "note": "相对估值：同业 PS 中位 × 每股年化收入；不是 DCF 目标价，未计治理/流动性折价。",
             }
     return None
 

@@ -14,7 +14,10 @@ from services.strategy.builtin_strategies_store import (
     list_builtin_strategies_from_db,
     sync_builtin_strategies_from_re,
 )
+from services.strategy import re_capabilities
+from services.strategy.joinquant import build_re_payload
 from services.strategy.joinquant import precheck as joinquant_precheck
+from services.core.re_http_gateway import forward_re
 from services.strategy.strategy_store import (
     create_project as create_strategy_project,
     delete_project as delete_strategy_project,
@@ -59,6 +62,79 @@ def strategy_joinquant_precheck(body: dict[str, Any], uid: int = Depends(require
         str(body.get("code") or body.get("strategy_code") or ""),
         hint=(str(body.get("hint")).strip() if body.get("hint") else None),
     )
+
+
+@router.get("/api/strategy/capabilities")
+def strategy_capabilities(uid: int = Depends(require_db_user_id)) -> dict:
+    """RE 聚宽方言能力清单（带缓存）；RE 不可用时返回 null，前端回退本地规则。"""
+    return {"ok": True, "capabilities": re_capabilities.capabilities()}
+
+
+@router.post("/api/strategy/joinquant/runs", status_code=202)
+def strategy_joinquant_run(body: dict[str, Any], uid: int = Depends(require_db_user_id)) -> dict:
+    """提交聚宽策略直跑（原始源码，不转写）。预检有阻断时拒绝提交。"""
+    code = str(body.get("code") or body.get("strategy_code") or "")
+    check = joinquant_precheck(code, hint=body.get("hint"))
+    if not check["can_run_directly"]:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "precheck_failed", "issues": check["issues"], "code_hash": check["code_hash"]},
+        )
+    start = str(body.get("start") or "").strip()
+    end = str(body.get("end") or "").strip()
+    if not start or not end:
+        raise HTTPException(status_code=400, detail="缺少 start / end")
+
+    payload = build_re_payload(
+        source_code=code,
+        start=start,
+        end=end,
+        universe=body.get("universe"),
+        benchmark=body.get("benchmark"),
+        initial_capital=body.get("initial_capital"),
+        commission_rate=body.get("commission_rate"),
+        stamp_tax=body.get("stamp_tax"),
+        min_commission=body.get("min_commission"),
+        slippage_rate=body.get("slippage_rate"),
+        extra_symbols=body.get("extra_symbols"),
+    )
+    status, headers, data = forward_re("POST", "/api/backtest/strategy/async", payload=payload, timeout=30)
+    if status == 429:
+        raise HTTPException(status_code=429, detail="RE 队列已满，请稍后重试",
+                            headers={"Retry-After": headers.get("Retry-After", "30")})
+    if status == 503:
+        raise HTTPException(status_code=503, detail="RE 正在关闭或不可用")
+    if status not in (200, 202) or not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="RE 提交失败")
+    run_id = str(data.get("run_id") or "")
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "status": data.get("status"),
+        "code_hash": check["code_hash"],
+        "poll_url": f"/api/strategy/joinquant/runs/{run_id}" if run_id else None,
+        "capabilities_version": check.get("capabilities_version"),
+    }
+
+
+@router.get("/api/strategy/joinquant/runs/{run_id}")
+def strategy_joinquant_run_status(run_id: str, uid: int = Depends(require_db_user_id)) -> dict:
+    status, _headers, data = forward_re("GET", f"/api/backtest/strategy/async/{run_id}", timeout=20)
+    if status == 404:
+        raise HTTPException(status_code=404, detail="回测任务已过期或不存在")
+    if status != 200 or not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="RE 状态查询失败")
+    return {"ok": True, **data}
+
+
+@router.delete("/api/strategy/joinquant/runs/{run_id}")
+def strategy_joinquant_run_cancel(run_id: str, uid: int = Depends(require_db_user_id)) -> dict:
+    status, _headers, data = forward_re("DELETE", f"/api/backtest/strategy/async/{run_id}", timeout=20)
+    if status == 404:
+        raise HTTPException(status_code=404, detail="回测任务已过期或不存在")
+    if status not in (200, 202) or not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="RE 取消失败")
+    return {"ok": True, **data}
 
 
 @router.get("/api/strategy/projects")

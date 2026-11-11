@@ -15,6 +15,7 @@ type Topic={id:string;display_no?:number;project_id:string;project_name:string;v
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;creation_label?:string;execution_label?:string;display_status?:string};
 type Trial={branch_label?:string;trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
 type Ledger={topic:Topic;active_branch_id?:string;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
+type AgentStatus={available:boolean;mode?:string;enabled:boolean;state:string;reason:string;paused?:boolean;pending?:{project_id:string;name:string;topic_id?:string|null;topic_status?:string|null}|null;active_run?:{id:string;topic_id?:string;status:string}|null;last_tick_at?:string|null;last_error?:string;updated_at?:string|null;can_control?:boolean};
 
 const statusText=(t:Pick<Topic,'status'|'dispatch_status'|'pending_review'|'sealed_passed'|'latest_outcome'>)=>{
  if(t.status==='paused')return '已暂停';
@@ -32,6 +33,7 @@ const statusText=(t:Pick<Topic,'status'|'dispatch_status'|'pending_review'|'seal
  return '待启动';
 };
 
+const agentStateText=(a?:AgentStatus)=>{if(!a)return '读取中';if(!a.enabled)return '未开启';if(a.state==='running')return '运行中';if(a.state==='waiting_data')return '等待固定数据';if(a.state==='pending_start')return '待启动';if(a.state==='paused')return '已暂停';if(a.state==='not_enabled')return '未开启';return '已开启';};
 const purposeText=(p?:string|null)=>p==='replication'?'复现':p==='discovery'?'新发现':'类型未记录';
 const executorText=(value:string)=>value==='human'?'人工研究':value==='agent'?'研究系统':value==='service'?'计算服务':'研究执行';
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;
@@ -55,6 +57,7 @@ export function QuantFactorHomePage(){
  const canManage=!!getQuantSession()?.can_manage;
  const canWrite=getQuantSession()?.permissions.quant==='write';
  const [paused,setPaused]=useState(false),[controlBusy,setControlBusy]=useState(false);
+ const [agent,setAgent]=useState<AgentStatus>();const [agentBusy,setAgentBusy]=useState(false);
  const [loading,setLoading]=useState(true);
  const [stageView,setStageView]=useState<'prepare'|'development'|'validation'|'approval'>('prepare');
  const [taskQuery,setTaskQuery]=useState(''),[taskFilter,setTaskFilter]=useState<'recent'|'all'|'ended'>('recent');
@@ -107,6 +110,7 @@ export function QuantFactorHomePage(){
  }
 
  useEffect(()=>{let alive=true;void researchFetch('/api/inst/quant/factor-workflow/controls').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d)setPaused(!!d.paused);});return()=>{alive=false;};},[]);
+ useEffect(()=>{let alive=true;const load=()=>researchFetch('/api/inst/quant/factor-workflow/autonomy/agent').then(r=>r.ok?r.json():null).then(d=>{if(alive&&d)setAgent(d);}).catch(()=>{});void load();const id=setInterval(load,15000);return()=>{alive=false;clearInterval(id);};},[]);
 
  useEffect(()=>{
   setLedger(undefined);setF0(undefined);setProject(undefined);setNode(undefined);setInspectedBranch(undefined);setInspectedTrial(undefined);setUpdatesError('');setError('');setAuthOpen(false);setDiagnosticsOpen(false);setMethodOpen(false);
@@ -170,6 +174,11 @@ export function QuantFactorHomePage(){
   }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setStarting(false);}
  }
 
+ async function toggleAgent(){
+  if(!canWrite||agentBusy)return;setAgentBusy(true);setError('');setNotice('');
+  try{const r=await researchFetch('/api/inst/quant/factor-workflow/autonomy/agent/'+(agent?.enabled?'disable':'enable'),{method:'POST'});const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'自主研究操作失败');setAgent(d);setNotice(d.enabled?(d.state==='waiting_data'?'自主研究已开启；固定数据尚未就绪，已起草 1 项并等待。':'自主研究已开启；同一时间只推进 1 项。'):'自主选题已暂停；在途任务不受影响。');}
+  catch(e){setError(e instanceof Error?e.message:String(e));}finally{setAgentBusy(false);}
+ }
  async function toggleGlobalPause(){
   if(!canManage||controlBusy)return;setControlBusy(true);setError('');setNotice('');
   try{const r=await researchFetch('/api/inst/quant/factor-workflow/controls/pause',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:!paused})});const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'全局暂停操作失败');setPaused(!!d.paused);setNotice(d.paused?'全部研究已暂停：不再启动新的自动动作，在途计算保留记录。':'全部研究已恢复，可继续启动。');}
@@ -461,9 +470,10 @@ export function QuantFactorHomePage(){
    </WorkspaceHeading>
    <FactorModuleTabs active="home"/>
    <div className="sys compact">
-    {(()=>{const running=topics.filter(t=>t.dispatch_status==='running'||t.dispatch_status==='queued').length,review=topics.filter(t=>(t.pending_review||0)>0).length,agentDraft=topics.filter(t=>t.project_name.startsWith('Agent 提案：')&&!t.dispatch_status&&t.status!=='archived').length,waitingData=topics.filter(t=>t.dispatch_status==='stopped'&&/固定数据|数据版本|计算服务/.test(t.dispatch_stop_reason||'')).length;const state=running?'运行中':waitingData?'空闲 · 等待固定数据':review?'空闲 · 待审批':agentDraft?'空闲 · Agent 待启动':'空闲';return <div className="sys-state"><span className="ico">⇅</span><div><b><span className={"live-dot"+(running?'':' off')}/> 因子研究系统{state}</b><small className="fine">{loading?'读取中':`挖掘任务 ${topics.length} 个 · 运行中 ${running} · Agent 待启动 ${agentDraft} · 待审批 ${review}`}</small></div></div>;})()}
-    <div className="actions"><span className="fine">全局调度{paused?'已暂停':'开启'}</span><button className="btn small" disabled={!canManage||!canWrite||controlBusy} onClick={()=>void toggleGlobalPause()} title={canManage?(paused?"恢复全部自动研究":"全局暂停，不启动新自动动作"):"需要研究负责人权限"}>{paused?"恢复全部":"全局暂停"}</button></div>
+    {(()=>{const running=topics.filter(t=>t.dispatch_status==='running'||t.dispatch_status==='queued').length,review=topics.filter(t=>(t.pending_review||0)>0).length,agentDraft=topics.filter(t=>t.project_name.startsWith('Agent ')&&!t.dispatch_status&&t.status!=='archived').length,waitingData=topics.filter(t=>t.dispatch_status==='stopped'&&/固定数据|数据版本|计算服务/.test(t.dispatch_stop_reason||'')).length;const state=running?'运行中':waitingData?'空闲 · 等待固定数据':review?'空闲 · 待审批':agentDraft?'空闲 · Agent 待启动':'空闲';return <div className="sys-state"><span className="ico">⇅</span><div><b><span className={"live-dot"+(running?'':' off')}/> 因子研究系统{state}</b><small className="fine">{loading?'读取中':`挖掘任务 ${topics.length} 个 · 运行中 ${running} · Agent 待启动 ${agentDraft} · 待审批 ${review} · 自主研究 ${agentStateText(agent)}`}</small></div></div>;})()}
+    <div className="actions"><button className="btn small" disabled={!canWrite||agentBusy} onClick={()=>void toggleAgent()} title={agent?.reason||'开启后在授权范围内自动起草并启动 1 项'}>{agentBusy?'处理中…':agent?.enabled?'暂停选题':'开启自主研究'}</button><span className="fine">全局调度{paused?'已暂停':'开启'}</span><button className="btn small" disabled={!canManage||!canWrite||controlBusy} onClick={()=>void toggleGlobalPause()} title={canManage?(paused?"恢复全部自动研究":"全局暂停，不启动新自动动作"):"需要研究负责人权限"}>{paused?"恢复全部":"全局暂停"}</button></div>
    </div>
+   {agent?.pending&&<p className="fine" role="status">Agent 已起草：{agent.pending.name} · {agent.state==='waiting_data'?'等待固定数据，修好后自动启动':agentStateText(agent)}</p>}
    {creating&&<div className="modal-backdrop" role="dialog" aria-label="新建挖掘任务" aria-modal="true" onKeyDown={e=>{if(e.key==='Escape'&&!creatingBusy)setCreating(false);}} onClick={()=>{if(!creatingBusy)setCreating(false);}}><div className="modal" onClick={e=>e.stopPropagation()}><div className="modal-header"><div><h2>新建挖掘任务</h2><p className="fine">查看范围与预算后提交，草稿不会启动计算</p></div><button className="btn small" onClick={()=>{if(!creatingBusy)setCreating(false);}}>取消</button></div><div className="modal-body">{createErr&&<p className="hint error">{createErr}</p>}<fieldset className="form-grid ff-create-fields" disabled={creatingBusy||!!createdTask}>
     <label className="field"><span>挖掘任务名称</span><input value={nt.name} onChange={e=>setNt({...nt,name:e.target.value})}/></label>
     <label className="field"><span>挖掘任务类型</span><select value={nt.purpose} onChange={e=>setNt({...nt,purpose:e.target.value as 'replication'|'discovery'})}><option value="replication">复现（已有因子）</option><option value="discovery">新发现（需因子库新颖性检验）</option></select><small>新发现需通过真实重复性检查。计算服务不可用时任务会等待，不会显示验证通过。</small></label>

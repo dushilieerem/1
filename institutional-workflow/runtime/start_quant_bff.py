@@ -15,6 +15,8 @@ from app.main import app
 from services.quant_factor.research_queue import start_dispatcher
 # Fail startup rather than advertise a healthy but undispatched research queue.
 start_dispatcher()
+from services.quant_factor.agent_v0 import start_scheduler as start_agent_v0
+start_agent_v0()
 import uvicorn
 # Existing schemas only; avoid unrelated bootstrap seeds, cleanup and migrations.
 uvicorn.run(app,host='127.0.0.1',port=18799,lifespan='off',log_level='warning')

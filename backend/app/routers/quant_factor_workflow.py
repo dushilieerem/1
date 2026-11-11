@@ -535,3 +535,18 @@ def autonomy_enable(body:AutonomyEnableBody,ctx=Depends(require_quant_researcher
 def autonomy_control(authorization_id:str,body:AutonomyControlBody,ctx=Depends(require_quant_researcher)):
     from services.quant_factor.autonomy import control
     return invoke_autonomy(control,*identity(ctx),authorization_id,body.model_dump())
+
+@router.get('/autonomy/agent')
+def agent_v0_status(ctx=Depends(require_quant_user)):
+    from services.quant_factor import agent_v0
+    return agent_v0.status(*identity(ctx),can_control=bool(ctx.get('can_write')))
+
+@router.post('/autonomy/agent/enable')
+def agent_v0_enable(ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import agent_v0
+    return invoke(agent_v0.enable,*identity(ctx))
+
+@router.post('/autonomy/agent/disable')
+def agent_v0_disable(ctx=Depends(require_quant_researcher)):
+    from services.quant_factor import agent_v0
+    return invoke(agent_v0.disable,*identity(ctx))

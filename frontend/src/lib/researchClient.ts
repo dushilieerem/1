@@ -53,6 +53,7 @@ const protectedPaths = [
  /^\/factor-workflow\/iterations\/[^/]+(?:\/pause)?$/,
  /^\/factor-workflow\/agent-jobs(?:\/[^/]+(?:\/cancel)?)?$/,
  /^\/factor-workflow\/(overview|controls)(?:\/pause)?$/,
+ /^\/factor-workflow\/autonomy\/agent(?:\/(enable|disable))?$/,
  /^\/factor-workflow\/published-view$/,
  /^\/factor-workflow\/compute-preflight$/,
  /^\/data-resources\/(catalog(?:\/[^/]+)?|views(?:\/[^/]+\/usage)?|requests(?:\/[^/]+)?)$/,

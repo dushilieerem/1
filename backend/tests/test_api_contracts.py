@@ -42,6 +42,9 @@ EXPECTED = {
     "/api/invest/events/scan": {"post"},
     "/api/invest/quant/select": {"get"},
     "/api/invest/quant/signals": {"get"},
+    "/api/inst/quant/factor-workflow/autonomy/agent": {"get"},
+    "/api/inst/quant/factor-workflow/autonomy/agent/enable": {"post"},
+    "/api/inst/quant/factor-workflow/autonomy/agent/disable": {"post"},
 }
 
 

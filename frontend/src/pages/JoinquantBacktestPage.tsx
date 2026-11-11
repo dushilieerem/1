@@ -49,7 +49,7 @@ export function JoinquantBacktestPage() {
   const [code, setCode] = useState(SAMPLE);
   const [start, setStart] = useState("2024-01-01");
   const [end, setEnd] = useState("2024-06-30");
-  const [benchmark, setBenchmark] = useState("000300.XSHG");
+  const [benchmark, setBenchmark] = useState("CSI300");
   const [capital, setCapital] = useState("1000000");
   const [check, setCheck] = useState<JoinquantPrecheck | null>(null);
   const [checking, setChecking] = useState(false);
@@ -180,7 +180,7 @@ export function JoinquantBacktestPage() {
                 <input value={end} onChange={(e) => setEnd(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" />
               </label>
               <label className="text-xs text-slate-500">
-                基准
+                基准（CSI300 / CSI500）
                 <input value={benchmark} onChange={(e) => setBenchmark(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5" />
               </label>
               <label className="text-xs text-slate-500">

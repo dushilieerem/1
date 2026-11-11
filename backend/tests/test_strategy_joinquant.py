@@ -12,6 +12,7 @@ from services.strategy.joinquant import (  # noqa: E402
     DIALECT_JOINQUANT,
     build_re_payload,
     code_hash,
+    normalize_benchmark,
     normalize_dialect,
     precheck,
 )
@@ -74,5 +75,21 @@ def test_build_re_payload_fixed_dialect_params() -> None:
     assert payload["execution_price_source"] == "unadjusted"
     assert payload["timed_execution"] is True
     assert payload["execution_timing"] == "next_open"
-    assert payload["benchmark"] == "000300.XSHG"
+    # RE 的 benchmark 是枚举，聚宽写法要映射过去
+    assert payload["benchmark"] == "CSI300"
     assert "universe" not in payload
+
+
+def test_normalize_benchmark() -> None:
+    assert normalize_benchmark("CSI300") == "CSI300"
+    assert normalize_benchmark("csi500") == "CSI500"
+    assert normalize_benchmark("000300.XSHG") == "CSI300"
+    assert normalize_benchmark("000905.SH") == "CSI500"
+    assert normalize_benchmark("") == "CSI300"
+    assert normalize_benchmark(None) == "CSI300"
+    try:
+        normalize_benchmark("399001.SZ")
+    except ValueError as exc:
+        assert "CSI300" in str(exc)
+    else:  # pragma: no cover - 必须拒绝不支持的基准，不能静默改成 CSI300
+        raise AssertionError("不支持的 benchmark 应抛 ValueError")

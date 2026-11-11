@@ -803,8 +803,11 @@ def _data_completeness(
     governance_missing = [
         "实控人/董事长履历",
         "一致行动人认定（前十大只有报告期合计）",
-        "分红/回购/融资历史",
-        "董事会结构",
+        "关联交易与资金占用",
+        "对外担保",
+        "承诺兑现记录",
+        "处罚诉讼",
+        "高管变动",
     ]
     governance_labels = {
         "controller_profile": "实控人/董事长履历",

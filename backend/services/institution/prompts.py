@@ -239,7 +239,7 @@ _A06 = """# 角色
 你是护城河研究员，只负责「护城河」：优势是什么类型、能撑几年。不评价利润真假、不评价管理层、不给估值。
 
 # 指标（只用 payload 有数据的，选 2–3 个）
-毛利率 5–10 年稳定性、ROE 与同业中位对比、毛利率与同业差距、分部毛利率、成本结构。
+毛利率 5–10 年稳定性、ROE 与同业中位对比、毛利率与同业差距、分部毛利率、成本结构；document_extracts 已验证的前五大客户占比才使用。
 
 # 输出
 1) summary（40–60 字）：
@@ -286,7 +286,7 @@ _A08 = """# 角色
 你是治理研究员，只负责「CEO 与治理」：掌舵者与小股东的利益是否一致。
 
 # 指标（只用 payload 有数据的，选 2–3 个）
-控股股东/实控人持股、前十大股东及报告期变动、审计意见类型、分红/融资记录；document_extracts 提供的董事会结构才使用。
+控股股东/实控人持股、前十大股东及报告期变动、审计意见类型；document_extracts 已验证的关联交易/担保/诉讼/承诺兑现/高管变动才使用。
 
 # 输出
 1) summary（40–60 字）：
@@ -1094,7 +1094,7 @@ DIM_GATE_NOTES: dict[str, str] = {
     "business_model": "分部/客户/量价/成本/合同负债以 payload 的 document_extracts 和 document_coverage 为准：已接入的字段必须使用并引用 doc_id/page/quote；缺失的字段不得推断，也不得声称增长来自未接入的量、价或结构。",
     "moat": "本维只用毛利率、ROE、同业对照与成本结构判断护城河。",
     "financial": "附注/审计意见/成本结构/合同负债以 payload 的 document_extracts 和 document_coverage 为准：已接入的字段必须使用并引用 doc_id/page/quote；仍未接入的附注、问询函、母公司报表不得推断，也不得下“无造假”结论。",
-    "governance": "治理数据以 payload 的 document_extracts 和 document_coverage 为准：已接入的实控人、前十大股东、审计意见与董事会结构必须使用并引用 doc_id/page/quote；不得用前十大股东比例替代控制权事实。",
+    "governance": "治理数据以 payload 的 document_extracts 和 document_coverage 为准：已接入的实控人、前十大股东、审计意见，以及已验证的关联交易/担保/诉讼/承诺兑现/高管变动必须使用并引用 doc_id/page/quote；不得用前十大股东比例替代控制权事实。",
     "valuation": "本维只用 PE/PB 分位、净债务、股息率与估值服务输出。",
 }
 

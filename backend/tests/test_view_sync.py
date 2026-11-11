@@ -12,6 +12,7 @@ from services.data.view_sync import (
     _clean,
     _dataset_files,
     _is_safe_db,
+    _iter_frames,
     _prune_us_snapshot,
     fingerprint,
     plan_sync,
@@ -351,3 +352,32 @@ def test_doc_rows_handle_nan_and_content_hash():
     raw = json.loads(rows[0][8])
     assert raw["title"] == "公告标题"
     assert "NaN" not in rows[0][8]
+
+
+def test_iter_frames_filters_window(tmp_path: Path) -> None:
+    """row-group 过滤下推后，窗口外的行不能进 pandas。"""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    root = tmp_path / "view"
+    base = root / "derived" / "valuation_daily" / "year=2026"
+    base.mkdir(parents=True)
+    pq.write_table(
+        pa.table(
+            {
+                "date": ["2026-09-30", "2026-11-10", "2026-11-11"],
+                "symbol": ["A", "B", "C"],
+                "pe_ttm": [1.0, 2.0, 3.0],
+            }
+        ),
+        base / "part.parquet",
+    )
+    view = ViewInfo("v", root, _manifest(), "2026-11-01", date(2026, 11, 11))
+    frames = [
+        frame
+        for _, frame in _iter_frames(
+            view, "valuation_daily", ["date", "symbol", "pe_ttm"], date(2026, 11, 10), date(2026, 11, 11)
+        )
+    ]
+    rows = [r for frame in frames for r in frame.to_dict("records")]
+    assert [r["symbol"] for r in rows] == ["B", "C"]

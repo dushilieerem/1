@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import sys
+import time
 import io
 import json
 import math
@@ -222,8 +224,16 @@ def _iter_frames(
 ) -> Iterator[tuple[int | None, pd.DataFrame]]:
     start_s = start.isoformat() if start else None
     end_s = end.isoformat() if end else None
+    # row-group 统计下推：按年分区文件里只读命中窗口的 row group，
+    # 不再把整年数据读进 pandas 再过滤（大表差 10 倍以上）。
+    filters = []
+    if "date" in columns:
+        if start_s:
+            filters.append(("date", ">=", start_s))
+        if end_s:
+            filters.append(("date", "<=", end_s))
     for path in _dataset_files(view, name, start, end):
-        table = pq.read_table(path, columns=columns)
+        table = pq.read_table(path, columns=columns, filters=filters or None)
         frame = table.to_pandas()
         if "date" in frame.columns:
             if start_s:
@@ -1465,25 +1475,38 @@ def sync_view(
             assert start and end
             _prepare_temp_tables(conn)
             rows: dict[str, int] = {}
-            rows["ref_security"] = _sync_ref_security(conn, view)
-            rows["calendar"] = _sync_calendar(conn, view)
-            rows["industry"] = _sync_industry(conn, view)
-            rows["bars_hfq"] = _sync_hfq_bars(conn, view, start, end)
-            rows["bars_none"] = _sync_unadjusted_bars(conn, view, start, end)
-            rows["valuations"] = _sync_valuations(conn, view, start, end)
-            rows["status"] = _sync_status(conn, view, start, end)
-            rows["index"] = _sync_index(conn, view)
-            rows["risk"] = _sync_risk(conn, view, start, end)
-            rows["fund_flow_daily"] = _sync_fund_flow_daily(conn, view)
-            rows["fund_flow_candidate"] = _sync_fund_flow_candidate(conn, view)
-            rows["us_stock"] = _sync_us_stock(conn, view)
-            rows["news"] = _sync_news_dataset(conn, view)
-            rows["doc_items"] = _sync_doc_items(conn, view)
-            rows["dividends"] = _sync_dividends(conn, view)
-            rows["share_capital"] = _sync_share_capital(conn, view)
+            clock = [time.monotonic()]
+
+            def mark(name: str, count: int) -> None:
+                # 同步是单进程串行的，没有进度输出时看起来像卡死；按数据集打点。
+                now = time.monotonic()
+                print(
+                    f"[sync] {name}={count} (+{now - clock[0]:.1f}s)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                clock[0] = now
+
+            rows["ref_security"] = _sync_ref_security(conn, view); mark("ref_security", rows["ref_security"])
+            rows["calendar"] = _sync_calendar(conn, view); mark("calendar", rows["calendar"])
+            rows["industry"] = _sync_industry(conn, view); mark("industry", rows["industry"])
+            rows["bars_hfq"] = _sync_hfq_bars(conn, view, start, end); mark("bars_hfq", rows["bars_hfq"])
+            rows["bars_none"] = _sync_unadjusted_bars(conn, view, start, end); mark("bars_none", rows["bars_none"])
+            rows["valuations"] = _sync_valuations(conn, view, start, end); mark("valuations", rows["valuations"])
+            rows["status"] = _sync_status(conn, view, start, end); mark("status", rows["status"])
+            rows["index"] = _sync_index(conn, view); mark("index", rows["index"])
+            rows["risk"] = _sync_risk(conn, view, start, end); mark("risk", rows["risk"])
+            rows["fund_flow_daily"] = _sync_fund_flow_daily(conn, view); mark("fund_flow_daily", rows["fund_flow_daily"])
+            rows["fund_flow_candidate"] = _sync_fund_flow_candidate(conn, view); mark("fund_flow_candidate", rows["fund_flow_candidate"])
+            rows["us_stock"] = _sync_us_stock(conn, view); mark("us_stock", rows["us_stock"])
+            rows["news"] = _sync_news_dataset(conn, view); mark("news", rows["news"])
+            rows["doc_items"] = _sync_doc_items(conn, view); mark("doc_items", rows["doc_items"])
+            rows["dividends"] = _sync_dividends(conn, view); mark("dividends", rows["dividends"])
+            rows["share_capital"] = _sync_share_capital(conn, view); mark("share_capital", rows["share_capital"])
             if with_financials:
                 financial = view_loader.load_financials(root=view.root)
                 rows["financials"] = sum(int(v or 0) for v in financial.values())
+                mark("financials", rows["financials"])
             _merge_temp_tables(conn)
             rows["invest_stocks"] = _refresh_serving(conn, view)
             rows["_fingerprint"] = fingerprint(view)

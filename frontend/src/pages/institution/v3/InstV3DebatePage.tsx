@@ -371,7 +371,7 @@ export function InstV3DebatePage() {
     setBusy("debate");
     setError(null);
     try {
-      await instApi(`/cases/${detail.id}/debate`, { method: "POST", body: { use_ai: false } });
+      await instApi(`/cases/${detail.id}/debate`, { method: "POST", body: { use_ai: true } });
       await loadDetail(detail.id);
       setStep(1);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -490,11 +490,6 @@ export function InstV3DebatePage() {
 
         <div className="v3-work-main">
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
-          <InstV3AgentProgress
-            active={busy === "debate"}
-            title="AI 多空研究员正在交叉质询"
-            detail="多头、空头与主持 Agent 逐条核对证据；完成后自动刷新辩论记录。"
-          />
 
           {step === 0 ? (
             <section className="v3-card">
@@ -502,6 +497,11 @@ export function InstV3DebatePage() {
                 <div><h2>多空立论</h2><p>多头 / 空头逐条带证据；空头不重复行业空间。</p></div>
                 {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <span className="v3-chip ok">已完成</span>}
               </div>
+              <InstV3AgentProgress
+                active={busy === "debate"}
+                title="多头 / 空头 Agent 正在生成论点"
+                detail="多头找买入理由，空头打最弱假设；每条论点完成前会持续显示进度。"
+              />
               {debate ? (
                 <div>
                   <div className="v3-side-switch">
@@ -524,13 +524,18 @@ export function InstV3DebatePage() {
                   ))}
                   {!activeSide.length ? <div className="v3-empty" style={{ marginTop: 8 }}>暂无{sideName}论点</div> : null}
                 </div>
-              ) : <div className="v3-empty">还没有辩论记录。点击右上角开始；结论不投票，只保留分歧。</div>}
+              ) : busy === "debate" ? null : <div className="v3-empty">还没有辩论记录。点击右上角开始；结论不投票，只保留分歧。</div>}
             </section>
           ) : null}
 
           {step === 1 ? (
             <section className="v3-card">
               <div className="v3-card-head"><div><h2>交叉质询</h2><p>主持把双方 claim 逐条对齐，标出已回应 / 未回应 / 证据不足。</p></div><span className="v3-chip">{debate?.evidence_checks?.length || 0} 条核验</span></div>
+              <InstV3AgentProgress
+                active={busy === "debate"}
+                title="主持 Agent 正在交叉质询"
+                detail="逐条核对多空论点与证据；完成后自动刷新质询记录。"
+              />
               {debate ? (
                 <>
                   {chiefReview ? (

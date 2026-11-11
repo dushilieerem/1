@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from services.core.db import get_conn
+from services.strategy.joinquant import (
+    DIALECT_JOINQUANT,
+    code_hash,
+    normalize_dialect,
+)
 from services.strategy.result_signature import result_hash, verify_result
 
 SAMPLE_ID = "sample_momentum_20d"
@@ -517,13 +522,26 @@ def upsert_project(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     config = payload.get("config") or _default_config()
     if not isinstance(config, dict):
         config = _default_config()
-    # 内置策略过渡期只保存 strategy_id，源码不需要进入研究编辑器。
-    # 普通/用户策略仍沿用默认源码模板。
-    if (
+    dialect = normalize_dialect(config.get("dialect"))
+    if dialect == DIALECT_JOINQUANT:
+        source = str(config.get("source_code") or "").strip()
+        if not source:
+            raise ValueError("聚宽策略缺少源码")
+        # 原始聚宽源码是 source of truth：只落 source_code 与指纹，不注入原生模板。
+        config = {
+            **config,
+            "dialect": DIALECT_JOINQUANT,
+            "source_code": source,
+            "code_hash": code_hash(source),
+            "origin": str(config.get("origin") or "manual"),
+        }
+    elif (
         not str(config.get("strategy_code") or "").strip()
         and not str(config.get("strategy_id") or "").strip()
         and not config.get("quant_local_only")
     ):
+        # 内置策略过渡期只保存 strategy_id，源码不需要进入研究编辑器。
+        # 普通/用户策略仍沿用默认源码模板。
         config = {**config, "strategy_code": DEFAULT_STRATEGY_CODE}
 
     with get_conn() as conn:

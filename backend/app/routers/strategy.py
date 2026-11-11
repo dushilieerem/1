@@ -14,6 +14,7 @@ from services.strategy.builtin_strategies_store import (
     list_builtin_strategies_from_db,
     sync_builtin_strategies_from_re,
 )
+from services.strategy.joinquant import precheck as joinquant_precheck
 from services.strategy.strategy_store import (
     create_project as create_strategy_project,
     delete_project as delete_strategy_project,
@@ -49,6 +50,15 @@ from services.strategy.user_strategy_library_store import (
 )
 
 router = APIRouter(tags=["strategy"])
+
+
+@router.post("/api/strategy/precheck")
+def strategy_joinquant_precheck(body: dict[str, Any], uid: int = Depends(require_db_user_id)) -> dict:
+    """聚宽策略直跑前置校验：只做静态检查，不执行代码。"""
+    return joinquant_precheck(
+        str(body.get("code") or body.get("strategy_code") or ""),
+        hint=(str(body.get("hint")).strip() if body.get("hint") else None),
+    )
 
 
 @router.get("/api/strategy/projects")

@@ -5,7 +5,8 @@
 - 表缺失或字段不齐时返回空覆盖，不阻断研究生成；
 - 严格按 available_time <= as_of 做 PIT；
 - 每条结果保留 page_no / quote / doc_id / pdf_sha256，供证据回溯；
-- 只有 review_status 为 approved/verified/reviewed 的结果视为正式证据；
+- 只有 review_status 为 approved/verified/reviewed/auto_verified 的结果视为正式证据；
+  auto_verified 表示程序按字段锚点、原文长度和来源完整性校验通过，不等同于人工复核；
   not_applicable 表示业务上不适用；pending 只作线索并在 FactPack 中标注。
 """
 from __future__ import annotations
@@ -64,7 +65,7 @@ DOC_DIM_MAP: dict[str, tuple[str, ...]] = {
     "governance": GOVERNANCE_DOC_FIELDS,
 }
 
-APPROVED_REVIEW_STATUSES = {"approved", "verified", "reviewed"}
+APPROVED_REVIEW_STATUSES = {"approved", "verified", "reviewed", "auto_verified"}
 NOT_APPLICABLE_REVIEW_STATUSES = {"not_applicable", "n/a", "na"}
 TABLE_CANDIDATES = ("svquant.doc_extract", "doc_extract", "public.doc_extract")
 

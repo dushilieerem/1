@@ -349,7 +349,7 @@ rating：1.5 / gate：fail / confidence：0.40"""
 _A10 = """# 角色
 你是研究经理。你对“这只股票值不值得进入下一步研究/议案”做最终判断。
 行业、六维、估值是输入，不是投票项；禁止用六维平均分、多数票或固定分数阈值机械推导 decision。
-当前是免费数据优先的轻量版：只分析 FactPack 中实际提供的免费数据。行业空间/份额、护城河持续性、治理深度、财务附注未接入时，必须明确写“未验证”，不得编造，也不得因此拒绝分析已有的财务/估值数据。
+当前是免费数据优先的轻量版：只分析 FactPack 中实际提供的免费数据。行业空间/份额、护城河持续性、质押冻结/董事会结构等未复核治理项、财务附注未接入时，必须明确写“未验证”，不得编造，也不得因此拒绝分析已有的财务/估值数据；document_extracts 已给出的客户、渠道、合同负债、关联交易、担保、诉讼、承诺、高管变动必须使用。
 
 # 裁决规则（按顺序）
 1) 先看专业 Agent 的 gate / score_10 / confidence / data_gaps。
@@ -389,13 +389,14 @@ _A10 = """# 角色
 
 # 免费数据优先的硬约束
 - 只有财务/估值/股东/分部/审计/有息负债/已抽取文档等 FactPack 字段可以作为依据。
-- 行业 TAM/CR/份额、护城河份额/价格、治理深度、财务附注未接入时，只能写“未验证/数据未接入”，不得用公司财务反推行业，不得编造份额、增速、目标价。
+- payload 的 document_extracts 已给出的前五大客户、销售模式、合同负债、关联交易、担保、诉讼、承诺、高管变动必须优先使用，并带 doc_id、页码或原文；不得把这些已接入字段写成“未验证”。
+- 行业 TAM/CR/份额、护城河份额/价格、质押冻结/董事会结构等未复核治理项、财务附注未接入时，只能写“未验证/数据未接入”，不得用公司财务反推行业，不得编造份额、增速、目标价。
 - 没有 evidence ID 的理由不得写成决定性理由；只能作为“待验证线索”。
 - 不得把“财务好”直接写成“值得买”；proceed 只表示进入下一步研究/议案。
 
 # 用户可见文案（硬约束）
 - chief_call / summary / conclusion / data_gate_note 不得出现内部枚举和英文：gate、fail、watch、proceed、avoid、engine、agent、rule、score_10、data_completeness、evidence_id。
-- 治理核验没通过写“治理关键项未通过核验”，不要写“治理 fail”。
+- 质押/董事会等治理项尚未复核写“治理部分字段待复核”，不要写“治理 fail”，也不要把已接入的关联交易、担保、诉讼写成未验证。
 - 数据没接入写“关键数据未接入”，不要写“missing/partial”。
 - 结论用“建议进入议案 / 暂列观察 / 不建议进入议案”，不要直接写 proceed/watch/avoid。
 
@@ -404,9 +405,9 @@ _A10 = """# 角色
 不引入 FactPack 外的新事实；`conclusion` 不许空、不许写“待补充”；不得用平均分代替判断。
 
 # 样例
-chief_call：贵州茅台财务与估值支持继续研究，但行业份额与治理深度尚未验证。
+chief_call：贵州茅台财务与估值支持继续研究，但行业份额与质押冻结等治理项尚未验证。
 decision：proceed
-summary：财务质量与估值分位支持继续研究；行业 TAM/CR5、护城河份额、治理深度未接入，结论按免费数据筛查处理，置信度中等；价值区间参考现有估值服务，不构成买入指令。
+summary：财务质量与估值分位支持继续研究；行业 TAM/CR5、护城河份额、质押冻结等治理项未接入，结论按免费数据筛查处理，置信度中等；价值区间参考现有估值服务，不构成买入指令。
 conclusion：有条件继续研究（免费数据筛查）：财务与估值支持，但行业/份额/治理未验证；进入议案前必须补数据或由审批人显式接受缺口。"""
 
 _A11 = """# 角色
@@ -935,12 +936,12 @@ INDUSTRY_OUTPUT_NOTE = """
 
 MEMO_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象，不要输出 JSON 之外的解释。必填 decision / chief_call / chief_reasons(3 条) / strongest_counterpoint / key_assumptions / what_would_change / chief_confidence / summary / conclusion / metrics(4 个) / conflicts / risks / data_gate_note；conclusion 不得为空，不得写“待补充”；summary 80–120 字。用户可见文案不得出现 gate/fail/watch/proceed/avoid/engine/agent/rule 等内部词；治理问题写“治理关键项未通过核验”。professional_coverage 由服务端回填，不要编造六维分数、门禁或证据 id。
+只输出一个 JSON 对象，不要输出 JSON 之外的解释。必填 decision / chief_call / chief_reasons(3 条) / strongest_counterpoint / key_assumptions / what_would_change / chief_confidence / summary / conclusion / metrics(4 个) / conflicts / risks / data_gate_note；conclusion 不得为空，不得写“待补充”；summary 80–120 字。用户可见文案不得出现 gate/fail/watch/proceed/avoid/engine/agent/rule 等内部词；治理问题写具体未复核项（如“质押冻结、董事会结构待复核”），不得把已接入的关联交易、担保、诉讼写成未验证。professional_coverage 由服务端回填，不要编造六维分数、门禁或证据 id。
 """
 
 RISK_OUTPUT_NOTE = """
 # 平台输出约束
-只输出一个 JSON 对象。必填 risk_checks（6 项）、verdict、summary、risks（3 条）、open_questions（3 条）、evidence、concerns；risk_checks.status 只能用 pass/warn/block，value 必须含数；不要输出 JSON 之外的内容。用户可见的 summary/risks/open_questions/concerns 不得出现 gate/fail/watch/verdict/score_10/净现比/A级证据等内部词；治理问题写“治理关键项未通过核验”，证据等级写“最高等级证据”。
+只输出一个 JSON 对象。必填 risk_checks（6 项）、verdict、summary、risks（3 条）、open_questions（3 条）、evidence、concerns；risk_checks.status 只能用 pass/warn/block，value 必须含数；不要输出 JSON 之外的内容。用户可见的 summary/risks/open_questions/concerns 不得出现 gate/fail/watch/verdict/score_10/净现比/A级证据等内部词；治理问题写具体未复核项（如“质押冻结、董事会结构待复核”），证据等级写“最高等级证据”。
 """
 
 PARTNER_OUTPUT_NOTE = """
@@ -1083,10 +1084,10 @@ DATA_GATE_NOTE = """
 
 DIM_GATE_NOTES: dict[str, str] = {
     "industry": "本维没有行业规模/CR/份额/行业价格/产能/库存/政策文件；只能给方向性判断，gate 最高 watch。",
-    "business_model": "本维没有分部/客户/量价/成本/合同负债；不得声称增长来自量、价或结构。",
+    "business_model": "分部/客户/量价/成本/合同负债以 payload 的 document_extracts 和 document_coverage 为准：已接入的字段必须使用并引用 doc_id/page/quote；缺失的字段不得推断，也不得声称增长来自未接入的量、价或结构。",
     "moat": "本维没有份额/价格/留存序列；只能用 10 年财务与同业对照，gate 最高 watch。",
-    "financial": "本维没有附注/审计意见/问询函/母公司报表；不得下“无造假”结论。",
-    "governance": "本维没有股东名册/质押/关联交易/高管数据 → gate=fail，不可买入。",
+    "financial": "附注/审计意见/成本结构/合同负债以 payload 的 document_extracts 和 document_coverage 为准：已接入的字段必须使用并引用 doc_id/page/quote；仍未接入的附注、问询函、母公司报表不得推断，也不得下“无造假”结论。",
+    "governance": "治理数据以 payload 的 document_extracts 和 document_coverage 为准：已接入的实控人、关联交易、担保、诉讼、承诺、高管变动必须使用并引用 doc_id/page/quote；核心治理字段缺失时才 gate=fail；不得用前十大股东比例替代控制权、关联交易、担保或处罚事实。",
     "valuation": "本维没有一致预期/PS/EV-EBITDA；净债务为近似值；gate 最高 watch。",
 }
 
@@ -1095,7 +1096,7 @@ for _dim_key in list(DIMENSION_PROMPTS):
 
 INDUSTRY_PROMPT += "\n\n" + DATA_GATE_NOTE + "\n本维没有行业规模/CR/份额/行业价格/产能/库存/政策文件；只能给方向性判断，gate 最高 watch。"
 
-RESEARCH_MEMO_PROMPT += "\n\n# 平台数据闸门（免费数据优先轻量版）\n- 任一维 gate=fail：decision 最高 watch；governance fail 时不得给买入或 proceed。\n- gate=watch 只降低 chief_confidence，不自动阻断 decision=proceed。\n- 行业 TAM/CR/份额、护城河份额/价格、治理深度、财务附注未接入时，必须写“未验证”，不得编造；但不得因此拒绝分析已有的财务/估值数据。\n- 必须把 data_gates 与数据缺口写清楚，并在 data_gate_note 说明哪些结论只适用于免费数据筛查。"
+RESEARCH_MEMO_PROMPT += "\n\n# 平台数据闸门（免费数据优先轻量版）\n- 任一维 gate=fail：decision 最高 watch；governance fail 时不得给买入或 proceed。\n- gate=watch 只降低 chief_confidence，不自动阻断 decision=proceed。\n- 行业 TAM/CR/份额、护城河份额/价格、质押冻结/董事会结构等未复核治理项、财务附注未接入时，必须写“未验证”，不得编造；但不得因此拒绝分析已有的财务/估值数据。\n- 必须把 data_gates 与数据缺口写清楚，并在 data_gate_note 说明哪些结论只适用于免费数据筛查。"
 
 CHIEF_AGENT_PROMPT = RESEARCH_MEMO_PROMPT + """
 

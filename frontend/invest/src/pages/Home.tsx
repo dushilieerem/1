@@ -304,7 +304,7 @@ export default function Home() {
                         </>
                       );
                       return topic.detailAvailable ? (
-                        <button className="hot-row" key={topic.id} onClick={() => nav(`/topic/${topic.id}`)}>{body}</button>
+                        <button className="hot-row" key={topic.id} onClick={() => nav(`/topic/${encodeURIComponent(topic.id)}`)}>{body}</button>
                       ) : (
                         <div className="hot-row hot-row-static" key={topic.id}>{body}</div>
                       );

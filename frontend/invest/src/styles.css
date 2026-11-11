@@ -630,11 +630,11 @@ input, select, textarea { outline: none; }
 .ai-analysis-section > b { display: block; margin-bottom: 5px; font-size: 12.5px; color: var(--ink); }
 .ai-analysis-p { margin: 0; font-size: 12.5px; line-height: 1.7; color: #444; }
 .ai-analysis-section .ai-points { margin-top: 8px; gap: 5px; }
-.ai-analysis-section .ai-points li { padding: 4px 0; font-size: 12px; line-height: 1.6; }
+.ai-analysis-section .ai-points li { padding: 4px 0; font-size: 12px; line-height: 1.65; }
 .ai-table-wrap { margin-top: 8px; overflow-x: auto; }
 .ai-points { display: flex; flex-direction: column; gap: 0; margin: 2px 0 0; padding: 0; list-style: none; }
-.ai-points li { display: flex; gap: 7px; align-items: flex-start; padding: 5px 0; border: 0; border-radius: 0; background: none; box-shadow: none; font-size: 12.5px; line-height: 1.7; color: #444; }
-.ai-points li::before { content: "•"; flex: none; width: auto; height: auto; margin-top: 0; border-radius: 0; background: none; color: #e54d42; font-size: 10px; line-height: 1.7; }
+.ai-points li { display: flex; gap: 6px; align-items: flex-start; padding: 4px 0; border: 0; border-radius: 0; background: none; box-shadow: none; font-size: 12px; line-height: 1.65; color: #444; }
+.ai-points li::before { content: "•"; flex: none; width: auto; height: auto; margin-top: 0; margin-left: 0; border-radius: 0; background: none; color: #e54d42; font-size: 10px; line-height: 1.65; }
 .ai-points b { flex: none; color: var(--ink); font-size: 12px; }
 .ai-points span { min-width: 0; }
 .ai-section { padding: 8px 0; border: 0; border-radius: 0; background: none; }

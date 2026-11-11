@@ -45,18 +45,26 @@ export default function Topic() {
     return <Navigate to="/topics" replace />;
   }
 
-  const vp = Number(data.valuationPercentile ?? 0);
-  const tp = Number(data.turnoverPercentile ?? 0);
-  const headline = vp >= 80
-    ? t("热度在，估值也在高位", "Heat is here, and so is a rich valuation")
-    : vp >= 50
-      ? t("热度在，估值中性", "Heat is here, valuation is neutral")
-      : t("热度在，估值不算贵", "Heat is here, valuation is not expensive");
-  const context = vp >= 80
-    ? t("估值与拥挤度都在高位，历史上这种组合往往不是“便宜”的位置。", "Both valuation and crowding are elevated; historically this combination has not been a \"cheap\" spot.")
-    : vp >= 50
-      ? t("估值中性、拥挤度偏高，历史上这种组合的内部分化较大。", "Valuation is neutral but crowding is high; historically this combination has seen wide internal dispersion.")
-      : t("估值不高，但拥挤度偏高；历史上这种组合的收益分布仍不占优。", "Valuation is not high but crowding is elevated; historically the return distribution of this combination has still been unfavorable.");
+  const hasValuation = data.valuationPercentile != null;
+  const hasTurnover = data.turnoverPercentile != null;
+  const vp = hasValuation ? Number(data.valuationPercentile) : null;
+  const tp = hasTurnover ? Number(data.turnoverPercentile) : null;
+  const headline = vp == null
+    ? t("行业热度深读", "Sector heat deep dive")
+    : vp >= 80
+      ? t("热度在，估值也在高位", "Heat is here, and so is a rich valuation")
+      : vp >= 50
+        ? t("热度在，估值中性", "Heat is here, valuation is neutral")
+        : t("热度在，估值不算贵", "Heat is here, valuation is not expensive");
+  const context = vp == null
+    ? t("当前行业估值分位与拥挤度未提供；以下只描述行业活动度与成分表现。", "Industry valuation percentile and crowding are not provided; the following only describes sector activity and constituents.")
+    : vp >= 80
+      ? t("估值与拥挤度都在高位，历史上这种组合往往不是“便宜”的位置。", "Both valuation and crowding are elevated; historically this combination has not been a \"cheap\" spot.")
+      : vp >= 50
+        ? t("估值中性、拥挤度偏高，历史上这种组合的内部分化较大。", "Valuation is neutral but crowding is high; historically this combination has seen wide internal dispersion.")
+        : t("估值不高，但拥挤度偏高；历史上这种组合的收益分布仍不占优。", "Valuation is not high but crowding is elevated; historically the return distribution of this combination has still been unfavorable.");
+  const base = data.baseRate || {};
+  const hasBase = Number(base.sample || 0) > 0;
 
   return (
     <div className="page topic-page">
@@ -74,7 +82,7 @@ export default function Topic() {
 
       <div className="topic-tags">
         <Tag tone="red">{t("行业", "Sector")} · {data.name}</Tag>
-        <Tag tone="amber">{t(`估值 ${data.valuationPercentile?.toFixed?.(0)}% 分位`, `Valuation percentile ${data.valuationPercentile?.toFixed?.(0)}%`)}</Tag>
+        <Tag tone="amber">{vp == null ? t("估值：未提供", "Valuation: not provided") : t(`估值 ${vp.toFixed(0)}% 分位`, `Valuation percentile ${vp.toFixed(0)}%`)}</Tag>
         <Tag tone="gray">{data.isDemo ? t("主题演示", "Thematic demo") : t("等权代理", "Equal-weight proxy")} · {data.updatedAt?.slice?.(0, 10) || "2026-10-23"}</Tag>
       </div>
       <h1 className="topic-title">{data.name}{t("：", ": ")}{headline}</h1>
@@ -103,27 +111,29 @@ export default function Topic() {
           <AlertTriangle size={16} /> {t("你现在正在追高吗？", "Are you chasing a high?")}
         </div>
         <p className="muted">
-          {t(`热度 ${data.heat?.toFixed?.(0)} · 估值 ${vp.toFixed(0)}% 分位 · 拥挤度 ${tp.toFixed(0)}% 分位。${context}`, `Heat ${data.heat?.toFixed?.(0)} · valuation ${vp.toFixed(0)}th percentile · crowding ${tp.toFixed(0)}th percentile. ${context}`)}
+          {vp == null || tp == null
+            ? t(`热度 ${Number(data.heat || 0).toFixed(0)} · 估值/拥挤度未提供。${context}`, `Heat ${Number(data.heat || 0).toFixed(0)} · valuation/crowding not provided. ${context}`)
+            : t(`热度 ${Number(data.heat || 0).toFixed(0)} · 估值 ${vp.toFixed(0)}% 分位 · 拥挤度 ${tp.toFixed(0)}% 分位。${context}`, `Heat ${Number(data.heat || 0).toFixed(0)} · valuation ${vp.toFixed(0)}th percentile · crowding ${tp.toFixed(0)}th percentile. ${context}`)}
         </p>
         <div className="base-grid">
           <div className="base-cell">
             <span>{t("未来 20 日收益中位数", "Median 20-day forward return")}</span>
-            <b className={data.baseRate.medianReturn >= 0 ? "up" : "down"}>{fmtPct(data.baseRate.medianReturn, 1)}</b>
+            <b className={hasBase && base.medianReturn >= 0 ? "up" : hasBase ? "down" : ""}>{hasBase ? fmtPct(base.medianReturn, 1) : "—"}</b>
           </div>
           <div className="base-cell">
             <span>{t("未来 20 日最大回撤中位数", "Median 20-day forward max drawdown")}</span>
-            <b className="down">{fmtPct(data.baseRate.maxDrawdown, 1)}</b>
+            <b className={hasBase ? "down" : ""}>{hasBase ? fmtPct(base.maxDrawdown, 1) : "—"}</b>
           </div>
           <div className="base-cell">
             <span>{t("跑赢概率", "Outperformance probability")}</span>
-            <b>{data.baseRate.winRate?.toFixed?.(0)}%</b>
+            <b>{hasBase ? `${Number(base.winRate || 0).toFixed(0)}%` : "—"}</b>
           </div>
           <div className="base-cell">
             <span>{t("样本", "Sample")}</span>
-            <b>{data.baseRate.sample} {t("次", "obs.")}</b>
+            <b>{hasBase ? `${base.sample} ${t("次", "obs.")}` : "—"}</b>
           </div>
         </div>
-        <div className="hint">{data.baseRate.period} · {t("历史分布不是预测，样本偏差需考虑。", "Historical distributions are not forecasts; consider sample bias.")}</div>
+        <div className="hint">{base.period || t("行业历史分布未提供", "Sector history not provided")} · {t("历史分布不是预测，样本偏差需考虑。", "Historical distributions are not forecasts; consider sample bias.")}</div>
       </section>
 
       <section className="card">

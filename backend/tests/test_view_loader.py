@@ -91,3 +91,60 @@ def test_valuation_frame_maps_and_filters(monkeypatch) -> None:
     assert len(frame) == 2
     assert "pcf_ocf_ttm" in frame.columns
     assert loader._clean(frame.iloc[0]["float_mv"]) is None
+
+
+def _write_parquet(path: Path, columns: dict) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.table(columns), path)
+
+
+def test_read_fills_symbol_from_filename(tmp_path: Path) -> None:
+    """免费源一股一文件；部分新文件（如 BSE）没有 Symbol 列，代码只在文件名里。"""
+    base = tmp_path / "free" / "financial_balance"
+    _write_parquet(
+        base / "000001.SZ.parquet",
+        {"Symbol": ["000001.SZ"], "m_timetag": ["20260630"], "m_anntime": ["20260801"]},
+    )
+    _write_parquet(
+        base / "920157.BJ.parquet",
+        {"m_timetag": ["20260630"], "m_anntime": ["20260801"]},
+    )
+
+    table = loader._read(
+        tmp_path,
+        "financial_balance",
+        ["Symbol", "m_timetag", "m_anntime"],
+        domain="free",
+        symbol_from_filename=True,
+    )
+    assert set(table["Symbol"].to_pylist()) == {"000001.SZ", "920157.BJ"}
+
+
+def test_read_without_flag_leaves_symbol_null(tmp_path: Path) -> None:
+    base = tmp_path / "free" / "financial_balance"
+    _write_parquet(
+        base / "000001.SZ.parquet",
+        {"Symbol": ["000001.SZ"], "m_timetag": ["20260630"]},
+    )
+    _write_parquet(base / "920157.BJ.parquet", {"m_timetag": ["20260630"]})
+
+    table = loader._read(
+        tmp_path, "financial_balance", ["Symbol", "m_timetag"], domain="free"
+    )
+    assert sorted(table["Symbol"].to_pylist(), key=str) == ["000001.SZ", None]
+
+
+def test_iso_day_treats_nan_as_missing() -> None:
+    """财务源里公告日可能是 NaN；不能写成字符串 "nan"，否则 DATE 列整批 COPY 失败。"""
+    import math
+
+    assert loader._iso_day(float("nan")) is None
+    assert loader._iso_day(None) is None
+    assert loader._iso_day("") is None
+    assert loader._iso_day(20240625) == "2024-06-25"
+    assert loader._iso_day(20240625.0) == "2024-06-25"
+    assert loader._iso_day("20240625") == "2024-06-25"
+    assert not math.isnan(0)  # 文档化：数学 NaN 只来自 float

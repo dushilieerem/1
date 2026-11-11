@@ -114,3 +114,26 @@ def test_capabilities_endpoint() -> None:
 def teardown_module(module) -> None:  # noqa: ARG001
     app.dependency_overrides.clear()
     re_capabilities.reset_cache()
+
+
+def test_run_status_404_distinguishes_expired_and_unknown() -> None:
+    def expired(method, path, **kwargs):
+        return 404, {}, {"detail": {"status": "expired", "message": "策略任务结果已过期（异步结果保留 24 小时）"}}
+
+    def unknown(method, path, **kwargs):
+        return 404, {}, {"detail": {"status": "unknown", "message": "策略任务不存在：run_id 无效或服务已重启"}}
+
+    def legacy(method, path, **kwargs):
+        return 404, {}, {"detail": "策略任务不存在或已过期"}
+
+    with patch("app.routers.strategy.forward_re", expired):
+        body = client.get("/api/strategy/joinquant/runs/r1").json()
+    assert body["status"] == "expired"
+
+    with patch("app.routers.strategy.forward_re", unknown):
+        body = client.get("/api/strategy/joinquant/runs/r2").json()
+    assert body["status"] == "unknown"
+
+    with patch("app.routers.strategy.forward_re", legacy):
+        body = client.get("/api/strategy/joinquant/runs/r3").json()
+    assert body["status"] == "expired_or_unknown"

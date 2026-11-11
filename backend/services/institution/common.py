@@ -92,6 +92,8 @@ def humanize_text_keep_lines(value: Any) -> str:
     text = re.sub(r"含金量\s*A\s*档", "现金含量高", text)
     text = re.sub(r"含金量\s*B\s*档", "现金含量中等", text)
     text = re.sub(r"含金量\s*C\s*档", "现金含量偏低", text)
+    text = re.sub(r"未接入项见数据缺口。?", "", text)
+    text = re.sub(r"数据缺口", "未覆盖信息", text)
     text = re.sub(r"门禁\s*fail[^，。；\n]*", "本轮结论不具备定价条件", text, flags=re.IGNORECASE)
     text = re.sub(r"\bfail\b", "不成立", text, flags=re.IGNORECASE)
     text = re.sub(r"\bwatch\b", "观察", text, flags=re.IGNORECASE)

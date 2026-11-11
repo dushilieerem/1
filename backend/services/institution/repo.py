@@ -30,7 +30,7 @@ def cases(scope: OrgScope, *, company_id: int | None = None, conn=None) -> list[
                EXISTS (
                  SELECT 1 FROM inst_exit_case x
                   WHERE x.case_id=c.id AND x.org_id=c.org_id
-                    AND x.status NOT IN ('closed','rejected')
+                    AND x.status NOT IN ('closed','rejected','cancelled')
                ) AS is_exit
           FROM inst_research_case c
           JOIN inst_company co ON co.id=c.company_id

@@ -43,7 +43,7 @@ function ProjectCard({
             disabled={deleting}
             onClick={() => onDelete(item)}
           >
-            {deleting ? "删除中…" : "删除研究案"}
+            {deleting ? "删除中…" : item.is_exit ? "取消退出案" : "删除研究案"}
           </button>
         </div>
       ) : null}
@@ -74,7 +74,10 @@ export function InstV3PipelinePage() {
   async function handleDelete(item: V3PipelineItem) {
     if (!item.case_id) return;
     const label = item.company_name || item.symbol || "该研究案";
-    if (!window.confirm(`确定删除「${label}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`)) return;
+    const prompt = item.is_exit
+      ? `确定取消「${label}」的退出案？退出案与关联议案会关闭，持仓保留，历史审计保留。`
+      : `确定删除「${label}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`;
+    if (!window.confirm(prompt)) return;
     setDeleting(item.case_id);
     setActionError(null);
     try {

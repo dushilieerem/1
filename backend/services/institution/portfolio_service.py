@@ -136,7 +136,7 @@ def exit_advice(org_id: int, symbol: str) -> dict[str, Any]:
     ][:3]
     exits = [
         x for x in (data.get("exits") or [])
-        if int(x.get("company_id") or 0) == int(company_id or 0) and str(x.get("status") or "") not in {"closed", "cancelled"}
+        if int(x.get("company_id") or 0) == int(company_id or 0) and str(x.get("status") or "") not in {"closed", "rejected", "cancelled"}
     ]
     exposure = float(((data.get("portfolio") or {}).get("industry_exposure") or {}).get(pos.get("industry") or "", 0)) * 100
     severe = any(str(e.get("severity") or "") in {"high", "critical"} for e in events)
@@ -549,6 +549,7 @@ def holding_detail(org_id: int, symbol: str) -> dict[str, Any]:
     exits = [
         e for e in mon.get("exits") or []
         if int(e.get("company_id") or 0) == int(company_id or 0)
+        and str(e.get("status") or "") not in {"closed", "rejected", "cancelled"}
     ]
     version_no = None
     with get_conn() as conn:
@@ -642,7 +643,7 @@ def pipeline(org_id: int) -> dict[str, Any]:
             int(r["case_id"])
             for r in conn.execute(
                 "SELECT DISTINCT case_id FROM inst_exit_case "
-                " WHERE org_id=%s AND status NOT IN ('closed','rejected')",
+                " WHERE org_id=%s AND status NOT IN ('closed','rejected','cancelled')",
                 (org_id,),
             ).fetchall()
         }

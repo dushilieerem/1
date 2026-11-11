@@ -459,6 +459,26 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         == 403
     )
 
+    # 未执行的退出案可以取消；持仓保留，研究案关闭，退出案标记 cancelled。
+    exit_research_case_id = int(exit_case.get("case_id") or 0)
+    assert exit_research_case_id > 0
+    cancelled = _ok(
+        client.delete(
+            f"/api/inst/cases/{exit_research_case_id}", headers=_h(manager)
+        )
+    )
+    assert cancelled.get("deleted") is True
+    assert cancelled.get("exit_cancelled") is True
+    with get_conn() as conn:
+        exit_status = conn.execute(
+            "SELECT status FROM inst_exit_case WHERE id=%s", (exit_id,)
+        ).fetchone()["status"]
+        case_stage = conn.execute(
+            "SELECT stage FROM inst_research_case WHERE id=%s", (exit_research_case_id,)
+        ).fetchone()["stage"]
+    assert exit_status == "cancelled"
+    assert case_stage == "closed"
+
 
 def test_other_org_cannot_read_case_or_company(fixture) -> None:
     """跨机构直接读 case/company 必须 403/404，列表不得混入其他 org。"""

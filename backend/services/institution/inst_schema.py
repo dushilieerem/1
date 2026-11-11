@@ -409,6 +409,13 @@ DDL: tuple[str, ...] = (
     )
     """,
     """
+    ALTER TABLE inst_exit_case DROP CONSTRAINT IF EXISTS inst_exit_status_chk
+    """,
+    """
+    ALTER TABLE inst_exit_case ADD CONSTRAINT inst_exit_status_chk
+      CHECK (status IN ('draft','submitted','approved','rejected','closed','cancelled'))
+    """,
+    """
     CREATE OR REPLACE FUNCTION inst_audit_event_immutable() RETURNS trigger AS $$
     BEGIN
       RAISE EXCEPTION 'inst_audit_event 是只增不改的审计表（WORM）';

@@ -337,7 +337,7 @@ export function InstV3ManagePage() {
 
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>买入论点台账</h2><p>关键假设、KPI、复核时间与推翻条件。</p></div><button className="v3-btn ghost" disabled={!!busy} onClick={refreshThesis}><RefreshCw className="h-3.5 w-3.5" />{busy === "thesis" ? "生成中…" : "重新生成台账"}</button></div>
-                <InstV3AgentProgress active={busy === "thesis"} title="AI 正在生成买入论点台账" detail="从买入议案提取关键假设、KPI 与复核条件，完成后自动刷新。" />
+                <InstV3AgentProgress active={busy === "thesis"} title="监控 Agent 正在生成买入论点台账" detail="从买入议案提取关键假设、KPI 与复核条件，完成后自动刷新。" />
                 {holding?.theses?.length ? dedupeBy(holding.theses, (t) => t.id).map((t, i) => (
                   <div key={t.id || i} className="v3-claim">
                     <div className="who">{t.status || "active"} · 复核 {t.review_due || "—"}</div>

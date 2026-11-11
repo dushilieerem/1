@@ -540,7 +540,7 @@ export function InstV3DebatePage() {
               </div>
               <InstV3AgentProgress
                 active={busy === "debate" || busy === "auto-debate"}
-                title="多头 / 空头 Agent 正在生成论点"
+                title="多头研究员 / 空头研究员正在生成多空立论"
                 detail="多头找买入理由，空头打最弱假设；每条论点完成前会持续显示进度。"
               />
               {debate ? (
@@ -574,7 +574,7 @@ export function InstV3DebatePage() {
               <div className="v3-card-head"><div><h2>交叉质询</h2><p>主持把双方 claim 逐条对齐，标出已回应 / 未回应 / 证据不足。</p></div><span className="v3-chip">{debate?.evidence_checks?.length || 0} 条核验</span></div>
               <InstV3AgentProgress
                 active={busy === "debate" || busy === "auto-debate"}
-                title="主持 Agent 正在交叉质询"
+                title="主持合伙人正在生成交叉质询"
                 detail="逐条核对多空论点与证据；完成后自动刷新质询记录。"
               />
               {debate ? (

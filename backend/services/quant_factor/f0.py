@@ -136,6 +136,9 @@ def _start_locked(uid,org,topic_id,branch_id,idempotency_key,handoff=None,connec
                     raise WorkflowError('请重新确认上一运行、当前方法与控制版本，未创建新的模型尝试')
                 decision['method_transition']={'previous_run_id':prior['id'],'previous_snapshot_hash':(prior_snapshot or {}).get('snapshot_hash'),'new_snapshot_hash':frozen_method['snapshot_hash'],'reason':str(method_change.get('reason') or '用户明确采用更新后的研究方法')[:1000],'expected_control_epoch':method_change['expected_control_epoch'],'actor_user_id':uid,'at':service.event('method_changed')['at']}
             decision['method_snapshot']=frozen_method
+        from .factor_window import conflict as window_conflict
+        window_error=window_conflict(initial_project.get('name'),(config.get('researchPlan') or {}).get('hypothesis'),(config.get('draftFactor') or {}).get('body'))
+        if window_error:raise WorkflowError(window_error)
         decision['control_epoch']=config.get('v5ControlEpoch')
         try:
             from .locked_data import for_topic

@@ -250,6 +250,9 @@ def _run_once(uid,org,cid,phase,executor='human',f0_run_id=None,recovery_only=Fa
                         store.update(uid,org,cid,running,event('implementation_check_failed',message=str(exc)),{'source_contract':{'passed':False,'error':str(exc)}})
                         raise WorkflowError(str(exc)) from exc
                     if store.update(uid,org,cid,running,event('implementation_checked',message='实现一致性与有界因果性检查通过；不代表研究达标'),{'source_contract':source_check}) is False:return
+                from .factor_window import conflict as window_conflict
+                window_error=window_conflict('',plan.get('hypothesis'),req.get('factor_code'))
+                if window_error:raise WorkflowError(window_error)
                 from .locked_data import bind,for_project
                 req=bind(req,for_project(uid,org,row['project_id'],connection_factory=get_conn))
                 from .resources import require

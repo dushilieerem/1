@@ -246,6 +246,7 @@
 }
 
 .inst-v3 .v3-workspace-grid { display: grid; grid-template-columns: 218px minmax(0, 1fr) 258px; gap: 12px; align-items: start; }
+.inst-v3 .v3-workspace-grid.no-rail { grid-template-columns: 218px minmax(0, 1fr); }
 .inst-v3 .v3-project-list { background: #fff; border: 1px solid var(--v3-line); border-radius: 10px; padding: 8px; max-height: calc(100vh - 160px); overflow-y: auto; }
 .inst-v3 .v3-project-list .pl-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 3px 4px 8px; border-bottom: 1px solid var(--v3-line-2); font-size: 12px; color: var(--v3-muted); }
 .inst-v3 .v3-project-list .pl-item { display: block; width: 100%; text-align: left; border: 1px solid transparent; border-radius: 7px; padding: 7px 8px; margin-top: 4px; background: none; cursor: pointer; }
@@ -279,10 +280,12 @@
 .inst-v3 .v3-claim .fs { margin-top: 3px; font-size: 12px; color: var(--v3-warn); }
 @media (max-width: 1100px) {
   .inst-v3 .v3-workspace-grid { grid-template-columns: 190px minmax(0, 1fr); }
+  .inst-v3 .v3-workspace-grid.no-rail { grid-template-columns: 190px minmax(0, 1fr); }
   .inst-v3 .v3-agent-rail { grid-column: 1 / -1; }
 }
 @media (max-width: 720px) {
   .inst-v3 .v3-workspace-grid { grid-template-columns: 1fr; }
+  .inst-v3 .v3-workspace-grid.no-rail { grid-template-columns: 1fr; }
   .inst-v3 .v3-project-list { max-height: 220px; }
   .inst-v3 .v3-form-grid { grid-template-columns: 1fr; }
 }
@@ -382,6 +385,7 @@
 .inst-v3 .v3-work-main { min-height: 0; }
 @media (min-width: 1101px) {
   .inst-v3 .v3-workspace-grid { grid-template-columns: 230px minmax(0, 1fr) 276px; }
+  .inst-v3 .v3-workspace-grid.no-rail { grid-template-columns: 230px minmax(0, 1fr); }
   .inst-v3 .v3-project-list,
   .inst-v3 .v3-work-main,
   .inst-v3 .v3-agent-rail {
@@ -402,7 +406,8 @@
 /* Agent 面板：右侧可切换的角色卡与当前角色详情 */
 .inst-v3 .v3-agent-rail .ar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; }
 .inst-v3 .v3-agent-rail .ar-head h3 { margin-top: 0; }
-.inst-v3 .v3-agent-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 6px; margin-top: 9px; }
+.inst-v3 .v3-agent-picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+.inst-v3 .v3-agent-picks.single { grid-template-columns: 1fr; }
 .inst-v3 .v3-agent-pick { text-align: left; border: 1px solid var(--v3-line); background: #fff; border-radius: 8px; padding: 7px 8px; cursor: pointer; min-width: 0; }
 .inst-v3 .v3-agent-pick:hover { border-color: #d7b6c6; background: var(--v3-bg-2); }
 .inst-v3 .v3-agent-pick.on { border-color: #e3c2d1; background: var(--v3-brand-soft); box-shadow: 0 0 0 1px rgba(160,58,92,.05) inset; }
@@ -820,3 +825,18 @@
 }
 .inst-v3 .v3-ai-inline b { display: block; font-size: 14px; color: var(--v3-ink); }
 .inst-v3 .v3-ai-inline span:not(.v3-spinner) { display: block; margin-top: 4px; font-size: 12px; color: var(--v3-muted); }
+
+/* 持仓建议：只展示一个动作 */
+.inst-v3 .v3-hold-advice { text-align: center; padding: 26px 18px; border-width: 2px; }
+.inst-v3 .v3-hold-advice .v3-eyebrow { color: var(--v3-faint); }
+.inst-v3 .v3-hold-advice-label { margin-top: 8px; font-size: 34px; line-height: 1.2; font-weight: 600; letter-spacing: 0.04em; }
+.inst-v3 .v3-hold-advice.hold { border-color: #b7d8c2; background: #f3faf5; }
+.inst-v3 .v3-hold-advice.hold .v3-hold-advice-label { color: #1e8449; }
+.inst-v3 .v3-hold-advice.trim { border-color: #e9d29b; background: #fdf8ec; }
+.inst-v3 .v3-hold-advice.trim .v3-hold-advice-label { color: #a36a00; }
+.inst-v3 .v3-hold-advice.exit { border-color: #e7b6b3; background: #fdf1f0; }
+.inst-v3 .v3-hold-advice.exit .v3-hold-advice-label { color: #b03a35; }
+.inst-v3 .v3-agent-advice { margin: 10px 0; padding: 10px 12px; border-left: 3px solid #c9a24a; background: #fdf9ef; font-size: 13px; line-height: 1.65; color: var(--v3-ink-2); border-radius: 0 8px 8px 0; }
+.inst-v3 .v3-agent-advice.hold { border-left-color: #1e8449; background: #f3faf5; }
+.inst-v3 .v3-agent-advice.trim { border-left-color: #a36a00; background: #fdf8ec; }
+.inst-v3 .v3-agent-advice.exit { border-left-color: #b03a35; background: #fdf1f0; }

@@ -188,6 +188,7 @@ from .portfolio_service import (  # noqa: F401
     _thesis_row,
     _validated_list,
     create_monitor_event,
+    exit_advice,
     create_thesis,
     holding_detail,
     list_theses,

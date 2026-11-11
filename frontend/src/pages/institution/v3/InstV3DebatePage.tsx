@@ -214,13 +214,10 @@ function currentCaseId(key: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** 把长段 claim 压成一句可扫读的论点；完整原文放在 title 里备查。 */
+/** 展示完整论点，不截断。 */
 function claimHeadline(value?: string): string {
   const clean = String(value || "").replace(/\s+/g, " ").trim();
-  if (!clean) return "—";
-  const first = clean.split(/[；;。：:]/)[0].trim() || clean;
-  const noTail = first.replace(/[，,]+$/, "");
-  return noTail.length > 40 ? `${noTail.slice(0, 40)}…` : noTail;
+  return clean || "—";
 }
 
 export function InstV3DebatePage() {
@@ -255,7 +252,7 @@ export function InstV3DebatePage() {
 
   const loadCases = async () => {
     const res = await instApi<{ items: CaseItem[] }>("/cases");
-    const rows = (res.items || []).filter((c) => Number(c.stage_no ?? 1) >= 2 && Number(c.stage_no ?? 1) <= 3);
+    const rows = (res.items || []).filter((c) => Number(c.stage_no ?? 1) === 2);
     setCases(latestByKey(rows, (c) => c.symbol, (c) => `${c.updated_at || ""}|${String(c.id).padStart(12, "0")}`));
     return rows;
   };
@@ -594,8 +591,6 @@ export function InstV3DebatePage() {
                             <div className="v3-claim" key={`${u.issue || "unresolved"}-${i}`}>
                               <div className="who">{u.issue || "未决问题"}</div>
                               {u.bull_view || u.bear_view ? <p>多：{u.bull_view || "—"}<br />空：{u.bear_view || "—"}</p> : null}
-                              {u.why_unresolved ? <div className="fs">未决原因：{u.why_unresolved}</div> : null}
-                              {u.data_needed ? <div className="fs">待补：{u.data_needed}</div> : null}
                             </div>
                           ))}
                         </div>

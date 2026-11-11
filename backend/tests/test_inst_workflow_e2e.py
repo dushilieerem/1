@@ -241,6 +241,31 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         client.post(f"/api/inst/proposals/{proposal_id}/authorize", headers=_h(chairman))
     )
     auth_id = int(authorized["authorizations"][0]["id"])
+
+    # 非交易执行角色只拿到授权进度，不能读执行要素（价格区间/账户/有效期）。
+    manager_queue = _ok(
+        client.get("/api/inst/authorizations?status=qualified", headers=_h(manager))
+    )
+    manager_row = next(x for x in manager_queue["items"] if int(x["id"]) == auth_id)
+    assert int(manager_row["id"]) == auth_id
+    assert "snapshot" not in manager_row and "version_snapshot" not in manager_row
+    execution_queue = _ok(
+        client.get("/api/inst/authorizations?status=qualified", headers=_h(execution))
+    )
+    execution_row = next(x for x in execution_queue["items"] if int(x["id"]) == auth_id)
+    assert "snapshot" in execution_row or "version_snapshot" in execution_row
+    # 现金、持仓、可执行数量与核对明细只对交易执行角色开放。
+    assert (
+        client.get(
+            f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(manager)
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(risk)).status_code
+        == 403
+    )
+
     precheck = _ok(
         client.get(f"/api/inst/authorizations/{auth_id}/precheck", headers=_h(execution))
     )
@@ -270,6 +295,13 @@ def test_full_chain_and_permission_penetration(fixture) -> None:
         client.post(f"/api/inst/authorizations/{auth_id}/reconcile", headers=_h(execution))
     )
     assert reconciled["matched"] is True, reconciled
+    # 风控虽有 execution 工作区写权限，也不能查看成交与账户对账明细。
+    assert (
+        client.post(
+            f"/api/inst/authorizations/{auth_id}/reconcile", headers=_h(risk)
+        ).status_code
+        == 403
+    )
     with get_conn() as conn:
         exception = conn.execute(
             "INSERT INTO inst_execution_exception (org_id, authorization_id, type, detail) "

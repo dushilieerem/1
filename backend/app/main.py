@@ -92,6 +92,12 @@ def _warm_quant_cache() -> None:
 async def lifespan(_app: FastAPI):
     _configure_threadpool()
     bootstrap_schemas()
+    try:
+        from services.institution.job_service import recover_interrupted_jobs
+
+        recover_interrupted_jobs()
+    except Exception:
+        logging.getLogger(__name__).warning("inst ai job recovery failed", exc_info=True)
     threading.Thread(target=_warm_quant_cache, name="quant-prewarm", daemon=True).start()
     yield
 

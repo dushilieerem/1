@@ -983,9 +983,12 @@ def authorizations(
     status: str | None = None,
     ctx: dict[str, Any] = Depends(require_inst_user),
 ) -> dict[str, Any]:
-    org_id, _, _ = _ctx(ctx)
+    org_id, _, role = _ctx(ctx)
     _require_ws(ctx, "execution")
-    return {"ok": True, "items": svc.list_authorizations(org_id, status=status)}
+    return {
+        "ok": True,
+        "items": svc.list_authorizations(org_id, status=status, viewer_role=role),
+    }
 
 
 @router.post("/authorizations/{authorization_id}/execute")
@@ -1018,10 +1021,15 @@ def authorization_precheck(
     authorization_id: int, ctx: dict[str, Any] = Depends(require_inst_user)
 ) -> dict[str, Any]:
     """执行前校验：授权、价格区间、现金/持仓、停牌与 ST。"""
-    org_id, _, _ = _ctx(ctx)
+    org_id, member_id, _ = _ctx(ctx)
     _require_ws(ctx, "execution")
     try:
-        return {"ok": True, **svc.precheck_execution(org_id, authorization_id)}
+        return {
+            "ok": True,
+            **svc.precheck_execution(
+                org_id, authorization_id, actor_member_id=member_id
+            ),
+        }
     except Exception as exc:
         raise _handle(exc) from exc
 
@@ -1088,6 +1096,18 @@ def monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
     _require_ws(ctx, "monitor")
     return {"ok": True, **svc.monitor(org_id)}
+
+
+@router.get("/monitor/exit-advice")
+def monitor_exit_advice(
+    symbol: str, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "monitor")
+    try:
+        return {"ok": True, **svc.exit_advice(org_id, symbol)}
+    except Exception as exc:
+        raise _handle(exc) from exc
 
 
 @router.post("/monitor/scan")

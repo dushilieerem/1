@@ -55,6 +55,8 @@ type ExitCase = {
   created_at?: string;
 };
 
+type ExitAdvice = { stance: "hold" | "trim" | "exit"; label: string; pm: string; risk: string };
+
 type Holding = {
   symbol: string;
   version_no?: number | null;
@@ -115,6 +117,7 @@ export function InstV3ManagePage() {
   const [warning, setWarning] = useState("");
   const [reason, setReason] = useState("thesis_invalid");
   const [exitMemo, setExitMemo] = useState("");
+  const [exitAdvice, setExitAdvice] = useState<ExitAdvice | null>(null);
 
   const detailSeq = useRef(0);
   const selectedSymbol = parseHolding(params.get("key"));
@@ -220,6 +223,16 @@ export function InstV3ManagePage() {
   const exposure = useMemo(() => Object.entries(portfolio?.industry_exposure || {}).sort((a, b) => b[1] - a[1]), [portfolio]);
 
   useEffect(() => {
+    const symbol = activePosition?.symbol;
+    if (!symbol) { setExitAdvice(null); return; }
+    let alive = true;
+    instApi<ExitAdvice>(`/monitor/exit-advice?symbol=${encodeURIComponent(symbol)}`)
+      .then((data) => { if (alive) setExitAdvice(data); })
+      .catch(() => { if (alive) setExitAdvice(null); });
+    return () => { alive = false; };
+  }, [activePosition?.symbol]);
+
+  useEffect(() => {
     setAgentId(step === 1 ? "monitor" : "pm");
   }, [step]);
 
@@ -229,12 +242,12 @@ export function InstV3ManagePage() {
     }
     if (step === 2) {
       return [
-        { id: "pm", name: "组合经理", code: "PM", model: "组合经理 Agent", tools: "持仓 / 论点 / 组合约束", output: "持有 / 减仓 / 清仓建议", role: "比较三条路径的代价。" },
-        { id: "risk", name: "风控", code: "RISK", model: "风控 Agent", tools: "敞口 / 流动性 / 硬约束", output: "退出可行性意见", role: "检查退出是否触发硬约束。" },
+        { id: "pm", name: "组合经理", code: "PM", model: "组合经理 Agent", tools: "持仓 / 论点 / 组合约束", output: "持有 / 减仓 / 清仓建议", role: "比较三条路径的代价。", advice: exitAdvice?.pm, adviceTone: exitAdvice?.stance },
+        { id: "risk", name: "风控", code: "RISK", model: "风控 Agent", tools: "敞口 / 流动性 / 硬约束", output: "退出可行性意见", role: "检查退出是否触发硬约束。", advice: exitAdvice?.risk, adviceTone: exitAdvice?.stance },
       ];
     }
     return [{ id: "pm", name: "组合经理", code: "PM", model: "组合经理 Agent", tools: "组合 / 约束 / 机会成本", output: "组合概览", role: "看钱在哪、风险在哪。" }];
-  }, [step]);
+  }, [step, exitAdvice]);
 
   if (loading) return <div className="v3-loading">正在加载投资管理…</div>;
   if (error && !portfolio) return <div className="v3-card">加载失败：{error}</div>;
@@ -354,6 +367,12 @@ export function InstV3ManagePage() {
 
           {step === 2 && activePosition ? (
             <>
+              {exitAdvice ? (
+                <section className={`v3-card v3-hold-advice ${exitAdvice.stance}`}>
+                  <div className="v3-eyebrow">持仓建议</div>
+                  <div className="v3-hold-advice-label">{exitAdvice.label}</div>
+                </section>
+              ) : null}
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>预警与退出</h2><p>卖出理由只有四类；创建退出研究案后重走研究、辩论、三关审批。</p></div><span className="v3-chip warn">旧授权作废</span></div>
                 <div className="v3-form-grid">

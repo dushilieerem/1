@@ -51,6 +51,9 @@ const StrategyResearchListPage = lazy(() =>
     default: m.StrategyResearchListPage,
   })),
 );
+const JoinquantBacktestPage = lazy(() =>
+  import("./pages/JoinquantBacktestPage").then((m) => ({ default: m.JoinquantBacktestPage })),
+);
 const StrategyBacktestPage = lazy(() =>
   import("./pages/StrategyBacktestPage").then((m) => ({ default: m.StrategyBacktestPage })),
 );
@@ -367,6 +370,7 @@ export default function App() {
           <Route path="/strategy/research/report/:runId" element={<Authed><StrategyReportPage /></Authed>} />
           <Route path="/strategy/research/:projectId/history" element={<Authed><StrategyHistoryPage /></Authed>} />
           <Route path="/strategy/research/:projectId" element={<Authed><StrategyBacktestPage /></Authed>} />
+          <Route path="/strategy/joinquant" element={<Authed><JoinquantBacktestPage /></Authed>} />
           <Route
             path="/strategy/library"
             element={<Authed><StrategyLibraryPage /></Authed>}

@@ -361,7 +361,15 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                           ON r.user_id=c.user_id AND r.org_id=c.org_id
                          AND r.report_id='qf_'||c.id||'_development'
                         WHERE c.user_id=t.user_id AND c.org_id=t.org_id AND r.topic_id=t.id
-                          AND c.archive->'review'->>'status'='requested') AS pending_review,
+                          AND c.archive->'review'->>'status'='requested'
+                          AND COALESCE(c.archive->'review'->>'purpose','research_admission')='research_admission') AS pending_review,
+                      (SELECT COUNT(DISTINCT c.id) FROM quant_factor_candidates c
+                        JOIN quant_factor_trials r
+                          ON r.user_id=c.user_id AND r.org_id=c.org_id
+                         AND r.report_id='qf_'||c.id||'_development'
+                        WHERE c.user_id=t.user_id AND c.org_id=t.org_id AND r.topic_id=t.id
+                          AND c.archive->'review'->>'status'='requested'
+                          AND c.archive->'review'->>'purpose'='research_feedback_only') AS pending_feedback,
                       (SELECT COUNT(*) FROM quant_factor_sealed_validations v
                         WHERE v.user_id=t.user_id AND v.org_id=t.org_id AND v.topic_id=t.id
                           AND v.status='passed') AS sealed_passed,

@@ -60,6 +60,16 @@ test('待人工审批：pending_review 进入审批入库，独立验证已完�
   assert.equal(stage(t, 'approval'), 'current');
 });
 
+test('研发失败且仅有研究复盘：不进入审批，独立验证未开始', () => {
+  const t = { ...base, dispatch_status: 'stopped', latest_outcome: 'failed', trial_count: 2, pending_feedback: 1 };
+  const s = deriveFactorTaskState(t);
+  assert.equal(s.key, 'ended');
+  assert.match(s.label, /复盘/);
+  assert.equal(s.currentStage, 'development');
+  assert.equal(stage(t, 'validation'), 'todo');
+  assert.equal(stage(t, 'approval'), 'todo');
+});
+
 test('已入库：必须同时有登记成功事实，仅有审批通过不算', () => {
   const approved = { ...base, status: 'archived', trial_count: 3, sealed_used: 1, sealed_passed: 1, approved_count: 1 };
   const pendingRegistration = deriveFactorTaskState(approved);

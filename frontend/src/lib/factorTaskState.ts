@@ -18,6 +18,7 @@ export type FactorTaskFacts = {
   sealed_passed?: number;
   sealed_running?: number;
   sealed_failed?: number;
+  pending_feedback?: number;
   pending_review?: number;
   approved_count?: number;
   /** 仅当资产登记成功后端返回；没有契约前保持 undefined，不伪造已入库。 */
@@ -152,6 +153,9 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
     } else if (t.latest_outcome === 'passed') {
       key = 'waiting'; label = '待独立验证'; tone = 'warn';
       needsYou = '研发检验已通过，尚无通过的封存验证；请查看验证要求，不能直接审批。';
+    } else if ((t.pending_feedback || 0) > 0) {
+      key = 'ended'; label = '未达标 · 复盘待审'; tone = 'warn';
+      needsYou = '研发未达标；研究复盘已提交，等待复核人记录 needs_revision/rejected，不能入库。';
     } else if (t.latest_outcome === 'failed') {
       key = 'ended'; label = '未达标，已结束'; tone = 'gray';
       needsYou = '本轮未达标，证据已归档；可查看研究历程或经授权开启新计划。';

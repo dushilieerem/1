@@ -449,7 +449,7 @@ def test_rule_memo_uses_data_gaps_when_counter_is_char_array() -> None:
     assert memo["risks"] == ["缺前五大客户占比，影响 H，需年报附注补。"]
 
 
-def test_memo_gate_note_uses_chinese_titles_and_gate_wording() -> None:
+def test_memo_gate_note_not_shown_to_user() -> None:
     from services.institution import ai_service
 
     version = {
@@ -460,9 +460,8 @@ def test_memo_gate_note_uses_chinese_titles_and_gate_wording() -> None:
         "industry_analysis": {},
     }
     memo = ai_service._apply_memo_data_gate({"decision": "watch"}, version)
-    assert "门禁未通过" in memo["data_gate_note"]
-    assert "行业分析" in memo["data_gate_note"]
-    assert "估值与价格" in memo["data_gate_note"]
+    assert "data_gate_note" not in memo
+    assert memo["data_gates"]["industry"] == "fail"
 
 
 def test_version_read_cleans_gaps_and_internal_terms() -> None:

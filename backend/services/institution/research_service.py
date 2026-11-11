@@ -625,6 +625,22 @@ def _median(values: list[Any]) -> float | None:
     return nums[mid] if len(nums) % 2 else (nums[mid - 1] + nums[mid]) / 2
 
 
+def _annualized_revenue(fin: dict[str, Any] | None) -> float | None:
+    """把最新报告期收入年化，供 PS/EV-Sales 相对估值使用。"""
+    if not fin:
+        return None
+    try:
+        revenue = float(fin.get("revenue") or 0)
+    except (TypeError, ValueError):
+        return None
+    if revenue <= 0:
+        return None
+    report = str(fin.get("report_date") or "")[:10]
+    month = report[5:7]
+    factor = {"03": 4.0, "06": 2.0, "09": 4.0 / 3.0, "12": 1.0}.get(month)
+    return revenue * factor if factor else None
+
+
 def _peer_summary(peers: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "count": len(peers),
@@ -636,6 +652,14 @@ def _peer_summary(peers: list[dict[str, Any]]) -> dict[str, Any]:
         "roe_median": _median([p.get("roe") for p in peers]),
         "pe_median": _median([p.get("pe_ttm") for p in peers if p.get("pe_ttm") is not None and float(p["pe_ttm"]) > 0]),
         "pb_median": _median([p.get("pb_mrq") for p in peers if p.get("pb_mrq") is not None and float(p["pb_mrq"]) > 0]),
+        "ps_median": _median([
+            float(p["total_mv"]) / rev
+            for p in peers
+            if p.get("total_mv")
+            and (rev := _annualized_revenue({"revenue": p.get("revenue"), "report_date": p.get("revenue_report_date")}))
+            and rev > 0
+            and float(p["total_mv"]) > 0
+        ]),
         "sample_symbols": [p.get("symbol") for p in peers[:10]],
         "note": "同业中位数仅作对照，不代表公司自身数据；样本为同申万一级行业、按市值靠前的公司。",
     }
@@ -686,6 +710,151 @@ def _net_debt_proxy(latest_fin: dict[str, Any]) -> dict[str, Any] | None:
         "value": value,
         "label": "总负债 − 现金（近似净债务，未拆分有息负债/受限资金/少数股东）",
     }
+
+
+def _pit_total_shares(share_capital: list[dict[str, Any]], as_of: Any) -> float | None:
+    """取 as_of 前已公告的最近一期总股本；优先公告日，缺失时用生效日。"""
+    cutoff = str(as_of or "")[:10]
+    best: tuple[str, float] | None = None
+    for row in share_capital or []:
+        if not isinstance(row, dict):
+            continue
+        total = row.get("total_shares")
+        try:
+            total_f = float(total)
+        except (TypeError, ValueError):
+            continue
+        if total_f <= 0:
+            continue
+        day = str(row.get("announce_date") or row.get("effective_date") or "")[:10]
+        if cutoff and day and day > cutoff:
+            continue
+        key = day or ""
+        if best is None or key >= best[0]:
+            best = (key, total_f)
+    return best[1] if best else None
+
+
+def _valuation_share_count(
+    val: dict[str, Any] | None,
+    price: float,
+    share_capital: list[dict[str, Any]],
+    as_of: Any,
+) -> tuple[float | None, str]:
+    """总股本优先级：PIT 股本披露 > 估值缓存 > 总市值/价格 > 流通市值/价格。"""
+    val = val or {}
+    shares = _pit_total_shares(share_capital, as_of)
+    if shares:
+        return shares, "share_capital"
+    try:
+        cached = float(val.get("total_shares") or 0)
+    except (TypeError, ValueError):
+        cached = 0.0
+    if cached > 0:
+        return cached, "total_shares"
+    if price > 0 and val.get("total_mv"):
+        return float(val["total_mv"]) / price, "total_mv/price"
+    if price > 0 and val.get("float_mv"):
+        return float(val["float_mv"]) / price, "float_mv/price"
+    return None, "missing"
+
+
+def _sane_per_share(per_share: float | None, price: float) -> bool:
+    if not per_share or price <= 0:
+        return False
+    ratio = float(per_share) / float(price)
+    return 0.30 <= ratio <= 3.00
+
+
+def _valuation_usable(per_share: float | None, price: float, shares_source: str) -> bool:
+    if not per_share or per_share <= 0 or price <= 0:
+        return False
+    # 只有流通市值反推的股本需要 0.3–3.0 的 sanity 区间；PIT 股本/总市值口径可信。
+    if shares_source != "float_mv/price":
+        return True
+    ratio = float(per_share) / float(price)
+    return 0.30 <= ratio <= 3.00
+
+
+def _relative_valuation(
+    latest_fin: dict[str, Any],
+    peer_summary: dict[str, Any],
+    shares: float | None,
+    price: float,
+    shares_source: str,
+    *,
+    prefer_pb: bool = False,
+) -> dict[str, Any] | None:
+    """绝对估值不适用时，用同业 PB/PE 中位做相对估值；只在 sanity 区间内采用。"""
+    if not shares or shares <= 0 or price <= 0:
+        return None
+    equity = latest_fin.get("total_equity")
+    pb_median = peer_summary.get("pb_median")
+    if equity is not None and pb_median is not None:
+        try:
+            bvps = float(equity) / float(shares)
+            base = bvps * float(pb_median)
+        except (TypeError, ValueError, ZeroDivisionError):
+            base = None
+        if base and _valuation_usable(base, price, shares_source):
+            return {
+                "available": True,
+                "method": "relative_pb",
+                "is_demo": True,
+                "assumptions": {"peer_pb_median": float(pb_median), "book_value_per_share": round(bvps, 4)},
+                "per_share": base,
+                "low": base * 0.80,
+                "base": base,
+                "high": base * 1.20,
+                "shares_source": shares_source,
+                "note": "相对估值：同业 PB 中位 × 每股净资产；不是 DCF 目标价，未计治理/流动性折价。",
+            }
+    net_profit = latest_fin.get("net_profit")
+    pe_median = peer_summary.get("pe_median")
+    if not prefer_pb and net_profit is not None and pe_median is not None:
+        try:
+            eps = float(net_profit) / float(shares)
+            base = eps * float(pe_median)
+        except (TypeError, ValueError, ZeroDivisionError):
+            base = None
+        if base and _valuation_usable(base, price, shares_source):
+            return {
+                "available": True,
+                "method": "relative_pe",
+                "is_demo": True,
+                "assumptions": {"peer_pe_median": float(pe_median), "eps": round(eps, 4)},
+                "per_share": base,
+                "low": base * 0.80,
+                "base": base,
+                "high": base * 1.20,
+                "shares_source": shares_source,
+                "note": "相对估值：同业 PE 中位 × 每股收益；不是 DCF 目标价，未计治理/流动性折价。",
+            }
+    revenue = _annualized_revenue(latest_fin)
+    ps_median = peer_summary.get("ps_median")
+    if not prefer_pb and revenue and ps_median is not None:
+        try:
+            sales_per_share = float(revenue) / float(shares)
+            base = sales_per_share * float(ps_median)
+        except (TypeError, ValueError, ZeroDivisionError):
+            base = None
+        if base and _valuation_usable(base, price, shares_source):
+            return {
+                "available": True,
+                "method": "relative_ps",
+                "is_demo": True,
+                "assumptions": {
+                    "peer_ps_median": float(ps_median),
+                    "sales_per_share": round(sales_per_share, 4),
+                },
+                "per_share": base,
+                "low": base * 0.75,
+                "base": base,
+                "high": base * 1.25,
+                "shares_source": shares_source,
+                "note": "相对估值：同业 PS 中位 × 每股年化收入；不是 DCF 目标价，未计治理/流动性折价。",
+            }
+    return None
 
 
 def _data_completeness(
@@ -803,8 +972,11 @@ def _data_completeness(
     governance_missing = [
         "实控人/董事长履历",
         "一致行动人认定（前十大只有报告期合计）",
-        "分红/回购/融资历史",
-        "董事会结构",
+        "关联交易与资金占用",
+        "对外担保",
+        "承诺兑现记录",
+        "处罚诉讼",
+        "高管变动",
     ]
     governance_labels = {
         "controller_profile": "实控人/董事长履历",
@@ -1166,84 +1338,76 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
 
     valuation = None
     is_financial = bool(debt_summary and debt_summary.get("is_financial"))
-    if has_fin and latest_fin.get("net_profit") and price and not is_financial:
-        # 简易模型：以最新自由现金流/净利为起点，给出测算区间，不构成目标价
-        growth = 0.06
-        discount = 0.10
-        terminal = 0.03
-        fcf = float(latest_fin.get("free_cash_flow") or latest_fin.get("net_profit") or 0)
-        shares = (val or {}).get("total_shares")
-        shares_source = "total_shares"
-        if not shares and price and (val or {}).get("float_mv"):
-            # 演示代理：用流通市值/未复权价估算股本；不是总股本口径，页面必须标注。
-            shares = float(val["float_mv"]) / float(price)
-            shares_source = "float_mv/price_proxy"
-        if fcf > 0 and shares:
-            enterprise_value = fcf * (1 + growth) / max(0.01, discount - terminal)
-            net_debt_value = float((net_debt or {}).get("value") or 0.0)
-            equity_value = enterprise_value - net_debt_value
-            if equity_value > 0:
-                per_share = equity_value / float(shares)
-                valuation = {
-                    "method": "owner_earnings_proxy_net_debt",
-                    "is_demo": True,
-                    "assumptions": {
-                        "revenue_growth": growth,
-                        "cash_flow_margin": None,
-                        "discount_rate": discount,
-                        "terminal_growth": terminal,
-                    },
-                    "enterprise_value": enterprise_value,
-                    "equity_value": equity_value,
-                    "net_debt_proxy": net_debt,
-                    "per_share": per_share,
-                    "low": per_share * 0.75,
-                    "base": per_share,
-                    "high": per_share * 1.25,
-                    "shares_source": shares_source,
-                    "note": (
-                        "简易测算口径，不构成目标价；股权价值 = 企业价值 − 净债务（见 net_debt_proxy.label），"
-                        "未计税费、营运资本、汇率与治理折价；股本为估算值。"
-                    ),
-                }
-            else:
-                valuation = {
-                    "method": "owner_earnings_proxy_net_debt",
-                    "is_demo": True,
-                    "error": "净债务近似后股权价值为负，无法给出估值区间。",
-                    "enterprise_value": enterprise_value,
-                    "equity_value": equity_value,
-                    "net_debt_proxy": net_debt,
-                    "note": "简易测算口径，不构成目标价；净债务口径见 net_debt_proxy.label。",
-                }
-    if is_financial and has_fin:
-        valuation = {
-            "method": "relative_only",
-            "is_demo": True,
-            "error": "金融企业不适用净债务桥（有息负债/净债务为 NULL），简易模型仅保留相对估值。",
-            "net_debt_proxy": net_debt,
-            "note": "银行/保险/证券不计算企业价值与净债务桥；请使用 PB/ROE 等相对估值。",
-        }
+    shares, shares_source = _valuation_share_count(val, float(price or 0), share_capital, data_as_of)
+    if has_fin and price:
+        # 绝对估值：自由现金流/净利为正时走 owner earnings；股本使用 PIT 披露，不再优先用流通市值反推。
+        if not is_financial and latest_fin.get("net_profit") and shares:
+            growth = 0.06
+            discount = 0.10
+            terminal = 0.03
+            fcf = float(latest_fin.get("free_cash_flow") or latest_fin.get("net_profit") or 0)
+            if fcf > 0:
+                enterprise_value = fcf * (1 + growth) / max(0.01, discount - terminal)
+                net_debt_value = float((net_debt or {}).get("value") or 0.0)
+                equity_value = enterprise_value - net_debt_value
+                per_share = equity_value / float(shares) if equity_value > 0 and shares else None
+                if per_share and _valuation_usable(per_share, float(price), shares_source):
+                    valuation = {
+                        "available": True,
+                        "method": "owner_earnings_proxy_net_debt",
+                        "is_demo": True,
+                        "assumptions": {
+                            "revenue_growth": growth,
+                            "cash_flow_margin": None,
+                            "discount_rate": discount,
+                            "terminal_growth": terminal,
+                        },
+                        "enterprise_value": enterprise_value,
+                        "equity_value": equity_value,
+                        "net_debt_proxy": net_debt,
+                        "per_share": per_share,
+                        "low": per_share * 0.75,
+                        "base": per_share,
+                        "high": per_share * 1.25,
+                        "shares_source": shares_source,
+                        "note": (
+                            "简易 owner earnings 测算，不构成目标价；股权价值 = 企业价值 − 净债务"
+                            "（见 net_debt_proxy.label），未计税费、营运资本、汇率与治理折价。"
+                        ),
+                    }
+        if valuation is None:
+            # 绝对估值不适用（负 FCF、金融企业、区间异常）时，用同业 PB/PE 中位给相对估值。
+            relative = _relative_valuation(
+                latest_fin,
+                peer_summary or {},
+                shares,
+                float(price),
+                shares_source,
+                prefer_pb=is_financial,
+            )
+            if relative:
+                relative["net_debt_proxy"] = net_debt
+                valuation = relative
     if valuation is None:
         if not has_fin:
             reason = "财务三表未接入或未公告，无法构建估值。"
         elif not price:
             reason = "缺少最新收盘价，无法折算每股价值。"
+        elif not shares:
+            reason = "缺少总股本/总市值，无法折算每股价值。"
         elif latest_fin.get("net_profit") is None:
             reason = "最近报告期净利润为空，无法构建 owner earnings。"
         else:
             fcf = float(latest_fin.get("free_cash_flow") or latest_fin.get("net_profit") or 0)
             if fcf <= 0:
-                reason = f"自由现金流为负（{_yi(fcf)}），owner earnings 简易模型不适用。"
-            elif not (val.get("total_shares") or (price and val.get("float_mv"))):
-                reason = "缺少总股本/流通市值，无法折算每股价值。"
+                reason = "自由现金流为负，且同业 PB/PE 相对估值不在可用区间。"
             else:
-                reason = "估值模型未产出有效结果。"
+                reason = "估值模型未产出可用结果（股本或估值输入异常）。"
         valuation = {
             "method": "unavailable",
             "available": False,
             "reason": reason,
-            "note": "不生成目标价；补齐数据或自由现金流转正后，重跑“估值与价格”维度。",
+            "note": "重新生成时会优先使用已公告总股本；补齐财务/价格后重跑“估值与价格”维度。",
         }
     industry_analysis = {
         "key": "industry",

@@ -239,7 +239,7 @@ _A06 = """# 角色
 你是护城河研究员，只负责「护城河」：优势是什么类型、能撑几年。不评价利润真假、不评价管理层、不给估值。
 
 # 指标（只用 payload 有数据的，选 2–3 个）
-毛利率 5–10 年稳定性、ROE 与同业中位对比、毛利率与同业差距、分部毛利率、成本结构。
+毛利率 5–10 年稳定性、ROE 与同业中位对比、毛利率与同业差距、分部毛利率、成本结构；document_extracts 已验证的前五大客户占比才使用。
 
 # 输出
 1) summary（40–60 字）：
@@ -286,7 +286,7 @@ _A08 = """# 角色
 你是治理研究员，只负责「CEO 与治理」：掌舵者与小股东的利益是否一致。
 
 # 指标（只用 payload 有数据的，选 2–3 个）
-控股股东/实控人持股、前十大股东及报告期变动、审计意见类型、分红/融资记录；document_extracts 提供的董事会结构才使用。
+控股股东/实控人持股、前十大股东及报告期变动、审计意见类型；document_extracts 已验证的关联交易/担保/诉讼/承诺兑现/高管变动才使用。
 
 # 输出
 1) summary（40–60 字）：
@@ -321,13 +321,13 @@ _A09 = """# 角色
 4) rating/confidence/gate。锚点：5=安全边际>25%；4=15–25%；3=8–15%；2=0–8%；1=负安全边际。
 5) valuation 字段（供 03 页键值表）：wacc / g / bear / base / bull / irr / terminal_share，全部照抄估值服务。
 
-# 估值可用性门禁（实测踩过：每股价值与现价差 1–20 倍）
-先做一次 sanity check，再写结论：
-  ratio = 每股价值（base）÷ 现价
-  ratio ∈ [0.3, 3.0] → 可用，继续；
-  ratio ∉ [0.3, 3.0] → 判"估值不可用"：gate=fail、rating≤2.0，summary 只写一句
-    "估值口径失效（每股 0.80 元 vs 现价 22.49 元），本轮不给价格区间"，并在 data_gaps 写"股本口径待修"。
-  绝不允许把失效的每股价值填进议案价格带（实测：0.7956–1.3261 的"价格带"让风控直接阻断）。
+# 估值可用性检查
+- `valuation_model.available=false` 或没有 base 每股价值 → 估值不可用，gate=fail，不给价格区间。
+- `shares_source ∈ share_capital / total_shares / total_mv/price`：股本是已公告或总市值口径，可信；
+  即使 base 每股价值与现价相差很大，也直接写"现价较模型值高/低 X%"，不要判估值不可用。
+- 只有 `shares_source=float_mv/price` 的代理股本，才检查 ratio = base 每股价值 ÷ 现价；
+  ratio ∉ [0.3, 3.0] 时判估值不可用，gate=fail、rating≤2.0，不给价格区间。
+- 不把不可用的每股价值填进议案价格带。
 
 # 禁区（硬约束）
 不许自己算 DCF/IRR/终值；缺输出就 fail。不重述业务模式与行业空间；不用"估值合理/具备吸引力"；
@@ -1094,7 +1094,7 @@ DIM_GATE_NOTES: dict[str, str] = {
     "business_model": "分部/客户/量价/成本/合同负债以 payload 的 document_extracts 和 document_coverage 为准：已接入的字段必须使用并引用 doc_id/page/quote；缺失的字段不得推断，也不得声称增长来自未接入的量、价或结构。",
     "moat": "本维只用毛利率、ROE、同业对照与成本结构判断护城河。",
     "financial": "附注/审计意见/成本结构/合同负债以 payload 的 document_extracts 和 document_coverage 为准：已接入的字段必须使用并引用 doc_id/page/quote；仍未接入的附注、问询函、母公司报表不得推断，也不得下“无造假”结论。",
-    "governance": "治理数据以 payload 的 document_extracts 和 document_coverage 为准：已接入的实控人、前十大股东、审计意见与董事会结构必须使用并引用 doc_id/page/quote；不得用前十大股东比例替代控制权事实。",
+    "governance": "治理数据以 payload 的 document_extracts 和 document_coverage 为准：已接入的实控人、前十大股东、审计意见，以及已验证的关联交易/担保/诉讼/承诺兑现/高管变动必须使用并引用 doc_id/page/quote；不得用前十大股东比例替代控制权事实。",
     "valuation": "本维只用 PE/PB 分位、净债务、股息率与估值服务输出。",
 }
 

@@ -419,7 +419,8 @@ def industry_peers(
             SELECT rsi.symbol,
                    v.pe_ttm, v.pb_mrq, v.total_mv, v.float_mv,
                    f.revenue_yoy, f.gross_margin, f.net_margin, f.roe,
-                   f.report_date
+                   f.report_date,
+                   fi.revenue, fi.report_date AS revenue_report_date
               FROM ref_security_industry rsi
               LEFT JOIN LATERAL (
                 SELECT pe_ttm, pb_mrq, total_mv, float_mv
@@ -434,6 +435,13 @@ def industry_peers(
                    AND notice_date <= CURRENT_DATE
                  ORDER BY report_date DESC LIMIT 1
               ) f ON TRUE
+              LEFT JOIN LATERAL (
+                SELECT revenue, report_date
+                  FROM fin_income_statement
+                 WHERE symbol = rsi.symbol AND notice_date IS NOT NULL
+                   AND notice_date <= CURRENT_DATE
+                 ORDER BY report_date DESC LIMIT 1
+              ) fi ON TRUE
              WHERE rsi.industry_code=%s AND rsi.level=1 AND rsi.symbol<>%s
              ORDER BY v.total_mv DESC NULLS LAST, rsi.symbol
              LIMIT %s

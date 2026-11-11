@@ -88,7 +88,7 @@ def test_data_gate_caps_agent_gate() -> None:
     assert ok["gate"] == "pass"
 
 
-def test_memo_decision_capped_by_gates() -> None:
+def test_memo_decision_not_capped_by_gates() -> None:
     version = {
         "six_dim": [
             {"key": "governance", "gate": "fail"},
@@ -97,8 +97,9 @@ def test_memo_decision_capped_by_gates() -> None:
         "industry_analysis": {"gate": "watch"},
     }
     out = svc._apply_memo_data_gate({"decision": "proceed", "summary": "买入"}, version)
-    assert out["decision"] == "watch"
-    assert "governance" in out["data_gate_note"]
+    assert out["decision"] == "proceed"
+    assert "data_gate_note" not in out
+    assert out["data_gates"]["governance"] == "fail"
     all_pass = svc._apply_memo_data_gate(
         {"decision": "proceed"},
         {"six_dim": [{"key": "industry", "gate": "pass"}], "industry_analysis": {"gate": "pass"}},

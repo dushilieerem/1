@@ -151,10 +151,14 @@ def exit_advice(org_id: int, symbol: str) -> dict[str, Any]:
     raw_event = events[0].get("detail") if events else ""
     event_text = json.dumps(raw_event, ensure_ascii=False) if isinstance(raw_event, (dict, list)) else str(raw_event or "")
     pm = f"仓位 {weight:.1f}%，现价较成本 {pnl:+.1f}%"
-    if overdue:
-        pm += f"，论点复核已逾期（{review_due}）"
+    if exits:
+        pm += "；已有退出研究案在途"
+    elif overdue:
+        pm += f"；论点复核已逾期（{review_due}）"
     elif event_text:
         pm += f"；最近事件：{event_text[:36]}"
+    elif str((thesis or {}).get("status") or "") in {"invalid", "closed"}:
+        pm += "；买入论点已失效"
     if stance == "exit":
         pm += "，建议平仓。"
     elif stance == "trim":

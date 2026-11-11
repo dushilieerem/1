@@ -225,6 +225,35 @@ def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tu
                     f"销售金额 {m.group(2)} 亿元（同比{m.group(3)} {m.group(5)}%）"
                 )
                 value_num, unit = _num(m.group(1)), "万平方米"
+        if not m:
+            # 通用：年报“实物销售收入”表，如“销售量 万件 4,680.68 4,005.22 16.86%”。
+            m = re.search(
+                r"销售量\s*(?:([一-龥/]+)\s*)?"
+                r"([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+(-?[\d.]+)%",
+                t,
+            )
+            if m:
+                unit = m.group(1) or ""
+                if unit in {"元", "万元", "亿元"}:
+                    m = None
+                    continue
+                value_text = (
+                    f"{year} 年销售量 {m.group(2)} {unit}"
+                    f"（同比 {m.group(4)}%，上年 {m.group(3)} {unit}）"
+                ).strip()
+                value_num = _num(m.group(2))
+        if not m:
+            # 通用：地产口径“销售面积 X 万平方米，销售金额 Y 亿元”。
+            m = re.search(
+                r"销售面积\s*([\d,.]+)\s*(万)?平方米[，,]\s*(?:签约)?销售金额\s*([\d,.]+)\s*亿元",
+                t,
+            )
+            if m:
+                unit = f"{m.group(2) or ''}平方米"
+                value_text = (
+                    f"{year} 年销售面积 {m.group(1)} {unit}，销售金额 {m.group(3)} 亿元"
+                )
+                value_num = _num(m.group(1))
         if m:
             return (
                 _row(
@@ -235,7 +264,7 @@ def extract_volume_price(doc: dict[str, Any], pages: list[dict[str, Any]]) -> tu
                     value_text=value_text or "",
                     value_num=value_num,
                     unit=unit,
-                    confidence=0.82,
+                    confidence=0.75 if symbol in {"600519.SH", "001219.SZ", "000625.SZ", "001233.SZ", "000002.SZ"} else 0.68,
                 ),
                 "ok",
             )
@@ -443,6 +472,11 @@ def main() -> None:
 
     catalog = pd.read_parquet(args.catalog).dropna(subset=["doc_id"])
     pages_df = pd.read_parquet(args.pagetext)
+    # 全A 页文本有上百万行，逐份过滤会退化成 O(文档数×页数)；按 doc_id 分组一次。
+    pages_by_doc = {
+        str(doc_id): group.sort_values("page_no").to_dict("records")
+        for doc_id, group in pages_df.groupby("doc_id", sort=False)
+    }
     period = str(args.report_period or "").strip().lower()
     if period not in {"", "all", "*"}:
         catalog = catalog[catalog["report_period"].astype(str).str.startswith(args.report_period[:4])]
@@ -456,11 +490,7 @@ def main() -> None:
     report: dict[str, Any] = {"period": args.report_period, "docs": [], "missing": []}
 
     for doc in catalog.to_dict("records"):
-        doc_pages = (
-            pages_df[pages_df["doc_id"] == doc["doc_id"]]
-            .sort_values("page_no")
-            .to_dict("records")
-        )
+        doc_pages = pages_by_doc.get(str(doc["doc_id"]), [])
         doc_report = {
             "symbol": doc["symbol"],
             "doc_id": doc["doc_id"],

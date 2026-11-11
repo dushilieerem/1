@@ -54,6 +54,13 @@ MGMT_TITLE_WORDS = (
     "财务总监",
     "董事会秘书",
 )
+# 公告标题里这些是制度/评估/声明文件，不是当期事件，抽出来会污染证据。
+ANNOUNCEMENT_TITLE_SKIP: dict[str, tuple[str, ...]] = {
+    "guarantee": ("管理办法", "管理制度", "管理规定", "实施细则", "规则", "办法", "专项报告", "独立董事"),
+    "pledge_freeze": ("评估报告", "质押合同", "质押协议", "可转换公司债券"),
+    "commitment_history": ("独立董事", "候选人", "声明", "管理办法", "管理制度", "规则"),
+    "related_party": ("管理办法", "管理制度", "管理规定", "实施细则", "规则", "办法", "汇总表", "专项审计报告", "独立董事"),
+}
 
 RULES_V2: dict[str, dict[str, Any]] = dict(RULES)
 RULES_V2["litigation_penalty"] = {
@@ -160,8 +167,14 @@ def main() -> None:
 
     annual = pd.read_parquet(args.annual_catalog).dropna(subset=["doc_id"])
     annual_pages = pd.read_parquet(args.annual_pagetext)
-    ann = pd.read_parquet(args.ann_catalog).dropna(subset=["doc_id"])
+    annual_groups = {
+        str(doc_id): group for doc_id, group in annual_pages.groupby("doc_id", sort=False)
+    }
     ann_pages = pd.read_parquet(args.ann_pagetext)
+    ann = pd.read_parquet(args.ann_catalog).dropna(subset=["doc_id"])
+    ann_groups = {
+        str(doc_id): group for doc_id, group in ann_pages.groupby("doc_id", sort=False)
+    }
     index = (
         pd.read_parquet(args.section_index)
         if args.section_index
@@ -185,7 +198,7 @@ def main() -> None:
         got, miss = _extract_doc(
             doc,
             ANNUAL_FIELDS,
-            annual_pages,
+            annual_groups.get(str(doc["doc_id"]), annual_pages.iloc[0:0]),
             index,
             period=_period(doc.get("report_period")),
         )
@@ -196,6 +209,11 @@ def main() -> None:
         types = {x.strip() for x in str(doc.get("doc_types") or "").split(",") if x.strip()}
         fields = [f for f in ANNOUNCEMENT_FIELDS if f in types]
         title = str(doc.get("title") or "")
+        fields = [
+            f
+            for f in fields
+            if not any(word in title for word in ANNOUNCEMENT_TITLE_SKIP.get(f, ()))
+        ]
         if "board_mgmt" in types and any(word in title for word in MGMT_TITLE_WORDS):
             if "mgmt_change" not in fields:
                 fields.append("mgmt_change")
@@ -205,7 +223,7 @@ def main() -> None:
         got, miss = _extract_doc(
             doc,
             fields,
-            ann_pages,
+            ann_groups.get(str(doc["doc_id"]), ann_pages.iloc[0:0]),
             index,
             period=_announce_date(doc),
         )

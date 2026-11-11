@@ -80,6 +80,7 @@ def main() -> None:
           review_status=EXCLUDED.review_status,
           reviewed_by=EXCLUDED.reviewed_by,
           reviewed_at=EXCLUDED.reviewed_at
+        WHERE svquant.doc_extract.review_status NOT IN ('approved', 'verified', 'reviewed', 'auto_verified')
     """
     values = [tuple(row.get(col) or None for col in COLUMNS) for row in rows]
     with psycopg.connect(dsn) as conn:

@@ -576,7 +576,7 @@ def _data_completeness(
         status = "na" if doc_key in na or docs.get(doc_key) == "na" else docs.get(doc_key, "missing")
         reason = na.get(doc_key) or "业务口径不适用"
         if status == "have":
-            business_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            business_have.append(f"年报/公告页级抽取：{label}（已校验）")
             if label in business_missing:
                 business_missing.remove(label)
         elif status == "na":
@@ -628,7 +628,7 @@ def _data_completeness(
         label = doc_labels[doc_key]
         reason = na.get(doc_key) or "业务口径不适用"
         if status == "have":
-            financial_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            financial_have.append(f"年报/公告页级抽取：{label}（已校验）")
             if doc_key == "contract_liabilities":
                 composite = "受限资金/租赁负债/合同负债（源数据为空，B 组补）"
                 if composite in financial_missing:
@@ -667,7 +667,7 @@ def _data_completeness(
         status = "na" if doc_key in na or docs.get(doc_key) == "na" else docs.get(doc_key, "missing")
         reason = na.get(doc_key) or "业务口径不适用"
         if status == "have":
-            governance_have.append(f"年报/公告页级抽取：{label}（已复核）")
+            governance_have.append(f"年报/公告页级抽取：{label}（已校验）")
             if label in governance_missing:
                 governance_missing.remove(label)
         elif status == "na":
@@ -1214,7 +1214,9 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
         payload["document_extracts"] = doc_payload
     if key == "governance":
         coverage = facts.get("document_coverage") or {}
-        covered = [k for k, v in coverage.items() if v == "have"]
+        covered = [
+            k for k in doc_layer.GOVERNANCE_DOC_FIELDS if coverage.get(k) == "have"
+        ]
         if facts.get("not_applicable_fields"):
             payload["not_applicable_fields"] = dict(facts["not_applicable_fields"])
         if covered:
@@ -1230,11 +1232,15 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
             )
     if key == "business_model":
         coverage = facts.get("document_coverage") or {}
-        covered = [k for k, v in coverage.items() if v == "have"]
-        pending = [k for k, v in coverage.items() if v == "pending"]
+        covered = [
+            k for k in doc_layer.BUSINESS_DOC_FIELDS if coverage.get(k) == "have"
+        ]
+        pending = [
+            k for k in doc_layer.BUSINESS_DOC_FIELDS if coverage.get(k) == "pending"
+        ]
         if covered or pending:
             payload["business_model_note"] = (
-                f"年报/公告页级抽取已复核字段：{'、'.join(doc_layer.DOC_FIELDS[k] for k in covered) or '无'}；"
+                f"年报/公告页级抽取已校验字段：{'、'.join(doc_layer.DOC_FIELDS[k] for k in covered) or '无'}；"
                 f"待复核：{'、'.join(doc_layer.DOC_FIELDS[k] for k in pending) or '无'}。"
                 "引用抽取值时必须同时给出 doc_id、page_no、原文 quote 与 available_time，不得改写或外推；"
                 "待复核字段只能作线索，不得作为结论依据。"

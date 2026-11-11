@@ -101,6 +101,18 @@ ROWS = [
         "available_time": "2026-03-28",
         "review_status": "verified",
     },
+    {
+        "symbol": "600519.SH",
+        "field_key": "guarantee",
+        "value_text": "公司报告期无违规对外担保情况",
+        "report_period": "2025A",
+        "page_no": 45,
+        "quote": "三、违规对外担保情况 适用 不适用 公司报告期无违规对外担保情况。",
+        "doc_id": "doc-2025-annual",
+        "pdf_sha256": "abc",
+        "available_time": "2026-03-28",
+        "review_status": "auto_verified",
+    },
 ]
 
 
@@ -125,6 +137,8 @@ def test_pit_filter_and_review_status() -> None:
     assert out["coverage"]["top5_customers"] == "have"
     assert out["coverage"]["volume_price_split"] == "pending"
     assert out["coverage"]["cost_structure"] == "have"
+    assert out["coverage"]["guarantee"] == "have"
+    assert out["fields"]["guarantee"]["items"][0]["reviewed"] is True
     assert out["coverage"]["contract_liabilities"] == "missing"
     top5 = out["fields"]["top5_customers"]["items"][0]
     assert top5["page_no"] == 38
@@ -176,10 +190,10 @@ def test_data_completeness_and_agent_payload_use_documents() -> None:
     biz = completeness["business_model"]
     assert "前五大客户占比" not in biz["missing"]
     assert "合同负债/预收款" not in biz["missing"]
-    assert any("前五大客户" in x and "已复核" in x for x in biz["have"])
+    assert any("前五大客户" in x and "已校验" in x for x in biz["have"])
     assert any("量价拆分" in x and "待复核" in x for x in biz["missing"])
     fin = completeness["financial"]
-    assert any("合同负债/预收款" in x and "已复核" in x for x in fin["have"])
+    assert any("合同负债/预收款" in x and "已校验" in x for x in fin["have"])
     assert "受限资金/租赁负债/合同负债（源数据为空，B 组补）" not in fin["missing"]
 
     facts = {

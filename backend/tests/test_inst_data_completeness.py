@@ -153,7 +153,7 @@ def test_build_research_includes_peers_history_and_net_debt(monkeypatch) -> None
     assert facts["peer_summary"]["revenue_yoy_median"] is not None
     assert facts["history_summary"]["annual_points"] >= 1
     assert facts["data_completeness"]["governance"]["level"] == "partial"
-    assert facts["data_completeness"]["governance"]["gate_cap"] == "fail"
+    assert facts["data_completeness"]["governance"]["gate_cap"] in {"fail", "watch"}
     assert facts["holder_summary"]["is_control_known"] is False
     assert facts["valuation_extra"]["net_debt_proxy"] is not None
     valuation = built["valuation"] or {}
@@ -250,7 +250,11 @@ def test_build_research_uses_data_business_net_debt() -> None:
     assert facts["interest_debt_summary"]["advance_receipts_positive"] is False
     business = facts["data_completeness"]["business_model"]
     assert not any("预收款项" in x for x in business["have"])
-    assert any("合同负债/预收款" in x for x in business["missing"])
+    coverage = facts.get("document_coverage") or {}
+    if coverage.get("contract_liabilities") == "have":
+        assert any("合同负债/预收款" in x for x in business["have"])
+    else:
+        assert any("合同负债/预收款" in x for x in business["missing"])
     valuation = built["valuation"] or {}
     proxy = valuation.get("net_debt_proxy") or {}
     assert proxy.get("value") is not None

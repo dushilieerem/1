@@ -560,7 +560,326 @@ def _stock_deep_rule_card(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _stock_context(conn: PGConn, code: str, *, deep: bool = False) -> dict[str, Any]:
+
+
+
+def _portfolio_risk_default(portfolio: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    diagnosis = [x for x in (portfolio.get("diagnosis") or []) if isinstance(x, dict)]
+    kpis = portfolio.get("kpis") or []
+    attribution = portfolio.get("attribution") or {}
+    attr_items = [x for x in (attribution.get("items") or []) if isinstance(x, dict)]
+    attr_sorted = sorted(attr_items, key=lambda x: x.get("contributionPct") or 0, reverse=True)
+    stress = [x for x in (portfolio.get("stress") or []) if isinstance(x, dict)]
+    deviation = [x for x in (portfolio.get("deviation") or []) if isinstance(x, dict)]
+    method = portfolio.get("riskMethod") or {}
+    risk_score = portfolio.get("riskScore")
+    risk_label = portfolio.get("riskLabel") or "未提供"
+    top = diagnosis[0] if diagnosis else None
+    kpi_lines = [f"{k.get('label')}：{k.get('value')}" for k in kpis if isinstance(k, dict) and k.get("label")]
+    kpi_lines.insert(0, f"风险分：{risk_score if risk_score is not None else '未提供'}/100（{risk_label}）")
+    diagnosis_rows = [
+        [str(d.get("title") or "风险项"), _fmt_stock_value(d.get("value"), 2, "%"), _fmt_stock_value(d.get("threshold"), 2, "%"), _fmt_stock_value(d.get("excess"), 2, "pct"), str(d.get("impact") or "—")]
+        for d in diagnosis[:5]
+    ]
+    non_triggered = [
+        f"{item.get('label')}：{item.get('detail')}" for item in (method.get("items") or [])
+        if isinstance(item, dict) and item.get("available") and not any(d.get("id") == item.get("key") for d in diagnosis)
+    ][:2]
+    contributor = "、".join(f"{x.get('name')}（{_fmt_stock_value(x.get('contributionPct'), 2, 'pct')}）" for x in attr_sorted[:2]) or "未提供"
+    drag = "、".join(f"{x.get('name')}（{_fmt_stock_value(x.get('contributionPct'), 2, 'pct')}）" for x in attr_sorted[-2:] if (x.get("contributionPct") or 0) < 0) or "未提供"
+    stress_rows = [[str(x.get("name") or "情景"), _fmt_stock_value(x.get("value"), 1, "%")] for x in stress] or [["未提供", "未提供"]]
+    dev_rows = [
+        [str(x.get("name") or "—"), _fmt_stock_value(x.get("target"), 1, "%"), _fmt_stock_value(x.get("current"), 1, "%"), f"{_fmt_stock_value(x.get('diff'), 1, 'pct')} · {str(x.get('status') or '—')}"]
+        for x in deviation[:8]
+    ] or [["未设置目标权重", "—", "—", "—"]]
+    title = f"风险分 {risk_score if risk_score is not None else '未提供'}/100（{risk_label}）"
+    main = f"主要越线项：{top.get('title')}（{_fmt_stock_value(top.get('value'), 2, '%')} / 阈值 {_fmt_stock_value(top.get('threshold'), 2, '%')}）。" if top else "当前没有体检指标越过阈值。"
+    summary = f"{title}，{main}"
+    sensitivity = "对重仓行业冲击更敏感。" if stress and stress[0].get("value") is not None else "压力测试数据不足，暂不判断敏感度。"
+    sections = [
+        {"key": "score", "title": "一、结论与风险分", "blocks": [
+            {"type": "paragraph", "text": summary},
+            {"type": "bullets", "items": kpi_lines[:6]},
+        ]},
+        {"key": "structure", "title": "二、结构风险（越线项）", "blocks": (
+            [{"type": "table", "title": "越线项", "source": "diagnosis", "columns": ["风险项", "实测值", "阈值", "超出", "影响"], "rows": diagnosis_rows}]
+            if diagnosis_rows else []
+        ) + [
+            {"type": "bullets", "items": non_triggered or ["未越线的关键项：未提供。"]},
+        ]},
+        {"key": "today", "title": "三、今日影响", "blocks": [
+            {"type": "bullets", "items": [
+                f"今日组合涨跌：{_fmt_stock_value(portfolio.get('dailyChange'), 2, '%')}",
+                f"主要贡献：{contributor}", f"主要拖累：{drag}",
+                "归因口径：权重 × 涨跌，不推因果。",
+            ]},
+        ]},
+        {"key": "stress", "title": "四、压力测试", "blocks": [
+            {"type": "table", "title": "情景影响", "source": "stress", "columns": ["情景", "组合影响"], "rows": stress_rows},
+            {"type": "bullets", "items": [sensitivity, "情景为假设冲击，不代表实际损失。"]},
+        ]},
+        {"key": "deviation", "title": "五、目标偏离", "blocks": [
+            {"type": "table", "title": "目标 vs 当前", "source": "deviation", "columns": ["行业/标的", "目标权重", "当前权重", "偏离"], "rows": dev_rows},
+            {"type": "bullets", "items": ["只描述目标与当前的偏离，不构成调仓建议。"]},
+        ]},
+        {"key": "limits", "title": "六、观察与局限", "blocks": [
+            {"type": "bullets", "items": [
+                "观察相关性是否继续上升、单票权重是否变化。",
+                "自查 ETF 成分重叠、穿透覆盖率能否提高。",
+                f"穿透覆盖率：{_fmt_stock_value((portfolio.get('penetration') or {}).get('coveragePct'), 1, '%')}；未覆盖部分不计入。",
+                "风险分是结构描述，不是涨跌预测。",
+            ]},
+        ]},
+    ]
+    charts = []
+    if stress:
+        charts.append(_bar_chart("压力测试情景影响", "Stress-test impact", [str(x.get("name")) for x in stress], [x.get("value") for x in stress], "%", "组合压力测试"))
+    if attr_items:
+        charts.append(_bar_chart("今日组合归因", "Portfolio contribution today", [str(x.get("name")) for x in attr_sorted[:5]], [x.get("contributionPct") for x in attr_sorted[:5]], "pct", "组合归因"))
+    card = {
+        "summary": summary, "sections": sections,
+        "disclaimer": "AI 生成 · 非投资建议",
+        "meta": {"dataSource": "组合体检 + 归因 + 压力测试", "engine": "rule"},
+    }
+    return card, charts
+
+
+def _daily_review_default(home: dict[str, Any], portfolio: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    pulse = home.get("marketPulse") or {}
+    breadth = pulse.get("breadth") or {}
+    sectors = pulse.get("sectors") or {}
+    review = home.get("review") or {}
+    topics = home.get("topics") or []
+    daily = home.get("daily") or []
+    attribution = portfolio.get("attribution") or {}
+    items = [x for x in (attribution.get("items") or []) if isinstance(x, dict)]
+    holdings = portfolio.get("holdings") or []
+    benchmark = attribution.get("benchmark") or {}
+    bench_change = benchmark.get("changePct")
+    daily_change = portfolio.get("dailyChange")
+    index_lines = []
+    for index in pulse.get("indices") or []:
+        if index.get("available") and index.get("change") is not None:
+            index_lines.append(f"{index.get('label')} {index.get('change'):+.2f}%")
+    if not index_lines:
+        index_lines.append("三大指数：未提供")
+    turnover = pulse.get("turnover") or {}
+    turnover_text = (
+        f"两市成交额 {_fmt_stock_value(turnover.get('value'), 1, ' 亿元')}，"
+        f"环比 {_fmt_stock_value(turnover.get('change'), 1, '%')}"
+        if turnover.get("available") else "两市成交额：未提供"
+    )
+    breadth_text = (
+        f"涨跌家数 {breadth.get('advancers')}/{breadth.get('decliners')}，"
+        f"涨停 {breadth.get('limitUp')} / 跌停 {breadth.get('limitDown')}"
+        if breadth.get("available") else "涨跌家数：未提供"
+    )
+    leaders = "、".join(str(s.get("name")) for s in (sectors.get("leaders") or [])[:3]) or "未提供"
+    laggards = "、".join(str(s.get("name")) for s in (sectors.get("laggards") or [])[:3]) or "未提供"
+    topic_names = "、".join(str(t.get("name")) for t in topics[:3]) or "未提供"
+    attr_top = sorted(items, key=lambda x: x.get("contributionPct") or 0, reverse=True)
+    contributors = "、".join(f"{x.get('name')}（{float(x.get('contributionPct') or 0):+.2f}pct）" for x in attr_top[:2]) or "未提供"
+    drags = "、".join(f"{x.get('name')}（{float(x.get('contributionPct') or 0):+.2f}pct）" for x in attr_top[-2:] if (x.get("contributionPct") or 0) < 0) or "未提供"
+    portfolio_paragraph = (
+        f"组合今日 {_fmt_stock_value(daily_change, 2, '%')}，沪深300 "
+        f"{_fmt_stock_value(bench_change, 2, '%')}；"
+        + ("跑赢基准。" if daily_change is not None and bench_change is not None and daily_change > bench_change else
+           "跑输基准。" if daily_change is not None and bench_change is not None and daily_change < bench_change else "基准数据未提供。")
+        + "这里只描述相对表现，不等于组合赚钱。"
+    ) if holdings else "尚未导入组合；导入后才能计算今日收益与归因。"
+    portfolio_bullets = [
+        f"主要贡献：{contributors}",
+        f"主要拖累：{drags}",
+        f"持仓数：{len(holdings)} 只" if holdings else "持仓与归因：未提供",
+    ]
+    moves = [
+        f"{str(e.get('title') or '异动')}：{str(e.get('detail') or '')[:36]}"
+        for e in daily if isinstance(e, dict) and e.get("title")
+    ][:4]
+    why_text = str(review.get("summary") or "").strip() or "无明显单一催化，暂无法核验明确原因。"
+    watch = [
+        "关注下一交易日成交额与涨跌家数是否延续。",
+        "关注自选与持仓的公告、财报预约披露。",
+        "关注领涨板块能否保持相对强势。",
+    ]
+    summary = f"今日{('上涨' if (daily_change or 0) > 0 else '下跌' if (daily_change or 0) < 0 else '震荡')}，市场与组合表现见下方。"
+    sections = [
+        {"key": "market", "title": "一、大盘概览", "blocks": [
+            {"type": "bullets", "items": index_lines + [turnover_text, breadth_text, "北向资金：未提供"]},
+        ]},
+        {"key": "structure", "title": "二、市场结构", "blocks": [
+            {"type": "bullets", "items": [
+                f"领涨板块：{leaders}", f"领跌板块：{laggards}",
+                f"热点主题：{topic_names}", "风格与主力行业流向：未提供",
+            ]},
+        ]},
+        {"key": "portfolio", "title": "三、我的组合", "blocks": [
+            {"type": "paragraph", "text": portfolio_paragraph},
+            {"type": "bullets", "items": portfolio_bullets},
+        ]},
+    ]
+    if moves:
+        sections.append({"key": "moves", "title": "四、关注标的异动", "blocks": [
+            {"type": "bullets", "items": moves},
+        ]})
+    if why_text:
+        sections.append({"key": "why", "title": "五、今天为什么", "blocks": [
+            {"type": "paragraph", "text": why_text},
+        ]})
+    sections.append({"key": "watch", "title": "六、后续盯什么", "blocks": [
+        {"type": "bullets", "items": watch[:3]},
+    ]})
+    charts = []
+    idx = [x for x in (pulse.get("indices") or []) if x.get("available") and x.get("change") is not None]
+    if idx:
+        charts.append(_bar_chart("今日指数涨跌", "Index moves today", [str(x.get("label")) for x in idx], [x.get("change") for x in idx], "%", "行情"))
+    if items:
+        rows = attr_top[:5]
+        charts.append(_bar_chart("组合今日归因", "Portfolio contribution today", [str(x.get("name")) for x in rows], [x.get("contributionPct") for x in rows], "pct", "组合归因"))
+    card = {
+        "summary": summary, "sections": sections,
+        "disclaimer": "AI 生成 · 非投资建议",
+        "meta": {"dataSource": "首页 + 组合 + 自选 + 资讯", "engine": "rule"},
+    }
+    return card, charts
+
+
+def _stock_diagnosis_default(ctx: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    quote = ctx.get("quote") or {}
+    report = ctx.get("report") or {}
+    valuation = ctx.get("valuation") or {}
+    flow = ctx.get("fundFlow") or {}
+    inst = ctx.get("institutionalView") or {}
+    risks = [r for r in (ctx.get("risks") or []) if isinstance(r, dict)]
+    trend = [x for x in ((ctx.get("financialTrend") or {}).get("items") or []) if isinstance(x, dict)][-5:]
+    name = str(quote.get("name") or "该标的")
+    industry = str(quote.get("industry") or "未提供")
+    market = str(quote.get("market") or "CN")
+    market_label = "A 股" if market.upper() == "CN" else "美股" if market.upper() == "US" else market
+    period = str(report.get("period") or (trend[-1].get("label") if trend else "未提供"))
+    holdings = ctx.get("holdings") or []
+    source = ctx.get("dataSource") or "行情 + 财务 + 估值 + 资金流"
+    perf_rows = [
+        ["营业收入", _fmt_stock_value(report.get("revenue"), 2, " 亿元"), _fmt_stock_value(report.get("revenueYoY"), 1, "%")],
+        ["归母净利润", _fmt_stock_value(report.get("netProfit"), 2, " 亿元"), _fmt_stock_value(report.get("profitYoY"), 1, "%")],
+        ["毛利率", _fmt_stock_value(report.get("grossMargin"), 1, "%"), "—"],
+        ["净利率", _fmt_stock_value(((ctx.get("financialTrend") or {}).get("items") or [{}])[-1].get("net_margin")), "—"],
+        ["经营现金流", _fmt_stock_value(report.get("ocf"), 2, " 亿元"), "—"],
+    ]
+    valuation_rows = [
+        ["最新价", _fmt_stock_value(quote.get("price"), 2, "")],
+        ["总市值", _fmt_stock_value(quote.get("marketCap"), 2, " 亿元")],
+        ["PE(TTM)", _fmt_stock_value(valuation.get("pe"), 2, "x")],
+        ["PB", _fmt_stock_value(valuation.get("pb"), 2, "x")],
+        ["PS(TTM)", "未提供"],
+        ["PE 近 3 年分位", _fmt_stock_value(valuation.get("pePercentile"), 1, "%")],
+    ]
+    flow_rows = [
+        [str(p.get("date") or "—"), _fmt_stock_value(p.get("value"), 2, " 亿元")]
+        for p in (flow.get("series") or [])[-5:]
+    ] or [["未提供", "未提供"]]
+    series = [p for p in (flow.get("series") or []) if p.get("value") is not None][-5:]
+    charts: list[dict[str, Any]] = []
+    if len(trend) >= 4:
+        charts.append(_bar_chart("近 5 期营收", "Revenue, last 5 periods", [str(x.get("label")) for x in trend], [x.get("revenue") for x in trend], "亿元", "财报"))
+        charts.append(_bar_chart("近 5 期归母净利", "Net profit, last 5 periods", [str(x.get("label")) for x in trend], [x.get("net_profit") for x in trend], "亿元", "财报"))
+    if len(series) >= 4:
+        charts.append(_bar_chart("近 5 日主力净流入", "5-day main net inflow", [str(x.get("date")) for x in series], [x.get("value") for x in series], "亿元", "资金流"))
+    company_paragraph = f"{name}（{quote.get('code') or '—'}）属于{industry}，在{market_label}上市。主营业务与收入构成未提供，暂无法拆分业务占比。"
+    performance_paragraph = (
+        f"{period}营收 {_fmt_stock_value(report.get('revenue'), 2, ' 亿元')}，"
+        f"归母净利 {_fmt_stock_value(report.get('netProfit'), 2, ' 亿元')}；"
+        "收入、利润与毛利率的同比变化见下方表格与图表。"
+    )
+    valuation_paragraph = (
+        f"当前 PE {_fmt_stock_value(valuation.get('pe'), 2, 'x')}，"
+        f"处于近 3 年 {_fmt_stock_value(valuation.get('pePercentile'), 1, '%')} 分位；"
+        "分位只说明当前位置，不代表便宜或贵。"
+    )
+    cap_text = str((flow.get("divergence") or {}).get("text") or "")
+    capital_paragraph = (
+        f"近 5 日主力净流入 {_fmt_stock_value(flow.get('five_day'), 2, ' 亿元')}，"
+        f"近 20 日 {_fmt_stock_value(flow.get('twenty_day'), 2, ' 亿元')}。"
+        + (cap_text or "资金与股价关系未提供。")
+    )
+    inst_paragraph = (
+        "覆盖家数、评级分布、目标价与盈利预测均未提供；"
+        "若后续展示，只能作为第三方数据，不能视为本产品观点。"
+    )
+    highlights = [
+        f"毛利率 {_fmt_stock_value(report.get('grossMargin'), 1, '%')}，盈利质量需结合现金流看。",
+        f"ROE {_fmt_stock_value(report.get('roe'), 1, '%')}，资本回报水平见财务指标。",
+        f"PE 分位 {_fmt_stock_value(valuation.get('pePercentile'), 1, '%')}，估值位置可量化跟踪。",
+    ]
+    risk_bullets = [
+        f"{str(r.get('title') or '风险')}：{str(r.get('detail') or '待补充')[:30]}" for r in risks[:3]
+    ] or ["暂未触发规则风险，仍需独立判断。"]
+    summary = f"{name} 的业绩、估值与资金信号见下表；结论为样本内观察，不构成投资建议。"
+    sections = [
+        {"key": "company", "title": "一、公司是什么来头", "blocks": [
+            {"type": "paragraph", "text": company_paragraph},
+            {"type": "bullets", "items": [f"行业：{industry}", "业务收入构成：未提供", f"上市地：{market_label}"]},
+        ]},
+        {"key": "performance", "title": "二、最近一期业绩怎么样", "blocks": [
+            {"type": "table", "title": "主要指标", "source": "performance", "columns": ["指标", "本期", "同比"], "rows": perf_rows},
+            {"type": "paragraph", "text": performance_paragraph},
+            {"type": "bullets", "items": ["营收与利润变化见上方表格；单季环比与扣非数据未提供。"]},
+        ]},
+        {"key": "valuation", "title": "三、当前估值贵不贵", "blocks": [
+            {"type": "table", "title": "估值指标", "source": "valuation", "columns": ["指标", "数值"], "rows": valuation_rows},
+            {"type": "paragraph", "text": valuation_paragraph},
+        ]},
+        {"key": "capital", "title": "四、资金面什么信号", "blocks": [
+            {"type": "table", "title": "近 5 日主力资金", "source": "capital", "columns": ["日期", "主力净流入"], "rows": flow_rows},
+            {"type": "paragraph", "text": capital_paragraph},
+        ]},
+        {"key": "institution", "title": "五、机构怎么看", "blocks": [
+            {"type": "bullets", "items": ["覆盖家数：未提供（第三方数据）", "评级分布：未提供（第三方数据）", "一致目标价：未提供（第三方数据，非本产品观点）"]},
+            {"type": "table", "title": "机构盈利预测", "source": "forecast", "columns": ["指标", "预测"], "rows": [["未来 3 年营收", "未提供"], ["未来 3 年净利", "未提供"]]},
+            {"type": "paragraph", "text": inst_paragraph},
+        ]},
+        {"key": "highlights", "title": "六、核心亮点与风险", "blocks": [
+            {"type": "bullets", "items": highlights},
+            {"type": "bullets", "items": risk_bullets},
+        ]},
+        {"key": "conclusion", "title": "七、综合结论", "blocks": [
+            {"type": "paragraph", "text": f"{name} 当前处于业绩与估值需要一起看的状态；单看一个指标不足以判断。"},
+            {"type": "bullets", "items": ["跟踪下一期毛利率与经营现金流。", "关注估值分位与资金方向是否同向。"]},
+            {"type": "paragraph", "text": "本内容由 AI 生成，基于公开资讯与历史数据，仅供参考，不构成投资建议。"},
+        ]},
+    ]
+    card = {
+        "summary": summary, "sections": sections,
+        "disclaimer": "AI 生成 · 非投资建议",
+        "meta": {"dataSource": source, "engine": "rule"},
+    }
+    return card, charts
+
+
+def _merge_block_card(default_card: dict[str, Any], ai_data: dict[str, Any]) -> dict[str, Any]:
+    ai_sections = {str(s.get("key")): s for s in (ai_data.get("sections") or []) if isinstance(s, dict) and s.get("key")}
+    merged = []
+    for section in default_card["sections"]:
+        ai_section = ai_sections.get(section["key"]) or {}
+        ai_text = [b for b in (ai_section.get("blocks") or []) if isinstance(b, dict) and b.get("type") in ("paragraph", "bullets")]
+        default_text = [b for b in section["blocks"] if b.get("type") in ("paragraph", "bullets")]
+        tables = [b for b in section["blocks"] if b.get("type") == "table"]
+        text = []
+        for kind in ("paragraph", "bullets"):
+            chosen = [b for b in ai_text if b.get("type") == kind] or [b for b in default_text if b.get("type") == kind]
+            text.extend(chosen)
+        merged.append({**section, "blocks": text + tables})
+    card = dict(default_card)
+    if str(ai_data.get("summary") or "").strip():
+        card["summary"] = str(ai_data["summary"]).strip()
+    card["sections"] = merged
+    meta = dict(card.get("meta") or {})
+    meta["engine"] = "ai"
+    card["meta"] = meta
+    return card
+
+
+def _stock_context(conn: PGConn, code: str, *, deep: bool = False, include_chart: bool = False) -> dict[str, Any]:
     data = rules.build_stock(conn, code)
     if not data:
         raise HTTPException(status_code=404, detail="标的未收录")
@@ -577,10 +896,13 @@ def _stock_context(conn: PGConn, code: str, *, deep: bool = False) -> dict[str, 
         "dataDate": data.get("dataDate"),
         "dataSource": data.get("dataSource"),
     }
+    if include_chart:
+        context["chart"] = data.get("chart")
     if deep:
         context["financialTrend"] = data.get("financialTrend")
         context["statements"] = data.get("statements")
         context["peers"] = data.get("peers")
+        context["institutionalView"] = data.get("institutionalView")
         context["dimensionFacts"] = _stock_dimension_facts(data)
     return context
 
@@ -839,24 +1161,66 @@ def chat(
                 "suggestions": exc.suggestions,
                 **_meta(intent_name),
             }
-        stock_ctx = _stock_context(conn, str(stock_row["code"]))
+        stock_ctx = _stock_context(conn, str(stock_row["code"]), deep=True, include_chart=True)
         stock_ctx["user_context"] = _user_context(conn, int(user["id"]))
+        chart_data = stock_ctx.pop("chart", None) or _chart(conn, str(stock_row["code"]))
+        default_card, diagnosis_charts = _stock_diagnosis_default(stock_ctx)
+        try:
+            result = _call(
+                "invest.stock", stock_ctx, user_id=int(user["id"]), refresh=refresh, keep_sections=True,
+            )
+            card = _merge_block_card(default_card, result.get("card") or {})
+            engine = result.get("engine") or "ai"
+        except HTTPException as exc:
+            if exc.status_code not in (502, 503):
+                raise
+            card = default_card
+            engine = "rule"
         return {
             "ok": True,
             "intent": intent_name,
-            "chart": _chart(conn, str(stock_row["code"])),
-            "charts": _charts_for_stock(stock_ctx, q),
+            "engine": engine,
+            "chart": chart_data,
+            "charts": diagnosis_charts + _charts_for_stock(stock_ctx, q),
+            "card": card,
             **_meta(intent_name),
-            **_call("invest.stock", stock_ctx, user_id=int(user["id"]), refresh=refresh),
         }
     if intent_name in {"portfolio"}:
         data = rules.build_portfolio(conn, int(user["id"]))
-        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.portfolio", data, user_id=int(user["id"]), refresh=refresh)}
+        default_card, risk_charts = _portfolio_risk_default(data)
+        try:
+            result = _call("invest.portfolio", data, user_id=int(user["id"]), refresh=refresh, keep_sections=True)
+            card = _merge_block_card(default_card, result.get("card") or {})
+            engine = result.get("engine") or "ai"
+        except HTTPException as exc:
+            if exc.status_code not in (502, 503):
+                raise
+            card = default_card
+            engine = "rule"
+        return {
+            "ok": True, "intent": intent_name, "engine": engine,
+            "card": card, "charts": risk_charts, **_meta(intent_name),
+        }
     if intent_name in {"brief", "review"}:
-        data = rules.build_home(conn, int(user["id"]))
-        data["portfolio"] = rules.build_portfolio(conn, int(user["id"]))
-        data["user_context"] = _user_context(conn, int(user["id"]))
-        return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.daily", data, user_id=int(user["id"]), refresh=refresh)}
+        home = rules.build_home(conn, int(user["id"]))
+        portfolio = rules.build_portfolio(conn, int(user["id"]))
+        default_card, review_charts = _daily_review_default(home, portfolio)
+        payload = dict(home)
+        payload["portfolio"] = portfolio
+        payload["user_context"] = _user_context(conn, int(user["id"]))
+        try:
+            result = _call("invest.daily", payload, user_id=int(user["id"]), refresh=refresh, keep_sections=True)
+            card = _merge_block_card(default_card, result.get("card") or {})
+            engine = result.get("engine") or "ai"
+        except HTTPException as exc:
+            if exc.status_code not in (502, 503):
+                raise
+            card = default_card
+            engine = "rule"
+        return {
+            "ok": True, "intent": intent_name, "engine": engine,
+            "card": card, "charts": review_charts, **_meta(intent_name),
+        }
     if intent_name == "condition":
         return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.condition", {"query": q}, user_id=int(user["id"]), refresh=refresh)}
     return {
@@ -982,9 +1346,19 @@ def portfolio_deep_ai(
     conn: PGConn = Depends(invest_conn),
     refresh: bool = Query(False),
 ) -> dict[str, Any]:
-    """组合体检的 AI 深度解读：自动生成，可重新生成。"""
+    """组合体检的 AI 风险解读：6 个板块，自动生成，可重新生成。"""
     data = rules.build_portfolio(conn, int(user["id"]))
-    return {"ok": True, **_call("invest.portfolio", data, system=_PORTFOLIO_DEEP_SYSTEM, user_id=int(user["id"]), refresh=refresh)}
+    default_card, charts = _portfolio_risk_default(data)
+    try:
+        result = _call("invest.portfolio", data, user_id=int(user["id"]), refresh=refresh, keep_sections=True)
+        card = _merge_block_card(default_card, result.get("card") or {})
+        engine = result.get("engine") or "ai"
+    except HTTPException as exc:
+        if exc.status_code not in (502, 503):
+            raise
+        card = default_card
+        engine = "rule"
+    return {"ok": True, "engine": engine, "card": card, "charts": charts}
 
 
 @router.post("/announcement")

@@ -2052,6 +2052,34 @@ def build_home(conn: Any, user_id: int, market: str = "CN") -> dict[str, Any]:
     pf = build_portfolio(conn, user_id, include_penetration=False)
     portfolio = _home_portfolio(conn, user_id, pf)
     market_pulse = _home_market(conn, data_date)
+    changes = []
+    sectors: dict[str, list[float]] = {}
+    for stock in stocks:
+        price, prev = _num(stock.get("price")), _num(stock.get("prev_close"))
+        if price is None or not prev:
+            continue
+        change = pct(price, prev)
+        changes.append(change)
+        sector = str(stock.get("industry") or "未分类")
+        sectors.setdefault(sector, []).append(change)
+    advancers = sum(1 for x in changes if x > 0)
+    decliners = sum(1 for x in changes if x < 0)
+    limit_up = sum(1 for x in changes if x >= 9.8)
+    limit_down = sum(1 for x in changes if x <= -9.8)
+    sector_avg = [
+        {"name": name, "change": round(sum(vals) / len(vals), 2), "count": len(vals)}
+        for name, vals in sectors.items() if vals
+    ]
+    sector_avg.sort(key=lambda x: x["change"], reverse=True)
+    market_pulse["breadth"] = {
+        "advancers": advancers, "decliners": decliners,
+        "limitUp": limit_up, "limitDown": limit_down,
+        "total": len(changes), "available": bool(changes),
+    }
+    market_pulse["sectors"] = {
+        "leaders": sector_avg[:3], "laggards": list(reversed(sector_avg[-3:])),
+        "available": bool(sector_avg),
+    }
     daily = _home_daily(conn, user_id, data_date, pf, market_pulse, by_code, watch_codes)
     etf = by_code.get("510300")
     review = {

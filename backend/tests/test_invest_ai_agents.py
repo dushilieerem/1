@@ -7,7 +7,7 @@ import json
 import pytest
 from ai.errors import AiBadOutput
 from ai.router.specs import TaskRequest
-from ai.router.tasks.invest import validate_stock_deep
+from ai.router.tasks.invest import validate_daily_review, validate_portfolio_risk, validate_stock_deep, validate_stock_diagnosis
 from app.routers import invest_ai
 from app.routers.invest_ai import _compact_result, _extract_compare_pair
 from services.invest import agent_prompts, ai_cache
@@ -82,6 +82,94 @@ def test_stock_deep_validator_normalizes_five_dimensions():
     ]
     out = validate_stock_deep(json.dumps({"summary": "总体平稳。", "sections": sections}), TaskRequest())
     assert [s["title"] for s in out["sections"]] == ["基本面", "盈利", "估值", "风险", "资金"]
+
+
+def test_portfolio_risk_validator_requires_six_sections():
+    keys = ("score", "structure", "today", "stress", "deviation", "limits")
+    sections = [{"key": key, "blocks": [{"type": "bullets", "items": [f"{key} 要点"]}]} for key in keys]
+    out = validate_portfolio_risk(json.dumps({"summary": "风险分 50", "sections": sections}), TaskRequest())
+    assert [s["key"] for s in out["sections"]] == list(keys)
+
+
+def test_portfolio_risk_default_has_tables_and_charts():
+    portfolio = {
+        "riskScore": 62, "riskLabel": "较集中", "kpis": [{"label": "总资产", "value": "100 万"}],
+        "diagnosis": [{"id": "single", "title": "单票集中", "value": 35, "threshold": 30, "excess": 5, "impact": "波动放大"}],
+        "riskMethod": {"items": [{"key": "industry", "label": "行业集中", "available": True, "detail": "前两大行业 30%"}]},
+        "attribution": {"items": [{"name": "测试", "contributionPct": 0.8}], "benchmark": {"changePct": 0.2}},
+        "dailyChange": 1.0, "stress": [{"name": "沪深 300 −10%", "value": -8.0}],
+        "deviation": [{"name": "测试", "target": 10, "current": 12, "diff": 2, "status": "超配"}],
+        "penetration": {"coveragePct": 80},
+    }
+    card, charts = invest_ai._portfolio_risk_default(portfolio)
+    assert [s["key"] for s in card["sections"]] == ["score", "structure", "today", "stress", "deviation", "limits"]
+    assert any(b.get("type") == "table" for s in card["sections"] for b in s["blocks"])
+    assert len(charts) == 2
+    assert "风险分" in card["summary"]
+
+
+def test_daily_review_validator_requires_three_core_sections():
+    sections = [
+        {"key": key, "blocks": [{"type": "bullets", "items": [f"{key} 要点"]}]}
+        for key in ("market", "structure", "portfolio")
+    ]
+    out = validate_daily_review(json.dumps({"summary": "今日震荡", "sections": sections}), TaskRequest())
+    assert [s["key"] for s in out["sections"]] == ["market", "structure", "portfolio"]
+    with pytest.raises(AiBadOutput):
+        validate_daily_review(json.dumps({"summary": "缺结构", "sections": sections[:2]}), TaskRequest())
+
+
+def test_daily_review_default_has_market_portfolio_and_charts():
+    home = {
+        "marketPulse": {
+            "indices": [{"label": "上证指数", "available": True, "change": 0.5}],
+            "turnover": {"available": True, "value": 10000, "change": 5},
+            "breadth": {"available": True, "advancers": 3000, "decliners": 2000, "limitUp": 50, "limitDown": 10},
+            "sectors": {"leaders": [{"name": "新能源"}], "laggards": [{"name": "银行"}]},
+        },
+        "review": {"summary": "成交放量，新能源领涨。"},
+        "topics": [{"name": "新能源"}], "daily": [{"title": "自选异动", "detail": "上涨 3%"}],
+    }
+    portfolio = {
+        "holdings": [{"name": "测试"}], "dailyChange": 1.0,
+        "attribution": {"items": [{"name": "测试", "contributionPct": 0.8}], "benchmark": {"changePct": 0.2}},
+    }
+    card, charts = invest_ai._daily_review_default(home, portfolio)
+    assert [s["key"] for s in card["sections"]][:3] == ["market", "structure", "portfolio"]
+    assert any(s["key"] == "moves" for s in card["sections"])
+    assert len(charts) == 2
+    assert "样本" not in card["summary"]
+
+
+def test_stock_diagnosis_validator_requires_seven_sections():
+    keys = ("company", "performance", "valuation", "capital", "institution", "highlights", "conclusion")
+    sections = [
+        {"key": key, "blocks": [{"type": "paragraph", "text": f"{key} 分析。"}]}
+        for key in keys
+    ]
+    out = validate_stock_diagnosis(json.dumps({"summary": "结论", "sections": sections}), TaskRequest())
+    assert [s["key"] for s in out["sections"]] == list(keys)
+
+
+def test_stock_diagnosis_default_has_tables_and_charts():
+    ctx = {
+        "quote": {"code": "600519", "name": "贵州茅台", "industry": "白酒", "market": "CN", "price": 1500},
+        "report": {"period": "2026Q3", "revenue": 100, "revenueYoY": 8, "netProfit": 50, "profitYoY": 10, "grossMargin": 90, "roe": 30, "ocf": 55},
+        "valuation": {"pe": 20, "pb": 8, "pePercentile": 40},
+        "fundFlow": {"five_day": 2, "twenty_day": 5, "series": [{"date": f"2026-11-0{i}", "value": i} for i in range(1, 6)]},
+        "financialTrend": {"items": [{"label": f"2025Q{i}", "revenue": 90 + i, "net_profit": 40 + i, "net_margin": 20} for i in range(1, 6)]},
+        "risks": [{"title": "估值偏高", "detail": "分位较高"}],
+        "dataSource": "测试数据",
+    }
+    card, charts = invest_ai._stock_diagnosis_default(ctx)
+    assert [s["key"] for s in card["sections"]] == ["company", "performance", "valuation", "capital", "institution", "highlights", "conclusion"]
+    assert any(b.get("type") == "table" for s in card["sections"] for b in s["blocks"])
+    assert len(charts) >= 2
+    merged = invest_ai._merge_block_card(card, {"summary": "AI 结论", "sections": [{"key": "performance", "blocks": [{"type": "paragraph", "text": "AI 业绩分析"}]}]})
+    assert merged["summary"] == "AI 结论"
+    perf = next(s for s in merged["sections"] if s["key"] == "performance")
+    assert perf["blocks"][0]["text"] == "AI 业绩分析"
+    assert any(b.get("type") == "table" for b in perf["blocks"])
 
 
 def test_stock_deep_rule_fallback_has_five_sections():

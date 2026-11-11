@@ -45,6 +45,16 @@ function fmtPct(value: unknown): string {
   return Number.isFinite(n) ? `${(n * 100).toFixed(2)}%` : "—";
 }
 
+/** RE 把指标放在 result.metrics（旧版也回显在 result 顶层），两处都兼容。 */
+function resultMetric(
+  run: JoinquantRunStatus | null,
+  key: "total_return" | "max_drawdown",
+): unknown {
+  const result = (run?.result || {}) as Record<string, unknown>;
+  const metrics = (result.metrics || {}) as Record<string, unknown>;
+  return metrics[key] ?? result[key];
+}
+
 export function JoinquantBacktestPage() {
   const [code, setCode] = useState(SAMPLE);
   const [start, setStart] = useState("2024-01-01");
@@ -286,9 +296,9 @@ export function JoinquantBacktestPage() {
                   <dt className="text-slate-400">价格来源</dt>
                   <dd>{String((run.result.assumptions?.price_source as string) || "—")}</dd>
                   <dt className="text-slate-400">总收益</dt>
-                  <dd>{fmtPct((run.result as Record<string, unknown>).total_return)}</dd>
+                  <dd>{fmtPct(resultMetric(run, "total_return"))}</dd>
                   <dt className="text-slate-400">最大回撤</dt>
-                  <dd>{fmtPct((run.result as Record<string, unknown>).max_drawdown)}</dd>
+                  <dd>{fmtPct(resultMetric(run, "max_drawdown"))}</dd>
                 </dl>
               ) : null}
             </div>

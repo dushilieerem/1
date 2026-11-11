@@ -122,7 +122,7 @@ type CaseItem = {
 };
 
 const STEPS = [
-  { name: "多空立论", sub: "多空论点 · 带证伪", agent: "多头 / 空头研究员", duty: "多头只找买入理由，空头只打最弱假设；每条带证据与证伪条件。" },
+  { name: "多空立论", sub: "多空论点", agent: "多头 / 空头研究员", duty: "多头只找买入理由，空头只打最弱假设；每条带证据。" },
   { name: "交叉质询", sub: "主持逼分歧 · 证据核验", agent: "研究经理 / 主持", duty: "把双方 claim 逐条对齐，标出已回应/未回应/证据不足，不投票、不取平均。" },
   { name: "估值复核", sub: "确定性 DCF · 非 AI", agent: "估值计算服务", duty: "DCF、敏感性、反向 DCF 只算数；AI 只解释假设，不生成数字。" },
   { name: "议案", sub: "投资意见 · 锁定议案", agent: "交易员 + 投资经理", duty: "交易员生成骨架，投资经理补意见、仓位、价格带、有效期与监控，锁定后提交三关。" },
@@ -499,7 +499,7 @@ export function InstV3DebatePage() {
           {step === 0 ? (
             <section className="v3-card">
               <div className="v3-card-head">
-                <div><h2>多空立论</h2><p>多头 / 空头逐条带证据 ID 与证伪条件；空头不重复行业空间。</p></div>
+                <div><h2>多空立论</h2><p>多头 / 空头逐条带证据；空头不重复行业空间。</p></div>
                 {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <span className="v3-chip ok">已完成</span>}
               </div>
               {debate ? (
@@ -519,9 +519,7 @@ export function InstV3DebatePage() {
                       <p className="claim-t" title={a.claim}>{claimHeadline(a.claim)}</p>
                       <div className="claim-meta">
                         <span className="v3-chip">证据 {a.evidence_ids?.length || 0} 条</span>
-                        <span className="v3-chip">置信 {a.confidence?.toFixed?.(2) ?? "—"}</span>
                       </div>
-                      {a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}
                     </div>
                   ))}
                   {!activeSide.length ? <div className="v3-empty" style={{ marginTop: 8 }}>暂无{sideName}论点</div> : null}
@@ -541,7 +539,6 @@ export function InstV3DebatePage() {
                         <span className={`v3-chip ${chiefReview.verdict === "support_proposal" ? "ok" : "warn"}`}>
                           {chiefReview.verdict === "support_proposal" ? "支持进入议案" : "补充研究"}
                         </span>
-                        {chiefReview.chief_confidence != null ? <span className="v3-chip">置信 {Number(chiefReview.chief_confidence).toFixed(2)}</span> : null}
                         {chiefReview.chief_fields_fallback ? <span className="v3-chip warn">服务端补齐</span> : null}
                       </div>
                       <p style={{ marginTop: 8, lineHeight: 1.75, color: "#2b2533", fontWeight: 600 }}>

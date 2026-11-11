@@ -463,3 +463,28 @@ def test_memo_gate_note_uses_chinese_titles_and_gate_wording() -> None:
     assert "门禁未通过" in memo["data_gate_note"]
     assert "行业分析" in memo["data_gate_note"]
     assert "估值与价格" in memo["data_gate_note"]
+
+
+def test_version_read_cleans_gaps_and_internal_terms() -> None:
+    from services.institution.research_service import _clean_version_for_read
+
+    out = _clean_version_for_read(
+        {
+            "six_dim": [
+                {
+                    "key": "valuation",
+                    "summary": "PE_TTM 30x，OCF/净利 0.22",
+                    "checks": ["DIO 170 天"],
+                    "data_used": ["market_data.pe_ttm 21.99x 与分位 55.72%"],
+                    "open_questions": ["缺 PS/EV-EBITDA 序列", "渠道库存何时回补"],
+                }
+            ],
+            "open_questions": ["缺一致预期", "董事会换届影响"],
+        }
+    )
+    dim = out["six_dim"][0]
+    assert "市盈率" in dim["summary"] and "经营现金流/净利润" in dim["summary"]
+    assert "存货周转天数" in dim["checks"][0]
+    assert "market_data" not in dim["data_used"][0]
+    assert dim["open_questions"] == ["渠道库存何时回补"]
+    assert out["open_questions"] == ["董事会换届影响"]

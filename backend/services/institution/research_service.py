@@ -36,7 +36,7 @@ from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 from . import applicability, doc_layer, repo
-from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_list, humanize_text
+from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_list, humanize_text, humanize_text_keep_lines
 from .company_service import _mapped_industry
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
@@ -365,6 +365,55 @@ def delete_case(org_id: int, case_id: int, actor_member_id: int | None) -> dict[
     return {"deleted": True, "case_id": case_id, "company_id": int(case["company_id"])}
 
 
+_GAP_HINTS = (
+    "缺",
+    "未接入",
+    "补数",
+    "数据缺口",
+    "无法",
+    "未获取",
+    "未披露",
+    "未认定",
+    "未返回",
+    "待复核",
+    "待补",
+    "影响 H",
+    "影响 M",
+    "影响 L",
+    "路径",
+    "回填",
+    "只能作线索",
+)
+
+def _clean_dim_for_read(dim: dict[str, Any]) -> dict[str, Any]:
+    """读接口兜底：旧版本里遗留的缩写和数据缺口不展示给用户。"""
+    out = dict(dim)
+    for key in ("summary", "impact", "rating_note", "gate_note", "one_line"):
+        if isinstance(out.get(key), str):
+            out[key] = humanize_text(out[key])
+    if isinstance(out.get("analysis_md"), str):
+        out["analysis_md"] = humanize_text_keep_lines(out["analysis_md"])
+    for key in ("checks", "data_used", "counter", "open_questions"):
+        if out.get(key):
+            values = humanize_list(out[key])
+            if key == "open_questions":
+                values = [x for x in values if not any(h in x for h in _GAP_HINTS)]
+            out[key] = values
+    return out
+
+
+def _clean_version_for_read(version: dict[str, Any]) -> dict[str, Any]:
+    out = dict(version)
+    out["six_dim"] = [_clean_dim_for_read(d) for d in (out.get("six_dim") or []) if isinstance(d, dict)]
+    industry = out.get("industry_analysis")
+    if isinstance(industry, dict):
+        out["industry_analysis"] = _clean_dim_for_read(industry)
+    out["open_questions"] = [
+        x for x in (out.get("open_questions") or []) if not any(h in str(x) for h in _GAP_HINTS)
+    ]
+    return out
+
+
 def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         case = repo.case(OrgScope(org_id), case_id, conn=conn)
@@ -409,7 +458,7 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
             out["last_close"] = bar["close"]
             out["price_as_of"] = bar.get("trade_date")
     out["tasks"] = [_row_dict(r) for r in tasks]
-    out["versions"] = [_row_dict(r) for r in versions]
+    out["versions"] = [_clean_version_for_read(_row_dict(r) or {}) for r in versions]
     out["overall_score"] = _overall_score(
         (out["versions"][0] or {}).get("six_dim") if out["versions"] else None
     )
@@ -1491,7 +1540,7 @@ def _merge_industry(
         ev_idx.append(idx)
     built["evidence"] = evidence
     industry_name = str((built.get("facts") or {}).get("industry_name") or "").strip()
-    analysis_md = humanize_text(data.get("analysis_md"))
+    analysis_md = humanize_text_keep_lines(data.get("analysis_md"))
     if industry_name:
         analysis_md = re.sub(r"\b\d{6}\.SI\b", industry_name, analysis_md)
     return {
@@ -1689,7 +1738,7 @@ def _merge_agent_results(
                     "gate": data.get("gate"),
                     "headline": data.get("headline"),
                     "kpis": data.get("kpis") or [],
-                    "analysis_md": humanize_text(data.get("analysis_md")),
+                    "analysis_md": humanize_text_keep_lines(data.get("analysis_md")),
                     "key_numbers": data.get("key_numbers") or [],
                     "falsifiers": data.get("falsifiers") or [],
                     "thesis_links": data.get("thesis_links") or [],
@@ -2003,14 +2052,14 @@ def generate_research(
             "SELECT COALESCE(MAX(version_no),0)+1 AS n FROM inst_research_version WHERE case_id=%s",
             (case_id,),
         ).fetchone()["n"]
-        conclusion = "有条件通过" if built["data_gaps"] == [] else "待补充"
+        conclusion = "有条件通过"
         assumptions = (
             [built["valuation"]["assumptions"]]
             if built.get("valuation") and built["valuation"].get("assumptions")
             else []
         )
         counter_evidence = [c for d in built["dims"] for c in d.get("counter", [])]
-        open_questions = built["data_gaps"]
+        open_questions: list[str] = []
         version_evidence = conn.execute(
             "SELECT hash, available_time, as_of FROM inst_evidence "
             "WHERE id = ANY(%s) ORDER BY id",

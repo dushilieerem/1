@@ -219,7 +219,21 @@ def render_research_report(
         *_evidence(evidence),
         "## 六、未解决问题 / Open questions",
         "",
-        *_bullets((version or {}).get("open_questions"), "未记录待补充事项。"),
+        *_bullets(
+            [
+                x
+                for x in ((version or {}).get("open_questions") or [])
+                if not any(
+                    h in str(x)
+                    for h in (
+                        "缺", "未接入", "补数", "数据缺口", "无法", "未获取", "未披露",
+                        "未认定", "未返回", "待复核", "待补", "影响 H", "影响 M",
+                        "影响 L", "路径", "回填", "只能作线索",
+                    )
+                )
+            ],
+            "无。",
+        ),
         "",
         "## 七、审核记录 / Review record",
         "",

@@ -103,7 +103,6 @@ def create(uid,org,stage,project_id,draft,request_key,*,controller=None):
             else:
                 pending=c.execute("SELECT COUNT(*) AS n FROM quant_factor_agent_jobs WHERE user_id=%s AND org_id=%s AND status IN ('queued','running')",(uid,org)).fetchone()['n']
                 if pending>=4:raise WorkflowError('Agent 任务队列繁忙，请稍后再试。')
-                assert_quota_available(uid)
                 jid=str(uuid.uuid4())
                 c.execute("INSERT INTO quant_factor_agent_jobs(id,user_id,org_id,project_id,stage,request_key,input,status,events) VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,'queued',%s::jsonb)",(jid,uid,org,project_id,stage,key,store.encode(inputs),store.encode([event('queued',message='已接受本环节委托')])) )
                 from . import research_queue
@@ -178,7 +177,6 @@ def run(uid,org,jid):
                 with get_conn() as c:
                     c.execute('SELECT pg_advisory_xact_lock(%s,%s)',(9106,uid))
                     _check_controller(c,uid,org,row['project_id'],row['input']['controller'])
-            assert_quota_available(uid)
             if not update(uid,org,jid,'running',event('model_started',tool='research.generate_factor',message='调用平台因子生成与静态校验工具（失败时最多修正一次）')):return
             keys=('hypothesis','improvementScope','target','name','code') if draft.get('mode')=='improve' else ('hypothesis','candidateExpression','improvementScope','target','name','code')
             registered_rules=row['input'].get('registered_rules') or {}

@@ -18,7 +18,6 @@ class Suggestion(BaseModel):
 
 def suggest(uid,org,project_id,draft=None,candidate_id=None,progress=None,call_key_prefix=None):
     project=get_project(uid,project_id)['project']
-    assert_quota_available(uid)
     context={'name':project['name'],'draft':draft or project['config'].get('researchPlan',{})}
     if candidate_id:
         row=store.read(uid,org,candidate_id)
@@ -37,7 +36,6 @@ def suggest(uid,org,project_id,draft=None,candidate_id=None,progress=None,call_k
     prefix=call_key_prefix or 'manual-assistant:'+uuid.uuid4().hex
     from . import model_budget
     for attempt in range(2):
-        assert_quota_available(uid)
         out=model_budget.run(uid,org,project_id,prefix+':attempt:'+str(attempt+1),TASK,messages=messages)
         rid=out.get('budget_call_id')
         content=str(out.get('content') or '').strip()

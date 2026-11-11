@@ -236,7 +236,6 @@ def decide(uid, org, topic, run_id):
         register(TaskSpec(task_id=TASK, description="因子研究决策 F0", prompt_version="qf-f0-v1",
                           temperature=0.2, max_tokens=2000, timeout_sec=60,
                           response_format={"type": "json_object"}))
-    assert_quota_available(uid)
     from . import model_budget
     round_no=ctx.get('decision_step',1)
     out=model_budget.run(uid,org,topic['project_id'],f'f0:{run_id}:decision:{round_no}',TASK,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(_json_ready(ctx),ensure_ascii=False)}])

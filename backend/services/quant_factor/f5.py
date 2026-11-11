@@ -80,7 +80,6 @@ def opinion(uid, org, cid):
         register(TaskSpec(task_id=TASK, description="因子独立复核意见", prompt_version="qf-f5-v1",
                           temperature=0.2, max_tokens=2000, timeout_sec=60,
                           response_format={"type": "json_object"}))
-    assert_quota_available(uid)
     from . import model_budget
     from .research_queue import lightweight_advice
     with lightweight_advice():out=model_budget.run(uid,org,row['project_id'],'review:'+cid+':'+uuid.uuid4().hex,TASK,messages=[{'role':'system','content':instructions},{'role':'user','content':json.dumps(ctx,ensure_ascii=False,default=str)}])

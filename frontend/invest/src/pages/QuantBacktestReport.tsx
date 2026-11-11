@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ExternalLink, Sparkles } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { api } from "../api";
+import AiPanel from "../components/AiPanel";
 import { ErrorState, LoadingCards, PageHeader, Tag } from "../components";
 import QuantChart from "../components/QuantChart";
 import { useLocale } from "../i18n";
 import { fmtSignedPct, metric, trendClass, universeLabel, type Backtest } from "../quant";
-
-type Aspect = { key: string; title: string; points: Array<{ label: string; detail: string }> };
-type Commentary = { available: boolean; summary?: string; aspects?: Aspect[] };
 
 const METRICS: Array<[string, string, string, "pct" | "pctu" | "num" | "int"]> = [
   ["cumulative", "累计收益", "Total return", "pct"],
@@ -28,10 +26,6 @@ export default function QuantBacktestReport() {
   const { t, locale } = useLocale();
   const [data, setData] = useState<Backtest | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ai, setAi] = useState<Commentary | null>(null);
-  const [aiTried, setAiTried] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const aiStarted = useRef("");
 
   useEffect(() => {
     if (!id) return;
@@ -39,28 +33,6 @@ export default function QuantBacktestReport() {
       .then(setData)
       .catch((e) => setError(e.message));
   }, [id]);
-
-  const explain = async (refresh = false) => {
-    if (!id || busy) return;
-    setBusy(true);
-    setAiTried(true);
-    try {
-      const result = await api<Commentary>(`/api/invest/quant/backtests/${id}/commentary?refresh=${refresh ? 1 : 0}`, { method: "POST" });
-      setAi(result.available ? result : null);
-    } catch {
-      setAi(null);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!data || !id) return;
-    if (aiStarted.current === id) return;
-    aiStarted.current = id;
-    void explain(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, id]);
 
   const assumptions = data?.assumptions || {};
   const assumptionRows: Array<[string, string, string]> = [
@@ -140,34 +112,14 @@ export default function QuantBacktestReport() {
             ) : null}
           </section>
 
-          {!aiTried || ai ? (
-          <section className="card">
-            <div className="card-title-row">
-              <h2>{t("AI 点评", "AI review")}</h2>
-              <button className="btn btn-ghost btn-sm" onClick={() => void explain(true)} disabled={busy}>
-                <Sparkles size={14} /> {busy ? t("生成中…", "Generating…") : t("重新生成", "Regenerate")}
-              </button>
-            </div>
-            {!ai ? (
-              <p className="hint">{t("自动生成 · AI 结论 · 不满意可重新生成", "Auto-generated · AI takeaway · regenerate if needed")}</p>
-            ) : (
-              <div className="quant-ai">
-                {ai.summary ? <p className="quant-ai-summary">{ai.summary}</p> : null}
-                {(ai.aspects || []).map((aspect) => (
-                  <div className="quant-ai-aspect" key={aspect.key}>
-                    <b>{aspect.title}</b>
-                    <ul>
-                      {aspect.points.map((p, i) => (
-                        <li key={i}><strong>{p.label}</strong>{p.detail ? `：${p.detail}` : ""}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-                <p className="quant-foot">{t("AI 生成 · 非投资建议", "AI-generated · not investment advice")}</p>
-              </div>
-            )}
-          </section>
-          ) : null}
+          <AiPanel
+            title={t("AI 回测分析", "AI backtest analysis")}
+            subtitle={t("按策略概述、收益、回撤、稳定性、持仓与结论六个板块解释；只引用本次回测数据。", "Six sections: strategy, returns, drawdown, stability, holdings and limitations; only this run's data.")}
+            endpoint={`/api/invest/quant/backtests/${id}/commentary`}
+            hideOnError
+            blocksMode
+            showCharts
+          />
 
           <p className="quant-foot">{data.disclaimer || t("历史回测 · 非真实收益 · 不代表未来", "Historical backtest · not real returns · not indicative of future results")}</p>
           {data.engine !== "re" ? (

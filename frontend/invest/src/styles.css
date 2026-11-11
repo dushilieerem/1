@@ -1150,6 +1150,10 @@ input, select, textarea { outline: none; }
 .ai-chart-list { display: flex; flex-direction: column; gap: 8px; }
 .ai-chart-box { margin: 8px 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .ai-price-trend svg { display: block; width: 100%; height: auto; margin-top: 2px; }
+.ai-kline-card { padding-bottom: 4px; }
+.ai-kline-card .kline { height: 220px; }
+.ai-kline-switch { flex: none; }
+.ai-kline-switch button { padding: 2px 6px; font-size: 10px; }
 .ai-bars { display: flex; align-items: flex-end; gap: 3px; height: 70px; margin-top: 4px; }
 .ai-bars i { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; display: block; }
 .ai-bars i.in { background: var(--red); }

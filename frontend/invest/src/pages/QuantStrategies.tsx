@@ -640,6 +640,8 @@ export default function QuantStrategies() {
                   subtitle={t("只依据本次回测指标与净值曲线解释，不改算数值", "Explains this run's metrics and curve without recalculating")}
                   endpoint={`/api/invest/quant/backtests/${backtest.id}/commentary`}
                   hideOnError
+                  blocksMode
+                  showCharts
                 />
               ) : null}
               <p className="quant-foot">{t("历史回测，不代表未来；不构成投资建议。", "Historical backtest, not a forecast; not investment advice.")}</p>

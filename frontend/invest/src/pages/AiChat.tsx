@@ -1,14 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronUp, ImagePlus, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { api } from "../api";
 import AiCharts, { AiPriceTrend } from "../components/AiChart";
+
+const KLineChart = lazy(() => import("../KLineChart"));
 import CompareView, { type ComparePayload } from "../components/CompareView";
 import { ErrorState, PageHeader, Tag } from "../components";
 import { ConditionPicker, ConditionScreener, looksLikeCondition, type ConditionResponse, type RelaxAction } from "../components/ConditionScreener";
 import { useLocale } from "../i18n";
 
-type Section = { key?: string; title?: string; body?: string; type?: string; items?: Array<{ k?: string; v?: string }> };
+type Block = {
+  type?: "paragraph" | "bullets" | "table" | "chart";
+  text?: string;
+  items?: string[];
+  title?: string;
+  columns?: string[];
+  rows?: Array<Array<string | number | null>>;
+};
+
+type Section = { key?: string; title?: string; body?: string; type?: string; items?: Array<{ k?: string; v?: string }>; blocks?: Block[] };
 type Card = { summary?: string; sections?: Section[]; disclaimer?: string; meta?: { dataSource?: string } };
 type Chart = {
   type?: "bar" | "percentile" | "kline";
@@ -21,7 +32,10 @@ type Chart = {
   label?: string;
   value?: number | null;
   percentile?: number | null;
-  bars?: Array<{ date?: string; close?: number }>;
+  bars?: Array<{ time?: string; date?: string; open?: number; high?: number; low?: number; close?: number; volume?: number }>;
+  ma5?: Array<{ time: string; value: number }>;
+  ma10?: Array<{ time: string; value: number }>;
+  ma20?: Array<{ time: string; value: number }>;
 };
 type DebatePoint = { text: string; text_en?: string; tone?: string; source?: string };
 type Debate = {
@@ -103,6 +117,64 @@ function saveMemory(next: { lastStock?: { code: string; name?: string } }) {
 
 function splitSections(card?: Card) {
   return (card?.sections || []).filter((s) => s.title || s.body || s.items?.length);
+}
+
+function SectionBlocks({ blocks }: { blocks: Block[] }) {
+  return (
+    <>
+      {blocks.map((block, i) => {
+        if (block.type === "paragraph" && block.text) return <p className="ai-analysis-p" key={i}>{block.text}</p>;
+        if (block.type === "bullets" && block.items?.length) {
+          return <ul className="ai-points" key={i}>{block.items.map((item, k) => <li key={k}><span>{item}</span></li>)}</ul>;
+        }
+        if (block.type === "table" && block.rows?.length) {
+          return (
+            <div className="ai-table-wrap" key={i}>
+              {block.title ? <div className="hint">{block.title}</div> : null}
+              <table className="data-table">
+                {block.columns?.length ? <thead><tr>{block.columns.map((c, k) => <th key={k}>{c}</th>)}</tr></thead> : null}
+                <tbody>{block.rows.map((row, k) => <tr key={k}>{row.map((cell, m) => <td key={m}>{cell ?? "—"}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </>
+  );
+}
+
+function StockKlineCard({ chart }: { chart: Chart }) {
+  const { t } = useLocale();
+  const [indicator, setIndicator] = useState<"ma" | "boll">("ma");
+  const bars = (chart.bars || [])
+    .filter((b) => b.time && b.open != null && b.high != null && b.low != null && b.close != null)
+    .map((b) => ({
+      time: String(b.time), open: Number(b.open), high: Number(b.high),
+      low: Number(b.low), close: Number(b.close), volume: Number(b.volume || 0),
+    }));
+  if (!bars.length) return <AiPriceTrend chart={chart} />;
+  return (
+    <div className="ai-chart-box ai-kline-card">
+      <div className="card-title-row">
+        <b>{chart.code || ""} {t("行情走势", "Price trend")}</b>
+        <div className="chart-indicator-switch ai-kline-switch">
+          <button className={indicator === "ma" ? "on" : ""} onClick={() => setIndicator("ma")}>MA</button>
+          <button className={indicator === "boll" ? "on" : ""} onClick={() => setIndicator("boll")}>BOLL</button>
+        </div>
+      </div>
+      <Suspense fallback={<div className="kline-empty">{t("加载走势…", "Loading chart…")}</div>}>
+        <KLineChart
+          bars={bars}
+          ma5={chart.ma5 || []}
+          ma10={chart.ma10 || []}
+          ma20={chart.ma20 || []}
+          indicator={indicator}
+          height={220}
+        />
+      </Suspense>
+    </div>
+  );
 }
 
 function ParamText({ text, onPick }: { text: string; onPick: (start: number, length: number) => void }) {
@@ -636,15 +708,21 @@ export default function AiChat() {
                 ) : null}
                 {m.text ? <p className="hint">{m.text}</p> : null}
                 {!m.debate && !m.compare && m.card?.summary ? <p className="ai-summary">{m.card.summary}</p> : null}
-                {!m.debate && !m.compare && m.chart?.bars?.length ? <AiPriceTrend chart={m.chart} /> : null}
+                {!m.debate && !m.compare && m.chart?.bars?.length ? <StockKlineCard chart={m.chart} /> : null}
                 {!m.debate && !m.compare && m.charts?.length ? <AiCharts charts={m.charts} /> : null}
                 {!m.debate && !m.compare ? splitSections(m.card).map((s, j) => (
                   <div key={j} className="ai-section">
                     {s.title ? <b>{s.title}</b> : null}
-                    {s.body ? <p>{s.body}</p> : null}
-                    {!m.charts?.length && s.items?.length ? (
-                      <ul>{s.items.map((it, k) => <li key={k}>{it.k ? <span>{it.k}{t("：", ": ")}</span> : null}{it.v}</li>)}</ul>
-                    ) : null}
+                    {s.blocks?.length ? (
+                      <SectionBlocks blocks={s.blocks} />
+                    ) : (
+                      <>
+                        {s.body ? <p>{s.body}</p> : null}
+                        {!m.charts?.length && s.items?.length ? (
+                          <ul>{s.items.map((it, k) => <li key={k}>{it.k ? <span>{it.k}{t("：", ": ")}</span> : null}{it.v}</li>)}</ul>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 )) : null}
                 {m.debate ? <DebateView data={m.debate} /> : null}

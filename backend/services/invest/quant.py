@@ -3401,6 +3401,382 @@ def parse_intent(text: str) -> dict[str, Any]:
 # AI 点评：按需生成；失败返回 available=false，前端隐藏区块。
 # ---------------------------------------------------------------------------
 
+
+def _bt_num(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _bt_fmt(value: Any, suffix: str = "%", digits: int = 2) -> str:
+    number = _bt_num(value)
+    if number is None:
+        return "未提供"
+    return f"{number:.{digits}f}{suffix}"
+
+
+def _bt_returns(navs: list[float]) -> list[float]:
+    return [navs[i] / navs[i - 1] - 1 for i in range(1, len(navs)) if navs[i - 1]]
+
+
+def _bt_curve(payload: dict[str, Any]) -> tuple[list[str], list[float], list[float | None]]:
+    rows = []
+    for point in payload.get("curve") or []:
+        if not isinstance(point, dict):
+            continue
+        nav = _bt_num(point.get("nav"))
+        if nav is None or not point.get("date"):
+            continue
+        rows.append((str(point["date"])[:10], nav, _bt_num(point.get("benchmark"))))
+    rows.sort(key=lambda x: x[0])
+    return [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows]
+
+
+def _bt_drawdowns(dates: list[str], navs: list[float]) -> list[dict[str, Any]]:
+    episodes: list[dict[str, Any]] = []
+    peak_i = 0
+    peak = navs[0] if navs else 0.0
+    trough_i = 0
+    trough = peak
+    in_dd = False
+    for i, nav in enumerate(navs[1:], 1):
+        if nav >= peak:
+            if in_dd and trough_i > peak_i:
+                episodes.append({
+                    "peak_i": peak_i, "peak_nav": peak, "trough_i": trough_i,
+                    "trough_nav": trough, "depth": (trough / peak - 1) * 100 if peak else None,
+                    "recover_i": i, "open": False,
+                })
+            peak_i, peak, trough_i, trough, in_dd = i, nav, i, nav, False
+        else:
+            in_dd = True
+            if nav < trough:
+                trough_i, trough = i, nav
+    if in_dd and trough_i > peak_i:
+        episodes.append({
+            "peak_i": peak_i, "peak_nav": peak, "trough_i": trough_i,
+            "trough_nav": trough, "depth": (trough / peak - 1) * 100 if peak else None,
+            "recover_i": None, "open": True,
+        })
+    for event in episodes:
+        pi, ti, ri = event["peak_i"], event["trough_i"], event.get("recover_i")
+        event["peak_date"] = dates[pi] if pi < len(dates) else None
+        event["trough_date"] = dates[ti] if ti < len(dates) else None
+        event["recover_date"] = dates[ri] if ri is not None and ri < len(dates) else None
+        event["duration_days"] = (
+            (date.fromisoformat(event["trough_date"]) - date.fromisoformat(event["peak_date"])).days
+            if event.get("peak_date") and event.get("trough_date") else None
+        )
+        event["duration_trading"] = ti - pi
+        event["dist_from_high"] = (navs[-1] / event["peak_nav"] - 1) * 100 if navs and event["peak_nav"] else None
+    return sorted(episodes, key=lambda e: e.get("depth") or 0)[:4]
+
+
+def _bt_facts(payload: dict[str, Any]) -> dict[str, Any]:
+    dates, navs, bench = _bt_curve(payload)
+    metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+    assumptions = payload.get("assumptions") if isinstance(payload.get("assumptions"), dict) else {}
+    holdings = payload.get("holdings") if isinstance(payload.get("holdings"), list) else []
+    daily = _bt_returns(navs)
+    bench_daily = _bt_returns([b for b in bench if b is not None]) if bench and all(b is not None for b in bench) else []
+    total = _bt_num(metrics.get("cumulative"))
+    if total is None and len(navs) > 1 and navs[0]:
+        total = (navs[-1] / navs[0] - 1) * 100
+    bench_total = _bt_num(metrics.get("benchmark_return"))
+    bench_navs = [b for b in bench if b is not None]
+    if bench_total is None and len(bench_navs) > 1 and bench_navs[0]:
+        bench_total = (bench_navs[-1] / bench_navs[0] - 1) * 100
+    annual = _bt_num(metrics.get("annual_return"))
+    if annual is None and len(navs) > 1 and navs[0] > 0:
+        annual = ((navs[-1] / navs[0]) ** (252 / max(1, len(navs) - 1)) - 1) * 100
+    bench_annual = _bt_num(metrics.get("benchmark_annual"))
+    if bench_annual is None and len(bench_navs) > 2 and bench_navs[0] > 0:
+        bench_annual = ((bench_navs[-1] / bench_navs[0]) ** (252 / max(1, len(bench_navs) - 1)) - 1) * 100
+    vol = _bt_num(metrics.get("volatility"))
+    if vol is None:
+        vol = (_stdev(daily) or 0) * math.sqrt(252) * 100
+    bench_vol = (_stdev(bench_daily) or 0) * math.sqrt(252) * 100 if bench_daily else None
+    mdd = _bt_num(metrics.get("max_drawdown"))
+    if mdd is None and navs:
+        mdd = _max_drawdown(navs)
+    events = _bt_drawdowns(dates, navs)
+    max_event = min(events, key=lambda e: e.get("depth") or 0) if events else None
+    positives = [r for r in daily if r > 0]
+    negatives = [r for r in daily if r < 0]
+    downside = (_stdev(negatives) or 0) * math.sqrt(252)
+    sortino = ((annual or 0) / 100 - RISK_FREE) / downside if downside else None
+    calmar = ((annual or 0) / 100) / abs((mdd or 0) / 100) if mdd else None
+    tracking = [a - b for a, b in zip(daily, bench_daily)] if bench_daily and len(bench_daily) == len(daily) else []
+    tracking_error = (_stdev(tracking) or 0) * math.sqrt(252) if tracking else None
+    information_ratio = ((annual or 0) - (bench_annual or 0)) / 100 / tracking_error if tracking_error else None
+    up_bench = [b for b in bench_daily if b > 0]
+    down_bench = [b for b in bench_daily if b < 0]
+    up_capture = (sum(a for a, b in zip(daily, bench_daily) if b > 0) / sum(up_bench) * 100) if up_bench and sum(up_bench) else None
+    down_capture = (sum(a for a, b in zip(daily, bench_daily) if b < 0) / sum(down_bench) * 100) if down_bench and sum(down_bench) else None
+    max_daily = max(daily) * 100 if daily else None
+    min_daily = min(daily) * 100 if daily else None
+    positive_days = len(positives) / len(daily) * 100 if daily else None
+    monthly: dict[str, dict[str, Any]] = {}
+    for i, day in enumerate(dates):
+        key = day[:7]
+        bucket = monthly.setdefault(key, {"first_nav": navs[i], "last_nav": navs[i], "first_bench": bench[i], "last_bench": bench[i]})
+        bucket["last_nav"] = navs[i]
+        if bench[i] is not None:
+            bucket["last_bench"] = bench[i]
+            if bucket["first_bench"] is None:
+                bucket["first_bench"] = bench[i]
+    monthly_returns = {
+        key: {
+            "strategy": (b["last_nav"] / b["first_nav"] - 1) * 100 if b["first_nav"] else None,
+            "benchmark": (b["last_bench"] / b["first_bench"] - 1) * 100 if b["first_bench"] else None,
+        }
+        for key, b in monthly.items()
+    }
+    monthly_positive = sum(1 for v in monthly_returns.values() if (v.get("strategy") or 0) > 0)
+    monthly_beat = sum(1 for v in monthly_returns.values() if v.get("strategy") is not None and v.get("benchmark") is not None and v["strategy"] > v["benchmark"])
+    yearly: dict[str, dict[str, Any]] = {}
+    for i, day in enumerate(dates):
+        year = day[:4]
+        bucket = yearly.setdefault(year, {"first_nav": navs[i], "last_nav": navs[i], "first_bench": bench[i], "last_bench": bench[i]})
+        bucket["last_nav"] = navs[i]
+        if bench[i] is not None:
+            bucket["last_bench"] = bench[i]
+            if bucket["first_bench"] is None:
+                bucket["first_bench"] = bench[i]
+    years = []
+    start_year, end_year = (dates[0][:4], dates[-1][:4]) if dates else ("", "")
+    for year, b in sorted(yearly.items()):
+        strategy_ret = (b["last_nav"] / b["first_nav"] - 1) * 100 if b["first_nav"] else None
+        bench_ret = (b["last_bench"] / b["first_bench"] - 1) * 100 if b["first_bench"] else None
+        rel = ((b["last_nav"] / b["first_nav"]) / (b["last_bench"] / b["first_bench"]) - 1) * 100 if b["first_nav"] and b["first_bench"] else None
+        years.append({
+            "year": year, "strategy": strategy_ret, "benchmark": bench_ret,
+            "diff": strategy_ret - bench_ret if strategy_ret is not None and bench_ret is not None else None,
+            "relative": rel, "full": year not in (start_year, end_year),
+        })
+    complete_years = [y for y in years if y["full"]]
+    best_month = max(monthly_returns.items(), key=lambda kv: kv[1]["strategy"] if kv[1]["strategy"] is not None else -999, default=(None, {})) if monthly_returns else (None, {})
+    worst_month = min(monthly_returns.items(), key=lambda kv: kv[1]["strategy"] if kv[1]["strategy"] is not None else 999, default=(None, {})) if monthly_returns else (None, {})
+    best_day = max(daily) * 100 if daily else None
+    worst_day = min(daily) * 100 if daily else None
+    geometric_excess = ((navs[-1] / navs[0]) / (bench_navs[-1] / bench_navs[0]) - 1) * 100 if len(navs) > 1 and len(bench_navs) > 1 and navs[0] and bench_navs[0] else None
+    return {
+        "dates": dates, "navs": navs, "bench": bench, "metrics": metrics, "assumptions": assumptions,
+        "holdings": holdings, "factors": payload.get("factors") or [], "start": payload.get("start_date") or (dates[0] if dates else None),
+        "end": payload.get("end_date") or (dates[-1] if dates else None), "shortened": bool(payload.get("shortened")),
+        "engine": payload.get("engine"), "total": total, "bench_total": bench_total,
+        "annual": annual, "bench_annual": bench_annual, "vol": vol, "bench_vol": bench_vol,
+        "mdd": mdd, "bench_mdd": _max_drawdown(bench_navs) if len(bench_navs) > 1 else None,
+        "max_event": max_event, "drawdowns": events, "monthly": monthly_returns,
+        "monthly_count": len(monthly_returns), "monthly_positive": monthly_positive, "monthly_beat": monthly_beat,
+        "years": years, "complete_years": complete_years, "best_month": best_month, "worst_month": worst_month,
+        "best_day": best_day, "worst_day": worst_day, "positive_days": positive_days,
+        "sortino": sortino, "calmar": calmar, "information_ratio": information_ratio,
+        "up_capture": up_capture, "down_capture": down_capture,
+        "geometric_excess": geometric_excess,
+        "excess_diff": total - bench_total if total is not None and bench_total is not None else None,
+    }
+
+
+def _bt_table(title: str, columns: list[str], rows: list[list[Any]], source: str) -> dict[str, Any]:
+    return {"type": "table", "title": title, "source": source, "columns": columns, "rows": rows}
+
+
+def _bt_percent(value: Any) -> str:
+    return _bt_fmt(value, "%")
+
+
+def _bt_backtest_default(payload: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    facts = _bt_facts(payload)
+    assumptions = facts["assumptions"]
+    factors = facts["factors"]
+    holdings = facts["holdings"]
+    name = payload.get("name") or "量化回测"
+    factor_names = "、".join(str(f.get("name") or f.get("key")) for f in factors) or "未提供"
+    universe = str(payload.get("universe") or assumptions.get("universe") or "未提供")
+    rebalance = str(assumptions.get("rebalance") or "未提供")
+    holding_rule = str(assumptions.get("holdings") or assumptions.get("holding") or "未提供")
+    cost = str(assumptions.get("cost") or assumptions.get("cost_en") or "未提供")
+    start, end = facts["start"] or "—", facts["end"] or "—"
+    event = facts["max_event"] or {}
+    complete = facts["complete_years"]
+    complete_positive = sum(1 for y in complete if (y.get("strategy") or 0) > 0)
+    complete_win = sum(1 for y in complete if (y.get("diff") or 0) > 0)
+    best_year = max(complete, key=lambda y: y.get("strategy") or -999, default=None)
+    worst_year = min(complete, key=lambda y: y.get("strategy") or 999, default=None)
+    held = len(holdings)
+    source = "回测结果缓存"
+    summary = (
+        f"{name} 在 {start} 至 {end} 的样本内回测中，累计收益 {_bt_percent(facts['total'])}，"
+        f"基准 {_bt_percent(facts['bench_total'])}，最大回撤 {_bt_percent(facts['mdd'])}。"
+        "以下是样本内观察，不代表未来。"
+    )
+    summary_bullets = [
+        f"收益：累计 {_bt_percent(facts['total'])}，相对基准收益差 {_bt_percent(facts['excess_diff'])}。",
+        f"风险：最大回撤 {_bt_percent(facts['mdd'])}，年化波动 {_bt_percent(facts['vol'])}。",
+        f"稳定性：完整年度 {len(complete)} 年，{complete_positive} 年正收益、{complete_win} 年跑赢基准。",
+        f"执行：期末持仓 {held} 只；换手、现金与费用明细未提供。" if held else "执行：持仓与交易明细未提供。",
+        "局限：样本内结果，受区间、成本假设与数据覆盖影响。",
+    ]
+    settings_rows = [
+        ["股票池", universe],
+        ["基准", str(assumptions.get("benchmark") or "未提供")],
+        ["目标持仓", holding_rule],
+        ["调仓", rebalance],
+        ["风控", str(assumptions.get("risk") or "未提供")],
+        ["成本滑点", cost],
+        ["观察日", f"{start} ~ {end}"],
+    ]
+    factor_rows = [
+        [str(f.get("name") or f.get("key")), str(f.get("formula") or "未提供"), str(f.get("direction") or "未提供"), str(f.get("plain") or "未提供"), "缺失/重叠处理未提供"]
+        for f in factors
+    ] or [["未提供", "未提供", "未提供", "未提供", "未提供"]]
+    perf_rows = [
+        ["累计收益", _bt_percent(facts["total"]), _bt_percent(facts["bench_total"])],
+        ["年化收益", _bt_percent(facts["annual"]), _bt_percent(facts["bench_annual"])],
+        ["年化波动率", _bt_percent(facts["vol"]), _bt_percent(facts["bench_vol"])],
+        ["最大回撤", _bt_percent(facts["mdd"]), _bt_percent(facts["bench_mdd"])],
+        ["Sharpe", _bt_fmt(facts["metrics"].get("sharpe"), "", 2), "未提供"],
+        ["Sortino", _bt_fmt(facts["sortino"], "", 2), "未提供"],
+        ["上行捕获率", _bt_percent(facts["up_capture"]), "—"],
+        ["下行捕获率", _bt_percent(facts["down_capture"]), "—"],
+        ["Calmar", _bt_fmt(facts["calmar"], "", 2), "未提供"],
+        ["Beta", _bt_fmt(facts["metrics"].get("beta"), "", 2), "—"],
+        ["年化 Alpha", _bt_percent(facts["metrics"].get("alpha")), "—"],
+        ["信息比率 IR", _bt_fmt(facts["information_ratio"], "", 2), "—"],
+        ["正收益交易日占比", _bt_percent(facts["positive_days"]), "未提供"],
+        ["最大单日涨跌", f"{_bt_percent(facts['best_day'])} / {_bt_percent(facts['worst_day'])}", "未提供"],
+    ]
+    best_month_key, best_month_data = facts["best_month"]
+    worst_month_key, worst_month_data = facts["worst_month"]
+    monthly_rows = [
+        ["正收益 / 跑赢月份", f"{facts['monthly_positive']} / {facts['monthly_beat']}（共 {facts['monthly_count']} 个月）", "—"],
+        ["最好 / 最差月", f"{best_month_key or '未提供'}（{_bt_percent(best_month_data.get('strategy'))}）/ {worst_month_key or '未提供'}（{_bt_percent(worst_month_data.get('strategy'))}）", "—"],
+        ["最好 / 最差交易日", f"{_bt_percent(facts['best_day'])} / {_bt_percent(facts['worst_day'])}", "未提供"],
+    ]
+    drawdown_rows = [[
+        str(event.get("peak_date") or "未提供"), _bt_fmt(event.get("peak_nav"), "", 3),
+        str(event.get("trough_date") or "未提供"), _bt_fmt(event.get("trough_nav"), "", 3),
+        _bt_percent(event.get("depth")), f"{event.get('duration_days', '未提供')} / {event.get('duration_trading', '未提供')}",
+        str(event.get("recover_date") or "未恢复"), _bt_percent(event.get("dist_from_high")),
+    ]]
+    drawdown_bullets = [
+        f"{str(e.get('peak_date') or '—')} → {str(e.get('trough_date') or '—')}：{_bt_percent(e.get('depth'))}，"
+        f"{'已收复' if e.get('recover_date') else '样本结束未收复'}。"
+        for e in facts["drawdowns"][:3]
+    ] or ["未识别到独立回撤区间。"]
+    yearly_rows = [
+        [y["year"], _bt_percent(y["strategy"]), _bt_percent(y["benchmark"]), _bt_percent(y["diff"]), _bt_percent(y["relative"]), "完整" if y["full"] else "部分"]
+        for y in facts["years"]
+    ] or [["未提供", "未提供", "未提供", "未提供", "未提供", "未提供"]]
+    yearly_bullets = [
+        f"完整年度 {len(complete)} 年，{complete_positive} 年正收益、{complete_win} 年跑赢。",
+        f"最好完整年度：{best_year['year'] if best_year else '未提供'}（{_bt_percent(best_year['strategy']) if best_year else '未提供'}）。",
+        f"最差完整年度：{worst_year['year'] if worst_year else '未提供'}（{_bt_percent(worst_year['strategy']) if worst_year else '未提供'}）。",
+    ]
+    holdings_rows = [
+        ["目标 / 实际平均持仓", holding_rule],
+        ["期末持仓", f"{held} 只" if held else "未提供"],
+        ["平均 / 期末现金权重", "未提供"],
+        ["最大单股权重", "未提供"],
+        ["换手（累计 / 年化单边）", "未提供"],
+        ["显式费用（佣金 / 税费 / 合计）", cost],
+    ]
+    holdings_bullets = [
+        f"胜率：{_bt_percent(facts['metrics'].get('win_rate'))}",
+        "平均盈亏比：未提供",
+        "盈利因子：未提供",
+    ]
+    risk_rows = [
+        ["数据口径", "回测结果缓存；未提供原始逐笔成交", "无法核验交易级执行", "未核验"],
+        ["区间", f"{start} ~ {end}", "样本外表现未知", "已标注"],
+        ["成本", f"假设：{cost}", "成本敏感度未单独测试", "已标注"],
+        ["数据覆盖", "部分指标/持仓明细未提供", "结论完整性受限", "未提供"],
+    ]
+    sections = [
+        {"key": "overview", "title": "一、策略概述", "blocks": [
+            {"type": "paragraph", "text": f"策略以{factor_names}为选股条件，在{universe}内按{rebalance}调仓；本报告只描述这段样本内发生了什么。"},
+            _bt_table("策略设定", ["项目", "设定"], settings_rows, "strategy_settings"),
+            _bt_table("核心因子与经济含义", ["因子", "公式/字段", "方向", "经济含义", "缺失/处理"], factor_rows, "factor_meaning"),
+            {"type": "bullets", "items": summary_bullets},
+        ]},
+        {"key": "performance", "title": "二、收益表现", "blocks": [
+            _bt_table("策略 vs 基准", ["指标", "策略", "基准"], perf_rows, "performance"),
+            {"type": "bullets", "items": [
+                f"几何超额（策略期末净值 ÷ 基准期末净值 − 1）：{_bt_percent(facts['geometric_excess'])}。",
+                f"收益差（策略累计收益 − 基准累计收益）：{_bt_percent(facts['excess_diff'])}。",
+            ]},
+            _bt_table("月度表现", ["项目", "策略", "基准"], monthly_rows, "monthly"),
+        ]},
+        {"key": "risk", "title": "三、风险与回撤", "blocks": [
+            _bt_table("最大回撤事件", ["峰值日期", "峰值净值", "谷值日期", "谷值净值", "幅度", "历时(日/交易日)", "恢复日期", "距高点"], drawdown_rows, "drawdown"),
+            {"type": "bullets", "items": drawdown_bullets},
+            {"type": "paragraph", "text": f"回撤路径由净值曲线计算；持仓、现金和风格暴露未提供，无法核验回撤原因。"},
+        ]},
+        {"key": "stability", "title": "四、稳定性", "blocks": [
+            _bt_table("年度表现", ["年份", "策略", "基准", "收益差", "相对净值", "完整性"], yearly_rows, "yearly"),
+            {"type": "bullets", "items": yearly_bullets},
+            {"type": "paragraph", "text": f"收益是否连续，需要看完整年度而不是单年；首尾部分年度不参加最好/最差排名。"},
+        ]},
+        {"key": "holdings", "title": "五、持仓与交易", "blocks": [
+            _bt_table("持仓与成本", ["项目", "数值"], holdings_rows, "holdings"),
+            {"type": "bullets", "items": holdings_bullets},
+        ]},
+        {"key": "conclusion", "title": "六、结论与局限", "blocks": [
+            {"type": "paragraph", "text": f"样本内累计收益 {_bt_percent(facts['total'])}、最大回撤 {_bt_percent(facts['mdd'])}，需结合完整年度、成本假设和交易明细一起看。"},
+            _bt_table("已识别风险", ["问题", "证据", "可能影响", "状态"], risk_rows, "risks"),
+            {"type": "bullets", "items": ["交易级胜率、盈亏比与盈利因子未提供。", "换手、现金权重与显式费用明细未提供。", "样本内观察，不代表未来。"]},
+            {"type": "paragraph", "text": "以上为样本内观察，不代表未来；不构成投资建议。"},
+        ]},
+    ]
+    charts = []
+    if facts["monthly"]:
+        labels = list(facts["monthly"].keys())[-12:]
+        charts.append({
+            "type": "bar", "title": "近 12 个月策略收益", "title_en": "Strategy monthly return, last 12 months",
+            "labels": labels, "values": [facts["monthly"][k]["strategy"] for k in labels], "unit": "%", "source": "回测净值",
+        })
+    if facts["years"]:
+        charts.append({
+            "type": "bar", "title": "年度策略收益", "title_en": "Strategy yearly return",
+            "labels": [y["year"] for y in facts["years"]], "values": [y["strategy"] for y in facts["years"]],
+            "unit": "%", "source": "回测净值",
+        })
+    card = {
+        "summary": summary, "sections": sections,
+        "disclaimer": "历史回测 · 非真实收益 · 非投资建议",
+        "meta": {"dataSource": source, "engine": "rule"},
+    }
+    return card, charts
+
+
+def _bt_merge_ai(default_card: dict[str, Any], ai_data: dict[str, Any]) -> dict[str, Any]:
+    ai_sections = {str(s.get("key")): s for s in (ai_data.get("sections") or []) if isinstance(s, dict) and s.get("key")}
+    merged = []
+    for section in default_card["sections"]:
+        ai_section = ai_sections.get(section["key"]) or {}
+        ai_text_blocks = [
+            b for b in (ai_section.get("blocks") or [])
+            if isinstance(b, dict) and b.get("type") in ("paragraph", "bullets")
+        ]
+        tables = [b for b in section["blocks"] if b.get("type") == "table"]
+        if ai_text_blocks:
+            blocks = ai_text_blocks + tables
+        else:
+            blocks = section["blocks"]
+        merged.append({**section, "blocks": blocks})
+    card = dict(default_card)
+    if str(ai_data.get("summary") or "").strip():
+        card["summary"] = str(ai_data["summary"]).strip()
+    card["sections"] = merged
+    meta = dict(card.get("meta") or {})
+    meta["engine"] = "ai"
+    card["meta"] = meta
+    return card
+
+
 def _ai_points(section: dict[str, Any]) -> list[dict[str, str]]:
     points = section.get("points") or section.get("items") or []
     out = []
@@ -3415,6 +3791,62 @@ def _ai_points(section: dict[str, Any]) -> list[dict[str, str]]:
     return out[:4]
 
 
+
+def _backtest_commentary(payload: dict[str, Any], *, user_id: int | None = None, refresh: bool = False) -> dict[str, Any]:
+    from services.invest import agent_prompts, ai_cache
+
+    task = "invest.backtest"
+    prompt = agent_prompts.resolve_prompt(user_id, task, agent_prompts.BACKTEST_SYSTEM)
+    default_card, charts = _bt_backtest_default(payload)
+    key = ai_cache.make_key(task, payload, prompt)
+    if not refresh:
+        cached = ai_cache.get(user_id, "commentary", key)
+        if cached:
+            return {**cached, "cached": True}
+    facts = _bt_facts(payload)
+    ai_payload = {
+        "name": payload.get("name"), "universe": payload.get("universe"),
+        "period": {"start": facts["start"], "end": facts["end"]},
+        "metrics": facts["metrics"], "assumptions": facts["assumptions"],
+        "holdings_count": len(facts["holdings"]), "factors": facts["factors"],
+        "facts": {
+            "total": facts["total"], "benchmark_total": facts["bench_total"],
+            "annual": facts["annual"], "benchmark_annual": facts["bench_annual"],
+            "volatility": facts["vol"], "max_drawdown": facts["mdd"],
+            "sharpe": facts["metrics"].get("sharpe"), "sortino": facts["sortino"],
+            "calmar": facts["calmar"], "information_ratio": facts["information_ratio"],
+            "up_capture": facts["up_capture"], "down_capture": facts["down_capture"],
+            "positive_days": facts["positive_days"], "geometric_excess": facts["geometric_excess"],
+            "excess_diff": facts["excess_diff"], "monthly": facts["monthly"],
+            "years": facts["years"], "drawdowns": facts["drawdowns"][:3],
+        },
+        "note": "历史回测结果，非真实收益；只解释事实，不改算数值。",
+    }
+    try:
+        from ai.router import available_task, run_task
+
+        if not available_task(task):
+            result = {"available": True, "engine": "rule", "fallback": True, "card": default_card, "charts": charts}
+        else:
+            out = run_task(
+                task,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": json.dumps(ai_payload, ensure_ascii=False)},
+                ],
+            )
+            data = out.get("data") if isinstance(out, dict) else None
+            if not isinstance(data, dict):
+                data = json.loads(str(out.get("content") or "{}"))
+            card = _bt_merge_ai(default_card, data)
+            result = {"available": True, "engine": "ai", "card": card, "charts": charts}
+    except Exception:
+        # 回测报告不能空白：AI 不可用时退回服务端规则版。
+        result = {"available": True, "engine": "rule", "fallback": True, "card": default_card, "charts": charts}
+    ai_cache.put(user_id, "commentary", key, result)
+    return result
+
+
 def ai_commentary(
     kind: str,
     payload: dict[str, Any],
@@ -3422,14 +3854,13 @@ def ai_commentary(
     user_id: int | None = None,
     refresh: bool = False,
 ) -> dict[str, Any]:
+    if kind == "backtest":
+        return _backtest_commentary(payload, user_id=user_id, refresh=refresh)
+
     from services.invest import agent_prompts, ai_cache
 
-    task = "invest.backtest" if kind == "backtest" else "invest.paper" if kind == "paper" else "invest.quant"
-    default = (
-        agent_prompts.BACKTEST_SYSTEM
-        if kind == "backtest"
-        else agent_prompts.PAPER_COMMENTARY_SYSTEM if kind == "paper" else agent_prompts.QUANT_COMMENTARY_SYSTEM
-    )
+    task = "invest.paper" if kind == "paper" else "invest.quant"
+    default = agent_prompts.PAPER_COMMENTARY_SYSTEM if kind == "paper" else agent_prompts.QUANT_COMMENTARY_SYSTEM
     prompt = agent_prompts.resolve_prompt(user_id, task, default)
     key = ai_cache.make_key(task, payload, prompt)
     if not refresh:

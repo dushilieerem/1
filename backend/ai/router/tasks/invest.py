@@ -148,6 +148,56 @@ def validate_stock_deep(raw: str, request: TaskRequest) -> dict[str, Any]:
     return data
 
 
+_DIAGNOSIS_SECTIONS = (
+    ("company", "一、公司是什么来头"),
+    ("performance", "二、最近一期业绩怎么样"),
+    ("valuation", "三、当前估值贵不贵"),
+    ("capital", "四、资金面什么信号"),
+    ("institution", "五、机构怎么看"),
+    ("highlights", "六、核心亮点与风险"),
+    ("conclusion", "七、综合结论"),
+)
+
+
+def validate_stock_diagnosis(raw: str, request: TaskRequest) -> dict[str, Any]:
+    """AI 管家个股诊断：7 个问句式板块，缺项直接失败。"""
+    data = validate_card(raw, request)
+    by_key: dict[str, dict[str, Any]] = {}
+    for section in data.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        key = str(section.get("key") or "").strip()
+        if key not in dict(_DIAGNOSIS_SECTIONS):
+            continue
+        blocks: list[dict[str, Any]] = []
+        for block in section.get("blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            kind = str(block.get("type") or "").strip()
+            if kind == "paragraph":
+                text = str(block.get("text") or "").strip()
+                if text:
+                    blocks.append({"type": "paragraph", "text": text[:1600]})
+            elif kind == "bullets":
+                items = [str(x).strip() for x in (block.get("items") or []) if str(x).strip()]
+                if items:
+                    blocks.append({"type": "bullets", "items": items[:6]})
+        body = str(section.get("body") or "").strip()
+        if not body:
+            body = next((b["text"] for b in blocks if b.get("type") == "paragraph"), "")
+        if not body:
+            continue
+        if not blocks:
+            blocks = [{"type": "paragraph", "text": body}]
+        by_key[key] = {"key": key, "title": dict(_DIAGNOSIS_SECTIONS)[key], "body": body, "blocks": blocks, "items": []}
+    missing = [title for key, title in _DIAGNOSIS_SECTIONS if key not in by_key]
+    if missing:
+        raise AiBadOutput("AI 管家个股诊断缺少：" + "、".join(missing))
+    data["sections"] = [by_key[key] for key, _ in _DIAGNOSIS_SECTIONS]
+    data["meta"].setdefault("dataSource", "行情 + 财务 + 估值 + 资金流 + 公开资讯")
+    return data
+
+
 INTENT_TASK = register(
     TaskSpec(
         task_id="invest.intent",
@@ -160,27 +210,78 @@ INTENT_TASK = register(
     )
 )
 
+_DAILY_SECTIONS = (
+    ("market", "一、大盘概览"),
+    ("structure", "二、市场结构"),
+    ("portfolio", "三、我的组合"),
+    ("moves", "四、关注标的异动"),
+    ("why", "五、今天为什么"),
+    ("watch", "六、后续盯什么"),
+)
+_DAILY_REQUIRED = {"market", "structure", "portfolio"}
+
+
+def validate_daily_review(raw: str, request: TaskRequest) -> dict[str, Any]:
+    data = validate_card(raw, request)
+    by_key: dict[str, dict[str, Any]] = {}
+    for section in data.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        key = str(section.get("key") or "").strip()
+        if key not in dict(_DAILY_SECTIONS):
+            continue
+        blocks: list[dict[str, Any]] = []
+        for block in section.get("blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            kind = str(block.get("type") or "").strip()
+            if kind == "paragraph":
+                text = str(block.get("text") or "").strip()
+                if text:
+                    blocks.append({"type": "paragraph", "text": text[:1200]})
+            elif kind == "bullets":
+                items = [str(x).strip() for x in (block.get("items") or []) if str(x).strip()]
+                if items:
+                    blocks.append({"type": "bullets", "items": items[:6]})
+        body = str(section.get("body") or "").strip()
+        if not body:
+            body = next((b["text"] for b in blocks if b.get("type") == "paragraph"), "")
+        if not body:
+            body = next((str(b["items"][0]) for b in blocks if b.get("type") == "bullets" and b.get("items")), "")
+        if not body:
+            continue
+        if not blocks:
+            blocks = [{"type": "paragraph", "text": body}]
+        by_key[key] = {"key": key, "title": dict(_DAILY_SECTIONS)[key], "body": body, "blocks": blocks, "items": []}
+    missing = [title for key, title in _DAILY_SECTIONS if key in _DAILY_REQUIRED and key not in by_key]
+    if missing:
+        raise AiBadOutput("今日复盘缺少：" + "、".join(missing))
+    data["sections"] = [by_key[key] for key, _ in _DAILY_SECTIONS if key in by_key]
+    data["meta"].setdefault("dataSource", "首页 + 组合 + 自选 + 资讯")
+    return data
+
+
 DAILY_TASK = register(
     TaskSpec(
         task_id="invest.daily",
-        description="Invest 个性化日报 / 收盘复盘 / 持仓解读",
-        temperature=0.4,
-        max_tokens=2500,
-        timeout_sec=120,
+        description="Invest 今日复盘：市场 → 结构 → 组合 → 异动 → 原因 → 跟踪点",
+        temperature=0.3,
+        max_tokens=6000,
+        timeout_sec=180,
         executors=("local",),
-        validator=validate_card,
+        validator=validate_daily_review,
     )
 )
 
 STOCK_TASK = register(
     TaskSpec(
         task_id="invest.stock",
-        description="Invest 个股洞察：数据摘要、财务/估值解读、多空分歧",
-        temperature=0.35,
-        max_tokens=3500,
-        timeout_sec=120,
+        description="Invest AI 管家个股诊断：7 个问句式板块",
+        temperature=0.25,
+        max_tokens=6500,
+        timeout_sec=180,
         executors=("local",),
-        validator=validate_card,
+        validator=validate_stock_diagnosis,
     )
 )
 
@@ -196,16 +297,65 @@ STOCK_DEEP_TASK = register(
     )
 )
 
+_PORTFOLIO_SECTIONS = (
+    ("score", "一、结论与风险分"),
+    ("structure", "二、结构风险（越线项）"),
+    ("today", "三、今日影响"),
+    ("stress", "四、压力测试"),
+    ("deviation", "五、目标偏离"),
+    ("limits", "六、观察与局限"),
+)
+
+
+def validate_portfolio_risk(raw: str, request: TaskRequest) -> dict[str, Any]:
+    data = validate_card(raw, request)
+    by_key: dict[str, dict[str, Any]] = {}
+    for section in data.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        key = str(section.get("key") or "").strip()
+        if key not in dict(_PORTFOLIO_SECTIONS):
+            continue
+        blocks: list[dict[str, Any]] = []
+        for block in section.get("blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            kind = str(block.get("type") or "").strip()
+            if kind == "paragraph":
+                text = str(block.get("text") or "").strip()
+                if text:
+                    blocks.append({"type": "paragraph", "text": text[:1200]})
+            elif kind == "bullets":
+                items = [str(x).strip() for x in (block.get("items") or []) if str(x).strip()]
+                if items:
+                    blocks.append({"type": "bullets", "items": items[:6]})
+        body = str(section.get("body") or "").strip()
+        if not body:
+            body = next((b["text"] for b in blocks if b.get("type") == "paragraph"), "")
+        if not body:
+            body = next((str(b["items"][0]) for b in blocks if b.get("type") == "bullets" and b.get("items")), "")
+        if not body:
+            continue
+        if not blocks:
+            blocks = [{"type": "paragraph", "text": body}]
+        by_key[key] = {"key": key, "title": dict(_PORTFOLIO_SECTIONS)[key], "body": body, "blocks": blocks, "items": []}
+    missing = [title for key, title in _PORTFOLIO_SECTIONS if key not in by_key]
+    if missing:
+        raise AiBadOutput("组合风险缺少：" + "、".join(missing))
+    data["sections"] = [by_key[key] for key, _ in _PORTFOLIO_SECTIONS]
+    data["meta"].setdefault("dataSource", "组合体检 + 归因 + 压力测试")
+    return data
+
+
 PORTFOLIO_TASK = register(
     TaskSpec(
         task_id="invest.portfolio",
-        description="Invest 组合诊断：问题 → 依据 → 风险提示（不给调仓指令）",
+        description="Invest 组合风险：风险分、越线项、今日影响、压力测试与偏离",
         temperature=0.25,
-        # 深度解读要输出 7 个维度；推理模型会先消耗 reasoning token，留足额度
-        max_tokens=6000,
+        max_tokens=6500,
         timeout_sec=180,
         executors=("local",),
-        validator=validate_card,
+        validator=validate_portfolio_risk,
     )
 )
 
@@ -226,7 +376,7 @@ BACKTEST_TASK = register(
         task_id="invest.backtest",
         description="Invest 回测解读：收益来源、回撤特征与风格风险，不预测未来",
         temperature=0.25,
-        max_tokens=2600,
+        max_tokens=6000,
         timeout_sec=120,
         executors=("local",),
         validator=validate_card,

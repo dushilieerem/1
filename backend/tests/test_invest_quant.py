@@ -277,6 +277,51 @@ def test_factor_registry_has_60_factors_in_6_categories():
     assert meta["category_name"] == "动量" and meta["sub_name"] == "20 日涨幅"
 
 
+def _fake_backtest_payload():
+    curve = []
+    nav = 1.0
+    bench = 1.0
+    for i, day in enumerate([
+        "2026-01-02", "2026-02-02", "2026-03-02", "2026-04-02",
+        "2026-05-04", "2026-06-01", "2026-07-01", "2026-08-03",
+    ]):
+        nav *= 1.01 if i % 2 == 0 else 0.985
+        bench *= 1.004
+        curve.append({"date": day, "nav": nav, "benchmark": bench})
+    return {
+        "name": "测试策略", "universe": "hs300",
+        "start_date": curve[0]["date"], "end_date": curve[-1]["date"],
+        "metrics": {}, "assumptions": {"universe": "沪深300", "rebalance": "月度", "holdings": "20 只等权", "cost": "单边 0.1%"},
+        "holdings": [{"code": "600000", "name": "测试"}],
+        "curve": curve, "factors": [{"name": "动量", "formula": "20 日涨幅", "direction": "high", "plain": "过去涨得好"}],
+        "engine": "re", "shortened": False,
+    }
+
+
+def test_backtest_default_card_has_six_sections_and_tables():
+    card, charts = quant._bt_backtest_default(_fake_backtest_payload())
+    assert [s["key"] for s in card["sections"]] == [
+        "overview", "performance", "risk", "stability", "holdings", "conclusion",
+    ]
+    assert all(any(b.get("type") == "table" for b in s["blocks"]) for s in card["sections"])
+    assert card["meta"]["engine"] == "rule"
+    assert len(charts) >= 1
+    assert "样本内观察" in card["summary"]
+
+
+def test_backtest_ai_merge_keeps_tables_and_uses_ai_text():
+    card, _ = quant._bt_backtest_default(_fake_backtest_payload())
+    ai = {
+        "summary": "AI 结论",
+        "sections": [{"key": "performance", "blocks": [{"type": "paragraph", "text": "AI 收益分析"}]}],
+    }
+    merged = quant._bt_merge_ai(card, ai)
+    assert merged["summary"] == "AI 结论"
+    perf = next(s for s in merged["sections"] if s["key"] == "performance")
+    assert perf["blocks"][0]["text"] == "AI 收益分析"
+    assert any(b.get("type") == "table" for b in perf["blocks"])
+
+
 def test_factor_explanation_is_multi_sentence():
     meta = quant._factor_meta("momentum")
     zh, en = quant._factor_explanation(meta, {"percentile": 42.0})

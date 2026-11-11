@@ -51,6 +51,7 @@ export default function AiPanel({
   expandable = false,
   defaultExpanded = false,
   blocksMode = false,
+  showCharts = false,
 }: {
   title?: string;
   subtitle?: string;
@@ -60,6 +61,7 @@ export default function AiPanel({
   expandable?: boolean;
   defaultExpanded?: boolean;
   blocksMode?: boolean;
+  showCharts?: boolean;
 }) {
   const { t } = useLocale();
   const resolvedTitle = title ?? t("AI 解读", "AI insights");
@@ -98,7 +100,7 @@ export default function AiPanel({
   const sections = card?.sections || [];
   const charts = data?.charts || [];
   const hasCharts = charts.length > 0;
-  const visibleCharts = blocksMode ? [] : charts;
+  const visibleCharts = blocksMode && !showCharts ? [] : charts;
   if (hideOnError && error) return null;
   return (
     <section className="card ai-panel">

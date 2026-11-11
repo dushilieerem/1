@@ -331,6 +331,54 @@ test("回测与模拟盘空态明确，且模拟盘标注模拟", async ({ page 
   await noHorizontalOverflow(page);
 });
 
+test("回测报告 AI 按六个板块渲染并展示表格/图表", async ({ page }) => {
+  await loginByToken(page);
+  const sections = ["overview", "performance", "risk", "stability", "holdings", "conclusion"].map((key) => ({
+    key,
+    title: key,
+    blocks: [
+      { type: "paragraph", text: `${key} 的样本内分析。` },
+      { type: "table", title: "示例表", columns: ["指标", "策略"], rows: [["累计收益", "1.0%"]] },
+    ],
+  }));
+  await page.route("**/api/invest/quant/backtests/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/commentary")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          available: true,
+          engine: "rule",
+          card: {
+            summary: "样本内收益为正，但回撤与交易明细仍需核验。",
+            sections,
+            disclaimer: "历史回测 · 非真实收益 · 非投资建议",
+            meta: { dataSource: "回测结果缓存" },
+          },
+          charts: [{ type: "bar", title: "年度收益", labels: ["2025", "2026"], values: [5, -2], unit: "%" }],
+        }),
+      });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "bt-test", name: "测试回测", start_date: "2025-01-01", end_date: "2026-06-30",
+        metrics: { cumulative: 12.3, benchmark_return: 8.1, annual_return: 6.2, max_drawdown: -9.8, sharpe: 1.1, win_rate: 55, volatility: 15.2, beta: 0.9, alpha: 2.1, trade_count: 20 },
+        curve: [{ date: "2025-01-01", nav: 1, benchmark: 1 }, { date: "2026-06-30", nav: 1.123, benchmark: 1.081 }],
+        assumptions: { universe: "沪深300", rebalance: "月度", holdings: "20 只等权", cost: "单边 0.1%" },
+        holdings: [{ code: "600000", name: "测试" }], factors: [], engine: "re",
+        disclaimer: "历史回测 · 非真实收益 · 不代表未来",
+      }),
+    });
+  });
+  await page.goto(`${H5}/quant/backtests/bt-test`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "测试回测" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".ai-analysis-section")).toHaveCount(6);
+  await expect(page.locator(".ai-panel .data-table")).toHaveCount(6);
+  await expect(page.locator(".ai-panel .ai-bars i")).toHaveCount(2);
+  await noHorizontalOverflow(page);
+});
+
 test("AI 记忆入口从我的移到管家工具条，首页不再有 AI 今日解读", async ({ page }) => {
   await loginByToken(page);
   await page.goto(`${H5}/me`, { waitUntil: "domcontentloaded" });
@@ -447,7 +495,7 @@ test("Agent 管理页展示 Agent 与提示词编辑", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Agent 管理" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".agent-card").first()).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".agent-card", { hasText: "个股五维分析" })).toBeVisible();
-  await expect(page.locator(".agent-card", { hasText: "AI 管家个股解读" })).toBeVisible();
+  await expect(page.locator(".agent-card", { hasText: "AI 管家个股诊断" })).toBeVisible();
   await expect(page.locator(".agent-prompt").first()).toBeVisible();
   const prompt = page.locator(".agent-prompt").first();
   await prompt.fill("只讲最关键的估值风险，不展开。");
@@ -516,10 +564,27 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
         card_hints: ["card", "chart"],
         card: {
           summary: "贵州茅台收盘上涨，估值处于历史中位。",
-          sections: [{ title: "风险", body: "数据为收盘口径。" }],
+          sections: [
+            { key: "company", title: "一、公司是什么来头", blocks: [{ type: "paragraph", text: "公司属于白酒行业，主营与收入构成未提供。" }] },
+            { key: "performance", title: "二、最近一期业绩怎么样", blocks: [{ type: "paragraph", text: "营收与利润保持增长。" }, { type: "table", title: "主要指标", columns: ["指标", "本期"], rows: [["营收", "100 亿"]] }] },
+            { key: "valuation", title: "三、当前估值贵不贵", blocks: [{ type: "paragraph", text: "PE 处于近三年中位。" }] },
+            { key: "capital", title: "四、资金面什么信号", blocks: [{ type: "paragraph", text: "近 5 日主力净流入。" }] },
+            { key: "institution", title: "五、机构怎么看", blocks: [{ type: "bullets", items: ["评级与目标价未提供（第三方）"] }] },
+            { key: "highlights", title: "六、核心亮点与风险", blocks: [{ type: "bullets", items: ["亮点：毛利率稳定", "风险：估值分位偏高"] }] },
+            { key: "conclusion", title: "七、综合结论", blocks: [{ type: "paragraph", text: "业绩与估值需要一起看。" }, { type: "bullets", items: ["跟踪下季毛利率"] }] },
+          ],
           disclaimer: "AI 生成 · 非投资建议",
         },
-        chart: { code: "600519", bars: [{ close: 1 }, { close: 2 }] },
+        chart: {
+          code: "600519",
+          bars: [
+            { time: "2026-11-01", open: 1, high: 1.2, low: 0.9, close: 1.1, volume: 100 },
+            { time: "2026-11-02", open: 1.1, high: 1.3, low: 1, close: 1.2, volume: 120 },
+          ],
+          ma5: [{ time: "2026-11-01", value: 1.05 }, { time: "2026-11-02", value: 1.1 }],
+          ma10: [{ time: "2026-11-01", value: 1.02 }, { time: "2026-11-02", value: 1.05 }],
+          ma20: [{ time: "2026-11-01", value: 1.01 }, { time: "2026-11-02", value: 1.02 }],
+        },
       }),
     }),
   );
@@ -527,8 +592,39 @@ test("AI 管家可发送问题并渲染卡片", async ({ page }) => {
   await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("贵州茅台怎么看");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("贵州茅台收盘上涨")).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator(".ai-price-trend")).toBeVisible();
-  await expect(page.locator(".ai-price-trend")).toContainText("行情走势");
+  await expect(page.locator(".ai-kline-card .kline")).toBeVisible();
+  await expect(page.locator(".ai-kline-card")).toContainText("行情走势");
+  await expect(page.locator(".ai-kline-switch button")).toHaveCount(2);
+  await expect(page.locator(".ai-msg.ai .ai-section")).toHaveCount(7);
+  await expect(page.locator(".ai-msg.ai .data-table")).toHaveCount(1);
+  await noHorizontalOverflow(page);
+});
+
+test("AI 管家今日复盘按六个部分渲染", async ({ page }) => {
+  await loginByToken(page);
+  const keys = ["market", "structure", "portfolio", "moves", "why", "watch"];
+  await page.route("**/api/invest/ai/chat", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true, intent: "review",
+        card: {
+          summary: "今日震荡，组合小幅跑赢。",
+          sections: keys.map((key) => ({
+            key, title: key,
+            blocks: [{ type: "bullets", items: [`${key} 要点`] }],
+          })),
+          disclaimer: "AI 生成 · 非投资建议",
+        },
+        charts: [{ type: "bar", title: "今日指数涨跌", labels: ["上证", "深成", "创业板"], values: [0.5, -0.2, 0.8], unit: "%" }],
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByPlaceholder("问个股、组合、复盘或条件选股").fill("今天复盘");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.locator(".ai-msg.ai .ai-section")).toHaveCount(6, { timeout: 20_000 });
+  await expect(page.locator(".ai-msg.ai .ai-bars i")).toHaveCount(3);
   await noHorizontalOverflow(page);
 });
 
@@ -855,6 +951,8 @@ test("组合页：持仓 / 体检切换与关键区块", async ({ page, request 
   await expect(page.getByText("下一步看什么").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "配置偏离" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "压力测试与成本" })).toBeVisible();
+  await expect(page.locator(".ai-panel .ai-analysis-section")).toHaveCount(6);
+  await expect(page.locator(".ai-panel .data-table").first()).toBeVisible();
   await noHorizontalOverflow(page);
 });
 
@@ -949,6 +1047,7 @@ test("英文模式可搜索并打开真实美股", async ({ page }) => {
 });
 
 test("360 宽关键页面无横向溢出，行业代码不裸奔", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 360, height: 800 });
   await loginByToken(page);
   for (const path of ["/", "/watch", "/portfolio", "/news", "/learn", "/me", "/quant", "/quant/factors", "/quant/strategies?tab=quick", "/quant/strategies?tab=plaza", "/quant/backtests", "/quant/papers", "/agents", "/community", "/compare/600519/300750"]) {

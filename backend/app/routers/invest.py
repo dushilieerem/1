@@ -474,8 +474,11 @@ def quant_backtest_commentary(
     payload = {
         "name": data.get("name"), "factors": data.get("factors"), "universe": data.get("universe"),
         "period": {"start": data.get("start_date"), "end": data.get("end_date")},
+        "start_date": data.get("start_date"), "end_date": data.get("end_date"),
         "metrics": data.get("metrics"), "assumptions": data.get("assumptions"),
-        "holdings": data.get("holdings"),
+        "holdings": data.get("holdings"), "curve": data.get("curve"),
+        "shortened": data.get("shortened"), "engine": data.get("engine"),
+        "engine_reason": data.get("engine_reason"), "disclaimer": data.get("disclaimer"),
         "note": "历史回测结果，非真实收益；AI 不得改算任何数值。",
     }
     return _quant_call(quant.ai_commentary, "backtest", payload, user_id=_uid(user), refresh=refresh)

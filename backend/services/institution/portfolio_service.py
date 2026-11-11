@@ -136,7 +136,7 @@ def exit_advice(org_id: int, symbol: str) -> dict[str, Any]:
     ][:3]
     exits = [
         x for x in (data.get("exits") or [])
-        if int(x.get("company_id") or 0) == int(company_id or 0) and str(x.get("status") or "") not in {"closed", "cancelled"}
+        if int(x.get("company_id") or 0) == int(company_id or 0) and str(x.get("status") or "") not in {"closed", "rejected", "cancelled"}
     ]
     exposure = float(((data.get("portfolio") or {}).get("industry_exposure") or {}).get(pos.get("industry") or "", 0)) * 100
     severe = any(str(e.get("severity") or "") in {"high", "critical"} for e in events)
@@ -549,6 +549,7 @@ def holding_detail(org_id: int, symbol: str) -> dict[str, Any]:
     exits = [
         e for e in mon.get("exits") or []
         if int(e.get("company_id") or 0) == int(company_id or 0)
+        and str(e.get("status") or "") not in {"closed", "rejected", "cancelled"}
     ]
     version_no = None
     with get_conn() as conn:
@@ -603,12 +604,14 @@ def pipeline(org_id: int) -> dict[str, Any]:
                 """
                 SELECT DISTINCT d.case_id
                   FROM inst_debate_session d
+                  JOIN inst_research_case c ON c.id=d.case_id AND c.org_id=%s
                   JOIN LATERAL (
                     SELECT id FROM inst_research_version
                      WHERE case_id=d.case_id ORDER BY version_no DESC LIMIT 1
                   ) v ON v.id=d.research_version_id
                  WHERE d.status='completed'
-                """
+                """,
+                (org_id,),
             ).fetchall()
         }
         proposal_cases = {
@@ -616,9 +619,10 @@ def pipeline(org_id: int) -> dict[str, Any]:
             for r in conn.execute(
                 """
                 SELECT DISTINCT case_id FROM inst_proposal
-                 WHERE stale_at IS NULL
+                 WHERE org_id=%s AND stale_at IS NULL
                    AND status IN ('partner_review','risk_precheck','chairman_review','authorized')
-                """
+                """,
+                (org_id,),
             ).fetchall()
         }
         auth_cases = {
@@ -629,23 +633,57 @@ def pipeline(org_id: int) -> dict[str, Any]:
                   FROM inst_authorization a
                   JOIN inst_proposal_version pv ON pv.id=a.proposal_version_id
                   JOIN inst_proposal p ON p.id=pv.proposal_id
-                 WHERE a.status='qualified'
-                """
+                 WHERE p.org_id=%s AND a.status='qualified'
+                """,
+                (org_id,),
+            ).fetchall()
+        }
+        # 退出研究案属于投后/退出流程，不能回到价值分析列。
+        exit_cases = {
+            int(r["case_id"])
+            for r in conn.execute(
+                "SELECT DISTINCT case_id FROM inst_exit_case "
+                " WHERE org_id=%s AND status NOT IN ('closed','rejected','cancelled')",
+                (org_id,),
             ).fetchall()
         }
         position_symbols = {
             str(r["symbol"])
             for r in conn.execute(
                 """
-                SELECT p.symbol FROM inst_position_snapshot p
-                 WHERE p.qty > 0
-                   AND p.as_of=(
+                SELECT ps.symbol FROM inst_position_snapshot ps
+                  JOIN inst_portfolio po ON po.id=ps.portfolio_id
+                 WHERE po.org_id=%s AND ps.qty > 0
+                   AND ps.as_of=(
                      SELECT MAX(p2.as_of) FROM inst_position_snapshot p2
-                      WHERE p2.portfolio_id=p.portfolio_id
+                      WHERE p2.portfolio_id=ps.portfolio_id
                    )
-                """
+                """,
+                (org_id,),
             ).fetchall()
         }
+        # 持仓卡直接来自组合持仓；即使买入案已关闭，只要未真正退出，
+        # 投资管理阶段仍要显示这只持仓（退出案另在其当前流程阶段显示）。
+        holding_rows = [
+            dict(r)
+            for r in conn.execute(
+                """
+                SELECT DISTINCT ON (co.symbol)
+                       co.id AS company_id, co.symbol, co.name AS company_name,
+                       co.market, co.industry, ps.qty, ps.as_of
+                  FROM inst_position_snapshot ps
+                  JOIN inst_portfolio po ON po.id=ps.portfolio_id
+                  JOIN inst_company co ON co.symbol=ps.symbol AND co.org_id=po.org_id
+                 WHERE po.org_id=%s AND ps.qty > 0
+                   AND ps.as_of=(
+                     SELECT MAX(p2.as_of) FROM inst_position_snapshot p2
+                      WHERE p2.portfolio_id=ps.portfolio_id
+                   )
+                 ORDER BY co.symbol, ps.as_of DESC, ps.id DESC
+                """,
+                (org_id,),
+            ).fetchall()
+        ]
     by_stage: dict[int, list[dict[str, Any]]] = {i: [] for i in range(6)}
     selected: dict[int, tuple[tuple[int, str, int], dict[str, Any]]] = {}
     case_company_ids: set[int] = set()
@@ -661,6 +699,7 @@ def pipeline(org_id: int) -> dict[str, Any]:
             stage = max(stage, 3)
         if case_id in auth_cases:
             stage = max(stage, 4)
+        card["is_exit"] = case_id in exit_cases
         # 持仓只覆盖已进入执行/管理阶段的案；同一标的的新研究案仍留在研究阶段。
         if symbol and symbol in position_symbols and stage >= 4:
             stage = 5
@@ -680,6 +719,42 @@ def pipeline(org_id: int) -> dict[str, Any]:
             case_company_ids.add(company_id)
     for _, card in selected.values():
         by_stage[int(card["stage_no"])].append(card)
+    # 持仓中的标的始终保留一张 05 投资管理卡；退出案同时保留在其当前流程阶段。
+    managed_company_ids = {
+        int(card["company_id"])
+        for card in by_stage[5]
+        if card.get("company_id")
+    }
+    for row in holding_rows:
+        company_id = int(row.get("company_id") or 0)
+        if not company_id or company_id in managed_company_ids:
+            continue
+        stage_def = _stage_def(5)
+        by_stage[5].append(
+            {
+                "key": f"holding:{row.get('symbol')}",
+                "case_id": None,
+                "company_id": company_id,
+                "symbol": row.get("symbol"),
+                "company_name": row.get("company_name"),
+                "industry": row.get("industry"),
+                "stage_no": 5,
+                "stage_key": stage_def["key"],
+                "stage_name": stage_def["name"],
+                "gate": stage_def["gate"],
+                "version_no": None,
+                "version_status": None,
+                "conclusion": None,
+                "proposal_status": None,
+                "owner_member_id": None,
+                "updated_at": _iso(row.get("as_of")),
+                "stale": False,
+                "is_exit": False,
+                "is_holding": True,
+            }
+        )
+        managed_company_ids.add(company_id)
+        case_company_ids.add(company_id)
     # stage 0：量化推送 + 观察池，排除已建研究案的公司。
     push = ideas_push(org_id, limit=12).get("items") or []
     watch = list_companies(org_id, pool_status="watch", limit=20).get("items") or []

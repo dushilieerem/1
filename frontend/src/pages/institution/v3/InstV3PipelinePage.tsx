@@ -21,10 +21,13 @@ function ProjectCard({
   const stageLine = item.stage_no === 0
     ? "当前阶段：机会发现 · 待进入价值分析"
     : `当前阶段：${item.stage_name}`;
+  const target = item.is_holding && item.symbol
+    ? `/inst/manage?key=${encodeURIComponent(`holding:${item.symbol}`)}`
+    : `/inst/pipeline/result?key=${encodeURIComponent(item.key)}`;
   return (
     <div className="v3-project">
-      <Link className="v3-project-link" to={`/inst/pipeline/result?key=${encodeURIComponent(item.key)}`}>
-        <span className="nm">{title}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
+      <Link className="v3-project-link" to={target}>
+        <span className="nm">{title}{item.is_exit ? <span className="v3-chip bad">退出案</span> : null}{item.is_holding ? <span className="v3-chip ok">持仓中</span> : null}<span className="v3-chip gold">{item.stage_name}</span>{item.stage_no > 0 ? <span className="v3-chip">版本 {item.version_no ?? "—"}</span> : null}</span>
         <span className="cd">{item.symbol} {item.industry ? `· ${item.industry}` : ""}</span>
         <span className="ms">{stageLine}</span>
         <span className="ft">
@@ -40,7 +43,7 @@ function ProjectCard({
             disabled={deleting}
             onClick={() => onDelete(item)}
           >
-            {deleting ? "删除中…" : "删除研究案"}
+            {deleting ? "删除中…" : item.is_exit ? "取消退出案" : "删除研究案"}
           </button>
         </div>
       ) : null}
@@ -71,7 +74,10 @@ export function InstV3PipelinePage() {
   async function handleDelete(item: V3PipelineItem) {
     if (!item.case_id) return;
     const label = item.company_name || item.symbol || "该研究案";
-    if (!window.confirm(`确定删除「${label}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`)) return;
+    const prompt = item.is_exit
+      ? `确定取消「${label}」的退出案？退出案与关联议案会关闭，持仓保留，历史审计保留。`
+      : `确定删除「${label}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`;
+    if (!window.confirm(prompt)) return;
     setDeleting(item.case_id);
     setActionError(null);
     try {

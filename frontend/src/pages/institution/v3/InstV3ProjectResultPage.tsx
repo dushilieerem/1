@@ -59,6 +59,7 @@ export function InstV3ProjectResultPage() {
 
   const stageNo = Number(data.stage_no || 0);
   const caseId = data.case ? Number((data.case as Record<string, unknown>).id) : null;
+  const isExitCase = Boolean((data.case as Record<string, unknown> | undefined)?.is_exit);
   const title = text(company.name || company.company_name, key);
   const symbol = text(company.symbol, "");
   const version = (data.latest_version || {}) as Record<string, unknown>;
@@ -97,7 +98,10 @@ export function InstV3ProjectResultPage() {
 
   async function handleDelete() {
     if (!caseId) return;
-    if (!window.confirm(`确定删除「${title}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`)) return;
+    const prompt = isExitCase
+      ? `确定取消「${title}」的退出案？退出案与关联议案会关闭，持仓保留，历史审计保留。`
+      : `确定删除「${title}」的研究案？删除后从流水线移除，历史审计与版本保留；有持仓、有效授权或在途议案时会被拒绝。`;
+    if (!window.confirm(prompt)) return;
     setDeleting(true);
     setActionError(null);
     try {
@@ -121,7 +125,7 @@ export function InstV3ProjectResultPage() {
           <span className="v3-chip info">版本 {(version as Record<string, unknown>).version_no as number ?? "—"}</span>
           {caseId && stageNo < 4 && session.role === "manager" ? (
             <button type="button" className="v3-btn ghost" disabled={deleting} onClick={handleDelete}>
-              <Trash2 className="h-3.5 w-3.5" />{deleting ? "删除中…" : "删除研究案"}
+              <Trash2 className="h-3.5 w-3.5" />{deleting ? "删除中…" : isExitCase ? "取消退出案" : "删除研究案"}
             </button>
           ) : null}
           <button type="button" className="v3-btn primary" disabled={opening} onClick={handleEnterStage}>

@@ -289,6 +289,86 @@ def delete_case(org_id: int, case_id: int, actor_member_id: int | None) -> dict[
         ).fetchone()
         if not company:
             raise LookupError("公司不存在")
+        # 退出案可以有持仓（它就是退出流程本身），删除语义是“取消退出”，
+        # 持仓与投后管理卡保留；已授权/已成交的退出案不能直接取消。
+        exit_case = conn.execute(
+            "SELECT * FROM inst_exit_case WHERE case_id=%s AND org_id=%s "
+            "ORDER BY id DESC LIMIT 1 FOR UPDATE",
+            (case_id, org_id),
+        ).fetchone()
+        if exit_case:
+            exit_case = dict(exit_case)
+        if exit_case and str(exit_case.get("status") or "") in {"draft", "submitted"}:
+            proposal_id = int(exit_case.get("proposal_id") or 0)
+            if proposal_id:
+                executed = conn.execute(
+                    """
+                    SELECT 1 FROM inst_authorization a
+                      JOIN inst_proposal_version v ON v.id=a.proposal_version_id
+                     WHERE v.proposal_id=%s AND a.status IN ('qualified','filled')
+                     LIMIT 1
+                    """,
+                    (proposal_id,),
+                ).fetchone()
+                order = conn.execute(
+                    """
+                    SELECT 1 FROM inst_order o
+                      JOIN inst_authorization a ON a.id=o.authorization_id
+                      JOIN inst_proposal_version v ON v.id=a.proposal_version_id
+                     WHERE v.proposal_id=%s LIMIT 1
+                    """,
+                    (proposal_id,),
+                ).fetchone()
+                if executed or order:
+                    raise ValueError("退出案已生成授权或成交，不能直接取消")
+                conn.execute(
+                    "UPDATE inst_proposal SET stale_at=COALESCE(stale_at,NOW()), updated_at=NOW() "
+                    "WHERE id=%s AND case_id=%s",
+                    (proposal_id, case_id),
+                )
+                conn.execute(
+                    "UPDATE inst_proposal_version SET status='revoked' WHERE proposal_id=%s",
+                    (proposal_id,),
+                )
+            conn.execute(
+                "UPDATE inst_exit_case SET status='cancelled' WHERE id=%s AND org_id=%s",
+                (int(exit_case["id"]), org_id),
+            )
+            conn.execute(
+                """
+                UPDATE inst_research_case
+                   SET stage='closed',
+                       stage_state='closed',
+                       terminal_reason='exit_cancelled',
+                       stage_gate=COALESCE(stage_gate, '{}'::jsonb)
+                                  || jsonb_build_object('exit_cancelled', true),
+                       updated_at=NOW()
+                 WHERE id=%s AND org_id=%s
+                """,
+                (case_id, org_id),
+            )
+            _audit(
+                conn,
+                org_id=org_id,
+                actor_member_id=actor_member_id,
+                action="monitor.exit.cancel",
+                object_type="inst_exit_case",
+                object_id=int(exit_case["id"]),
+                before={"status": exit_case.get("status"), "case_id": case_id},
+                after={
+                    "status": "cancelled",
+                    "case_id": case_id,
+                    "research_case": "closed",
+                    "proposal_id": proposal_id or None,
+                },
+            )
+            return {
+                "deleted": True,
+                "case_id": case_id,
+                "company_id": int(case["company_id"]),
+                "exit_case_id": int(exit_case["id"]),
+                "exit_cancelled": True,
+            }
         symbol = str(company["symbol"])
         position = conn.execute(
             """
@@ -437,6 +517,13 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
         case["industry"] = _mapped_industry(
             conn, str(case.get("symbol") or ""), case.get("industry")
         )
+        case["is_exit"] = bool(
+            conn.execute(
+                "SELECT 1 FROM inst_exit_case WHERE case_id=%s AND org_id=%s "
+                "AND status NOT IN ('closed','rejected','cancelled')",
+                (case_id, org_id),
+            ).fetchone()
+        )
         tasks = conn.execute(
             "SELECT * FROM inst_research_task WHERE case_id=%s ORDER BY id", (case_id,)
         ).fetchall()
@@ -455,7 +542,14 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
                 "SELECT * FROM inst_evidence WHERE case_id=%s ORDER BY id DESC LIMIT 200", (case_id,)
             ).fetchall()
         sessions = conn.execute(
-            "SELECT * FROM inst_debate_session WHERE case_id=%s ORDER BY id DESC", (case_id,)
+            """
+            SELECT s.*,
+                   (SELECT COUNT(*) FROM inst_debate_argument a
+                     WHERE a.session_id=s.id AND a.claim_id IS NOT NULL) AS claim_count
+              FROM inst_debate_session s
+             WHERE s.case_id=%s ORDER BY s.id DESC
+            """,
+            (case_id,),
         ).fetchall()
         proposals = conn.execute(
             "SELECT * FROM inst_proposal WHERE case_id=%s ORDER BY id DESC", (case_id,)

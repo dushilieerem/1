@@ -33,6 +33,8 @@ export type V3PipelineItem = {
   owner_member_id?: number | null;
   updated_at?: string | null;
   stale?: boolean;
+  is_exit?: boolean;
+  is_holding?: boolean;
   ref_price?: number | null;
 };
 

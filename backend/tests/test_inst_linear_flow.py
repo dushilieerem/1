@@ -173,6 +173,12 @@ def test_approve_and_execute_full_linear_flow(fixture) -> None:
             headers=_h(tokens["manager"]),
         )
     )
+    case_detail = _ok(
+        client.get(f"/api/inst/cases/{case_id}", headers=_h(tokens["manager"]))
+    )
+    debate_row = (case_detail.get("debates") or [{}])[0]
+    assert int(debate_row.get("research_version_id") or 0) == version_id
+    assert int(debate_row.get("claim_count") or 0) > 0
     checks = _ok(
         client.get(f"/api/inst/debates/{int(debate['id'])}", headers=_h(tokens["manager"]))
     ).get("evidence_checks") or []

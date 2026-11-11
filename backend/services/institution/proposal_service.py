@@ -1607,16 +1607,24 @@ def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str,
     expired = bool(valid_until and str(valid_until)[:10] < date.today().isoformat())
     low, high = snapshot.get("price_low"), snapshot.get("price_high")
     inverted = low is not None and high is not None and float(low) > float(high)
+    prev_open_row = conn.execute(
+        "SELECT MAX(trade_date) AS d FROM ref_trading_calendar "
+        "WHERE is_open=TRUE AND trade_date < CURRENT_DATE"
+    ).fetchone()
+    prev_open = (dict(prev_open_row) if prev_open_row else {}).get("d")
     bar = (
         conn.execute(
-            "SELECT close FROM md_daily_bar WHERE symbol=%s AND adjust='none' "
+            "SELECT trade_date, close FROM md_daily_bar WHERE symbol=%s AND adjust='none' "
             "ORDER BY trade_date DESC LIMIT 1",
             (symbol,),
         ).fetchone()
         if symbol
         else None
     )
-    last_px = float((dict(bar) if bar else {}).get("close") or 0) if bar else 0.0
+    bar_data = dict(bar) if bar else {}
+    last_px = float(bar_data.get("close") or 0)
+    last_date = bar_data.get("trade_date")
+    price_stale = bool(last_date and prev_open and last_date < prev_open)
     price_status = "pass"
     price_notes: list[str] = []
     if expired:
@@ -1627,12 +1635,26 @@ def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str,
         price_notes.append(f"价格区间倒挂（{low} - {high}）")
     elif is_buy and low is not None and high is not None and last_px > 0:
         if last_px < float(low) or last_px > float(high):
-            price_status = "block"
-            price_notes.append(f"现价 {last_px:g} 超出批准区间 {float(low):g}-{float(high):g}")
+            if price_stale:
+                price_status = "warn"
+                price_notes.append(
+                    f"最新收盘 {last_date} {last_px:g} 超出批准区间 "
+                    f"{float(low):g}-{float(high):g}，但行情未更新到 {prev_open}，需刷新后复核"
+                )
+            else:
+                price_status = "block"
+                price_notes.append(
+                    f"最新收盘 {last_date} {last_px:g} 超出批准区间 "
+                    f"{float(low):g}-{float(high):g}"
+                )
     if not price_notes:
         price_notes.append(
             f"有效期 {str(valid_until)[:10] or '未设置'}；"
-            + (f"现价 {last_px:g} / 区间 {low}-{high}" if last_px else "无最新行情")
+            + (
+                f"最新收盘 {last_date} {last_px:g} / 区间 {low}-{high}"
+                if last_px
+                else "无最新行情"
+            )
         )
     validity_check = {"status": price_status, "value": "；".join(price_notes)}
 
@@ -1652,20 +1674,32 @@ def _risk_checks(conn, org_id: int, proposal: dict[str, Any], version: dict[str,
     if status_row:
         listed = str(status_row.get("listed_status") or "")
         updown = str(status_row.get("up_down_status") or "")
-        if status_row.get("is_suspended") or updown == "停牌":
-            trading_status = "block"
-            trading_notes.append("停牌")
-        if status_row.get("is_st") or "ST" in listed:
-            trading_status = "block"
-            trading_notes.append(listed or "ST")
-        if listed in {"退市整理", "终止上市"}:
-            trading_status = "block"
-            trading_notes.append(listed)
-        if updown in {"涨停", "跌停"}:
-            trading_status = "block"
-            trading_notes.append(updown)
-        if not trading_notes:
-            trading_notes.append(f"{listed or '在市'} / {updown or '正常'}")
+        status_date = status_row.get("trade_date")
+        status_stale = bool(status_date and prev_open and status_date < prev_open)
+        if status_stale:
+            # 旧行情不能作为硬否决依据；否则会把几天前的涨停/停牌当成当前状态。
+            trading_status = "warn"
+            trading_notes.append(
+                f"交易状态截至 {status_date}，最新交易日应为 {prev_open}，"
+                f"无法确认当前涨跌停/停牌（记录值：{updown or listed or '未知'}）"
+            )
+        else:
+            if status_row.get("is_suspended") or updown == "停牌":
+                trading_status = "block"
+                trading_notes.append("停牌")
+            if status_row.get("is_st") or "ST" in listed:
+                trading_status = "block"
+                trading_notes.append(listed or "ST")
+            if listed in {"退市整理", "终止上市"}:
+                trading_status = "block"
+                trading_notes.append(listed)
+            if updown in {"涨停", "跌停"}:
+                trading_status = "block"
+                trading_notes.append(updown)
+            if not trading_notes:
+                trading_notes.append(
+                    f"{listed or '在市'} / {updown or '正常'}（{status_date}）"
+                )
     else:
         trading_status = "warn"
         trading_notes.append("无交易状态数据")

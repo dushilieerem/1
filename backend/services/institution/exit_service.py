@@ -19,8 +19,8 @@ from .stages import _record_transition, _set_case_stage
 
 
 _EXIT_TRANSITIONS: dict[str, set[str]] = {
-    "draft": {"submitted"},
-    "submitted": {"approved", "rejected", "closed"},
+    "draft": {"submitted", "cancelled"},
+    "submitted": {"approved", "rejected", "closed", "cancelled"},
     "approved": {"rejected", "closed"},
     "rejected": set(),
     "closed": set(),

@@ -25,6 +25,7 @@ class IsolatedHandoffPostgresTests(IsolatedAssetPostgresTests):
   for target in [repo,ledger,f0,f0_agent,agent_jobs]:
    guard=patch.object(target,'get_conn',self.connection);guard.start();self.addCleanup(guard.stop)
   guard=patch('services.core.db.get_conn',self.connection);guard.start();self.addCleanup(guard.stop)
+  guard=patch('services.factor.detect_store.get_project',side_effect=lambda uid,pid:{'project':self.project()});guard.start();self.addCleanup(guard.stop)
   with self.connection() as c:
    c.execute('TRUNCATE quant_factor_agent_jobs,quant_factor_iterations')
    c.execute("UPDATE quant_factor_candidates SET archive='{}',evidence=jsonb_set(evidence,'{branch_id}','\"branch\"')")
@@ -33,6 +34,16 @@ class IsolatedHandoffPostgresTests(IsolatedAssetPostgresTests):
    c.execute('UPDATE detect_projects SET config=%s',(Jsonb(cfg),))
  def project(self):
   with self.connection() as c:return _row_project(c.execute('SELECT * FROM detect_projects').fetchone())
+ def _restore_asset_archive(self):
+  with self.connection() as c:c.execute("UPDATE quant_factor_candidates SET archive=%s::jsonb WHERE id='candidate'",(Jsonb(self.row['archive']),))
+ def test_parallel_approval_is_idempotent_in_real_transactions(self):
+  self._restore_asset_archive();return super().test_parallel_approval_is_idempotent_in_real_transactions()
+ def test_write_failure_rolls_back_approval_and_asset_and_event(self):
+  self._restore_asset_archive();return super().test_write_failure_rolls_back_approval_and_asset_and_event()
+ def test_other_computed_candidate_without_ledger_blocks_real_approval(self):
+  self._restore_asset_archive();return super().test_other_computed_candidate_without_ledger_blocks_real_approval()
+ def test_start_and_approval_use_compatible_lock_order(self):
+  self._restore_asset_archive();return super().test_start_and_approval_use_compatible_lock_order()
  def test_takeover_forks_exact_frozen_source_and_preserves_old_evidence_and_k(self):
   before=copy.deepcopy(self.row)
   with patch.object(ledger,'get_conn',self.connection):out=ledger.takeover_branch(self.uid,self.org,'topic','branch','candidate',True)
@@ -56,10 +67,12 @@ class IsolatedHandoffPostgresTests(IsolatedAssetPostgresTests):
  def test_handoff_commit_then_lost_response_replays_same_queue_and_budget(self):
   with patch.object(ledger,'get_conn',self.connection):branch=ledger.takeover_branch(self.uid,self.org,'topic','branch','candidate',True)
   project=self.project();handoff={'acknowledged':True,'control_epoch':project['config']['v5ControlEpoch'],'snapshot_hash':digest(snapshot(project))}
-  with patch.object(f0,'get_conn',self.connection),patch.object(f0.ledger,'_trials',return_value=[{'trial_no':1,'holding_period':1,'kind':'research','outcome':'passed','returned_metrics':True}]),patch.object(f0.service,'control_status',return_value={'paused':False}),patch.object(f0,'published_view',return_value={'view_id':'view'}),patch('services.quant_factor.resources.require_config'),patch.object(f0.POOL,'submit') as schedule:
+  with patch.object(f0,'get_conn',self.connection),patch.object(f0.ledger,'_trials',return_value=[{'trial_no':1,'holding_period':1,'kind':'research','outcome':'passed','returned_metrics':True}]),patch.object(f0.service,'control_status',return_value={'paused':False}),patch.object(f0,'published_view',return_value={'view_id':'view'}),patch('services.quant_factor.locked_data.for_topic',return_value={'view_id':'view','view_manifest_sha256':'manifest','daily_release':'release','daily_dataset_sha256':'dataset'}),patch('services.quant_factor.resources.require_config'),patch.object(f0.POOL,'submit') as schedule:
    first=f0.start(self.uid,self.org,'topic',branch['id'],'lost-response',handoff);again=f0.start(self.uid,self.org,'topic',branch['id'],'lost-response',handoff)
   self.assertEqual(first['id'],again['id']);self.assertEqual(schedule.call_count,1)
-  with self.connection() as c:self.assertEqual(c.execute('SELECT COUNT(*) n FROM quant_factor_trials').fetchone()['n'],1)
+  with self.connection() as c:
+   self.assertEqual(c.execute('SELECT COUNT(*) n FROM quant_factor_trials').fetchone()['n'],1)
+   self.assertEqual(c.execute('SELECT COUNT(*) n FROM quant_factor_f0_runs').fetchone()['n'],1)
  def test_handoff_insert_failure_rolls_back_control_epoch_and_queue(self):
   with patch.object(ledger,'get_conn',self.connection):branch=ledger.takeover_branch(self.uid,self.org,'topic','branch','candidate',True)
   project=self.project();epoch=project['config']['v5ControlEpoch'];handoff={'acknowledged':True,'control_epoch':epoch,'snapshot_hash':digest(snapshot(project))}

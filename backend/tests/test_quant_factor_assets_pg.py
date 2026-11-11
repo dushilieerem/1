@@ -103,7 +103,7 @@ class IsolatedAssetPostgresTests(unittest.TestCase):
             try:return self.approve()
             except WorkflowError as exc:self.assertIn('在途',str(exc));return {'blocked':True}
         began=time.monotonic()
-        with patch.object(assets,'get_conn',self.connection),patch.object(f0,'get_conn',self.connection),patch.object(repo,'get_conn',self.connection),patch.object(service,'control_status',return_value={'paused':False}),patch.object(f0,'published_view',return_value={'view_id':'view'}),patch('services.factor.detect_store.get_project',return_value={'project':self.facts['project']}),patch('services.quant_factor.resources.require_config',return_value={'allowed':True}),patch.object(f0.POOL,'submit'),ThreadPoolExecutor(max_workers=2) as pool:
+        with patch.object(assets,'get_conn',self.connection),patch.object(f0,'get_conn',self.connection),patch.object(repo,'get_conn',self.connection),patch.object(service,'control_status',return_value={'paused':False}),patch.object(f0,'published_view',return_value={'view_id':'view'}),patch('services.factor.detect_store.get_project',return_value={'project':self.facts['project']}),patch('services.quant_factor.locked_data.for_topic',return_value={'view_id':'view','view_manifest_sha256':'manifest','daily_release':'release','daily_dataset_sha256':'dataset'}),patch('services.quant_factor.resources.require_config',return_value={'allowed':True}),patch.object(f0.POOL,'submit'),ThreadPoolExecutor(max_workers=2) as pool:
             futures=[pool.submit(start),pool.submit(approve)];results=[f.result(timeout=6) for f in futures]
         self.assertLess(time.monotonic()-began,6);self.assertEqual(results[0]['status'],'queued')
     def test_computed_unrecorded_candidate_reserves_budget_until_trial_exists(self):

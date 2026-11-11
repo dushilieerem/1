@@ -15,7 +15,7 @@ from services.institution.prompts import DEBATE_PROMPT
 from services.marketdata import store as md
 
 from . import repo
-from .common import _hash, _iso, _j, _row_dict
+from .common import _hash, _iso, _j, _row_dict, humanize_text
 from .research_service import _ensure_version_hash
 from .guards import _audit, _member, _require_role
 
@@ -305,7 +305,23 @@ def _ai_debate(company, evidence, valuation, ev_ids) -> dict[str, Any] | None:
 
 
 def get_debate(org_id: int, session_id: int) -> dict[str, Any] | None:
-    return repo.debate(OrgScope(org_id), session_id)
+    data = repo.debate(OrgScope(org_id), session_id)
+    if not data:
+        return data
+    for arg in data.get("arguments") or []:
+        for key in ("claim", "falsifier"):
+            if isinstance(arg.get(key), str):
+                arg[key] = humanize_text(arg[key])
+    factpack = data.get("factpack")
+    chief = factpack.get("chief_review") if isinstance(factpack, dict) else None
+    if isinstance(chief, dict):
+        for key in ("chair_call", "consensus", "what_would_change"):
+            if isinstance(chief.get(key), str):
+                chief[key] = humanize_text(chief[key])
+        for key in ("unresolved", "accepted_claims", "rejected_claims"):
+            if isinstance(chief.get(key), list):
+                chief[key] = [humanize_text(x) for x in chief[key] if str(x).strip()]
+    return data
 
 __all__ = [
     "_ai_debate",

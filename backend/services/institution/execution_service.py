@@ -270,8 +270,15 @@ def approve_and_execute(
     }
 
 
-def list_authorizations(org_id: int, *, status: str | None = None) -> list[dict[str, Any]]:
-    return repo.authorizations(OrgScope(org_id), status=status)
+def list_authorizations(
+    org_id: int, *, status: str | None = None, viewer_role: str | None = None
+) -> list[dict[str, Any]]:
+    rows = repo.authorizations(OrgScope(org_id), status=status)
+    if viewer_role == "execution":
+        return rows
+    # 非交易执行角色只看授权进度，不返回价格区间、账户、有效期等执行要素。
+    hidden = {"snapshot", "version_snapshot"}
+    return [{key: value for key, value in row.items() if key not in hidden} for row in rows]
 
 
 def execute_authorization(
@@ -507,11 +514,18 @@ def _execution_context(conn, org_id: int, authorization_id: int):
     return auth, (auth.get("snapshot") or {}), portfolio, existing, float(pos["qty"]) if pos else 0.0
 
 
-def precheck_execution(org_id: int, authorization_id: int) -> dict[str, Any]:
-    """执行前校验：授权、有效期、价格区间、现金/持仓、停牌与 ST。"""
+def precheck_execution(
+    org_id: int, authorization_id: int, *, actor_member_id: int | None = None
+) -> dict[str, Any]:
+    """执行前校验：授权、有效期、价格区间、现金/持仓、停牌与 ST。
+
+    现金、持仓、可执行数量属于交易执行要素，仅交易执行角色可读。
+    """
     from services.institution.execution_guard import evaluate
 
     with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "execution")
         auth, snapshot, portfolio, existing, pos_qty = _execution_context(
             conn, org_id, authorization_id
         )
@@ -637,6 +651,8 @@ def reconcile_authorization(
 ) -> dict[str, Any]:
     """成交对账：订单、成交、持仓快照与组合现金的一致性检查。"""
     with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "execution")
         auth, _snapshot, portfolio, order, pos_qty = _execution_context(
             conn, org_id, authorization_id
         )

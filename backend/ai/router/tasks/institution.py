@@ -14,8 +14,8 @@ from typing import Any
 from ai.errors import AiBadOutput
 from ai.router.specs import TaskRequest, TaskSpec, register
 
-PROMPT_VERSION = "inst-v3.6"
-DIM_PROMPT_VERSION = "inst-dim-v3.6"
+PROMPT_VERSION = "inst-v3.7"
+DIM_PROMPT_VERSION = "inst-dim-v3.7"
 
 
 

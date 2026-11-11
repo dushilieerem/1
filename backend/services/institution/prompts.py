@@ -716,6 +716,7 @@ _A15 = """# 角色
 - support_proposal：方向明确，关键假设有可核验证据（A 级，或至少 2 条独立 B 级）；未决项不改变方向，写入 unresolved 与 what_would_change，随议案带入审批。
 - supplement_research：关键假设缺证据或证据互相矛盾，导致无法给出可执行方向/价格带。
 - 仅存在未决项不自动判 supplement_research。
+- chair_call / consensus / unresolved 用直白中文：不写“可见度、可核验、补研、高分位、口径、价格带”，分别写“收入可预见性、能否核实、补齐资料、历史较高位置、计算方式、买入价格区间”。
 
 # 禁区
 不下买入/不买结论（那是议案）；不改写双方 claim 原文（引用标 B1/B2、S1/S2）；不评价公司质地；

@@ -282,7 +282,17 @@ def _model_proposal(uid: int, org: int):
         meta = dataset(uid, org, 'daily_bars', view['view_id'])
         available = sorted({x['name'] for x in meta.get('fields', []) if isinstance(x, dict) and isinstance(x.get('name'), str)} & FIELDS)
         refs = catalogue(uid, org)
-        library = planner_context(refs)
+        full_library = planner_context(refs)
+        # The full 333-entry catalogue exceeds the model input bound; send a
+        # bounded excerpt plus the stable count/hash. The planner only needs
+        # enough named definitions to avoid trivial duplicates.
+        library = {k: full_library.get(k) for k in ('scope', 'count', 'reference_hash', 'limitation', 'catalogue_fetched_at') if k in full_library}
+        library['references'] = [
+            {k: (str(item[k])[:240] if isinstance(item.get(k), str) else item.get(k))
+             for k in ('factor_name', 'library_name', 'description', 'category', 'source_id') if k in item}
+            for item in (full_library.get('references') or [])[:40]
+        ]
+        library['note'] = '因子库为有界节选（前40项）；完整数量与指纹见 count/reference_hash。'
         titles = [p['name'] for p in list_projects(uid).get('projects', []) if not p.get('sample')][:30]
         context = {
             'instruction_from_user': '上一轮 Agent 研究已经结束。请基于真实研发证据，自主提出下一项值得验证的量价因子研究；不要重复上一项，也不要只改名、反号、缩放或改常见窗口。',

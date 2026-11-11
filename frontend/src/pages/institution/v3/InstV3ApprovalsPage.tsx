@@ -4,6 +4,7 @@ import { ArrowRight, Check, ShieldAlert, X } from "lucide-react";
 import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtPct } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
+import InstV3AgentProgress from "./InstV3AgentProgress";
 
 type StageSummary = {
   status: string;
@@ -593,6 +594,7 @@ export function InstV3ApprovalsPage() {
                 </div>
               ) : <div className="v3-empty" style={{ padding: "8px 4px" }}>还没有 Agent 建议。生成后仅作参考，不改变审批状态。</div>}
               {memoError ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{memoError}</div> : null}
+              <InstV3AgentProgress active={memoBusy} title="AI 正在生成审批建议" detail="结合研究定稿、辩论与风险检查整理建议，完成后自动刷新。" />
               <button className="v3-btn ghost" style={{ width: "100%", marginTop: 8 }} disabled={memoBusy || !detail} onClick={() => generateMemo(!!memo)}>
                 {memoBusy ? "生成中…" : memo ? "重新生成建议" : "生成审批建议"}
               </button>

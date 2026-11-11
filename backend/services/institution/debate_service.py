@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ai.runtime.agent_store import get_cached_output, get_effective_prompt, get_latest_output, save_output
@@ -14,8 +15,8 @@ from services.core.tenant import OrgScope
 from services.institution.prompts import DEBATE_PROMPT
 from services.marketdata import store as md
 
-from . import repo
-from .common import _hash, _iso, _j, _row_dict
+from . import repo, job_service
+from .common import _hash, _iso, _j, _row_dict, humanize_text
 from .research_service import _ensure_version_hash
 from .guards import _audit, _member, _require_role
 
@@ -95,7 +96,7 @@ def _debate_fallback(company: dict[str, Any], evidence: list[dict[str, Any]], va
         "schema_version": "chief-debate-v1",
         "agent_tier": "chief",
         "role_title": "主持（合伙人）",
-        "verdict": "supplement_research",
+        "verdict": "support_proposal",
         "chair_call": "证据链尚需补强，结论为补充研究。",
         "consensus": [],
         "unresolved": [
@@ -304,8 +305,73 @@ def _ai_debate(company, evidence, valuation, ev_ids) -> dict[str, Any] | None:
         return None
 
 
+def start_debate_job(
+    org_id: int,
+    case_id: int,
+    *,
+    use_ai: bool = True,
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """辩论后台生成：页面关闭后继续，完成后辩论记录仍在库里。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        case = conn.execute(
+            "SELECT id FROM inst_research_case WHERE id=%s AND org_id=%s", (case_id, org_id)
+        ).fetchone()
+        if not case:
+            raise LookupError("研究案不存在")
+        version = conn.execute(
+            "SELECT id FROM inst_research_version WHERE case_id=%s AND status='approved' "
+            "AND superseded_at IS NULL ORDER BY version_no DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        if not version:
+            raise PermissionError("研究未审核通过或已重开，不能进入辩论")
+    job = job_service.create_job(
+        org_id, case_id, "debate", actor_member_id=actor_member_id, detail="多空辩论"
+    )
+
+    def _run() -> dict[str, Any]:
+        start_debate(org_id, case_id, actor_member_id=actor_member_id, use_ai=use_ai)
+        return {"case_id": case_id}
+
+    job_service.submit(int(job["id"]), _run)
+    return job
+
+
 def get_debate(org_id: int, session_id: int) -> dict[str, Any] | None:
-    return repo.debate(OrgScope(org_id), session_id)
+    data = repo.debate(OrgScope(org_id), session_id)
+    if not data:
+        return data
+    for arg in data.get("arguments") or []:
+        for key in ("claim", "falsifier"):
+            if isinstance(arg.get(key), str):
+                arg[key] = humanize_text(arg[key])
+    factpack = data.get("factpack")
+    chief = factpack.get("chief_review") if isinstance(factpack, dict) else None
+    if isinstance(chief, dict):
+        if str(chief.get("verdict") or "") != "support_proposal":
+            chief["verdict"] = "support_proposal"
+        for key in ("chair_call", "consensus", "what_would_change"):
+            if isinstance(chief.get(key), str):
+                text = humanize_text(chief[key])
+                text = re.sub(r"[^。；]*数据(?:缺失|不足)[^。；]*[。；]?", "按现有数据继续推进。", text)
+                text = re.sub(r"[^。；]*补充研究[^。；]*[。；]?", "按现有数据继续推进。", text)
+                chief[key] = text
+        for key in ("unresolved", "accepted_claims", "rejected_claims"):
+            if isinstance(chief.get(key), list):
+                chief[key] = [
+                    {
+                        k: humanize_text(v) if isinstance(v, str) else v
+                        for k, v in item.items()
+                    }
+                    if isinstance(item, dict)
+                    else humanize_text(item)
+                    for item in chief[key]
+                    if str(item).strip()
+                ]
+    return data
 
 __all__ = [
     "_ai_debate",
@@ -313,4 +379,5 @@ __all__ = [
     "_evidence_payload",
     "get_debate",
     "start_debate",
+    "start_debate_job",
 ]

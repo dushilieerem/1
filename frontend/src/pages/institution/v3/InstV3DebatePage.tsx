@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Play, Send } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
+import { latestAiJob, waitAiJob } from "@/lib/instV3Api";
 import { instApi } from "@/lib/instApi";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
+import InstV3AgentProgress from "./InstV3AgentProgress";
 
 type Arg = {
   id: number;
@@ -121,7 +123,7 @@ type CaseItem = {
 };
 
 const STEPS = [
-  { name: "多空立论", sub: "多空论点 · 带证伪", agent: "多头 / 空头研究员", duty: "多头只找买入理由，空头只打最弱假设；每条带证据与证伪条件。" },
+  { name: "多空立论", sub: "多空论点", agent: "多头 / 空头研究员", duty: "多头只找买入理由，空头只打最弱假设；每条带证据。" },
   { name: "交叉质询", sub: "主持逼分歧 · 证据核验", agent: "研究经理 / 主持", duty: "把双方 claim 逐条对齐，标出已回应/未回应/证据不足，不投票、不取平均。" },
   { name: "估值复核", sub: "确定性 DCF · 非 AI", agent: "估值计算服务", duty: "DCF、敏感性、反向 DCF 只算数；AI 只解释假设，不生成数字。" },
   { name: "议案", sub: "投资意见 · 锁定议案", agent: "交易员 + 投资经理", duty: "交易员生成骨架，投资经理补意见、仓位、价格带、有效期与监控，锁定后提交三关。" },
@@ -283,8 +285,14 @@ export function InstV3DebatePage() {
     try {
       const d = await instApi<CaseItem>(`/cases/${id}`);
       if (d.debates?.[0]?.status === "completed") return;
+      const running = await latestAiJob(id, "debate");
       setBusy("auto-debate");
-      await instApi(`/cases/${id}/debate`, { method: "POST", body: { use_ai: true } });
+      if (running?.status === "running") {
+        await waitAiJob(id, "debate");
+      } else {
+        await instApi(`/cases/${id}/debate`, { method: "POST", body: { use_ai: true, background: true } });
+        await waitAiJob(id, "debate");
+      }
       await loadDetail(id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -293,6 +301,29 @@ export function InstV3DebatePage() {
       autoDebateRef.current = null;
     }
   };
+
+  useEffect(() => {
+    if (!detail?.id) return;
+    const id = detail.id;
+    let alive = true;
+    (async () => {
+      try {
+        const job = await latestAiJob(id, "debate");
+        if (!alive || !job || job.status !== "running") return;
+        setBusy("auto-debate");
+        await waitAiJob(id, "debate");
+        if (alive) {
+          await loadDetail(id);
+          setStep(1);
+        }
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setBusy(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [detail?.id]);
 
   useEffect(() => {
     let alive = true;
@@ -370,7 +401,8 @@ export function InstV3DebatePage() {
     setBusy("debate");
     setError(null);
     try {
-      await instApi(`/cases/${detail.id}/debate`, { method: "POST", body: { use_ai: false } });
+      await instApi(`/cases/${detail.id}/debate`, { method: "POST", body: { use_ai: true, background: true } });
+      await waitAiJob(detail.id, "debate");
       await loadDetail(detail.id);
       setStep(1);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -389,11 +421,35 @@ export function InstV3DebatePage() {
     return () => { alive = false; };
   }, [detail?.id, step]);
 
+  useEffect(() => {
+    const f = advice?.framework;
+    if (!f) return;
+    if (f.price_low != null) setPriceLow((v) => v || String(f.price_low));
+    if (f.price_high != null) setPriceHigh((v) => v || String(f.price_high));
+    if (f.valid_until) setValidUntil((v) => v || String(f.valid_until));
+    if (f.funding_source) setFunding((v) => v || String(f.funding_source));
+    if (f.investment_opinion) setOpinion((v) => v || String(f.investment_opinion));
+  }, [advice]);
+
+  const proposalMissing = useMemo(() => {
+    const out: string[] = [];
+    if (!direction) out.push("方向");
+    if (direction === "buy" && !(Number(target) > 0)) out.push("目标仓位");
+    if (!priceLow.trim()) out.push("价格下限");
+    if (!priceHigh.trim()) out.push("价格上限");
+    if (!funding.trim()) out.push("资金来源");
+    if (!validUntil.trim()) out.push("有效期");
+    if (!monitoring.trim()) out.push("监控条件");
+    if (!opinion.trim()) out.push("投资意见");
+    return out;
+  }, [direction, target, priceLow, priceHigh, funding, validUntil, monitoring, opinion]);
+
   const adoptAdvice = () => {
     const f = advice?.framework;
     if (!f) return;
-    if (f.direction) setDirection(f.direction);
-    if (f.target_weight != null) setTarget(String(f.target_weight));
+    const nextDirection = String(f.direction || "");
+    if (["buy", "sell", "exit"].includes(nextDirection)) setDirection(nextDirection);
+    if (f.target_weight != null && Number(f.target_weight) > 0) setTarget(String(f.target_weight));
     setPriceLow(f.price_low != null ? String(f.price_low) : "");
     setPriceHigh(f.price_high != null ? String(f.price_high) : "");
     if (f.funding_source) setFunding(f.funding_source);
@@ -470,9 +526,14 @@ export function InstV3DebatePage() {
           {step === 0 ? (
             <section className="v3-card">
               <div className="v3-card-head">
-                <div><h2>多空立论</h2><p>多头 / 空头逐条带证据 ID 与证伪条件；空头不重复行业空间。</p></div>
-                {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <span className="v3-chip ok">已完成</span>}
+                <div><h2>多空立论</h2><p>多头 / 空头逐条带证据；空头不重复行业空间。</p></div>
+                {!debate ? <button className="v3-btn primary" disabled={!!busy} onClick={startDebate}><Play className="h-3.5 w-3.5" />{busy === "debate" ? "辩论生成中…" : "开始多空辩论"}</button> : <div className="flex items-center gap-2"><span className="v3-chip ok">已完成</span><button className="v3-btn ghost" disabled={!!busy} onClick={startDebate}>{busy === "debate" ? "生成中…" : "重新生成辩论"}</button></div>}
               </div>
+              <InstV3AgentProgress
+                active={busy === "debate" || busy === "auto-debate"}
+                title="多头 / 空头 Agent 正在生成论点"
+                detail="多头找买入理由，空头打最弱假设；每条论点完成前会持续显示进度。"
+              />
               {debate ? (
                 <div>
                   <div className="v3-side-switch">
@@ -490,20 +551,23 @@ export function InstV3DebatePage() {
                       <p className="claim-t" title={a.claim}>{claimHeadline(a.claim)}</p>
                       <div className="claim-meta">
                         <span className="v3-chip">证据 {a.evidence_ids?.length || 0} 条</span>
-                        <span className="v3-chip">置信 {a.confidence?.toFixed?.(2) ?? "—"}</span>
                       </div>
-                      {a.falsifier ? <div className="fs">证伪：{a.falsifier}</div> : null}
                     </div>
                   ))}
                   {!activeSide.length ? <div className="v3-empty" style={{ marginTop: 8 }}>暂无{sideName}论点</div> : null}
                 </div>
-              ) : <div className="v3-empty">还没有辩论记录。点击右上角开始；结论不投票，只保留分歧。</div>}
+              ) : busy === "debate" ? null : <div className="v3-empty">还没有辩论记录。点击右上角开始；结论不投票，只保留分歧。</div>}
             </section>
           ) : null}
 
           {step === 1 ? (
             <section className="v3-card">
               <div className="v3-card-head"><div><h2>交叉质询</h2><p>主持把双方 claim 逐条对齐，标出已回应 / 未回应 / 证据不足。</p></div><span className="v3-chip">{debate?.evidence_checks?.length || 0} 条核验</span></div>
+              <InstV3AgentProgress
+                active={busy === "debate" || busy === "auto-debate"}
+                title="主持 Agent 正在交叉质询"
+                detail="逐条核对多空论点与证据；完成后自动刷新质询记录。"
+              />
               {debate ? (
                 <>
                   {chiefReview ? (
@@ -512,7 +576,6 @@ export function InstV3DebatePage() {
                         <span className={`v3-chip ${chiefReview.verdict === "support_proposal" ? "ok" : "warn"}`}>
                           {chiefReview.verdict === "support_proposal" ? "支持进入议案" : "补充研究"}
                         </span>
-                        {chiefReview.chief_confidence != null ? <span className="v3-chip">置信 {Number(chiefReview.chief_confidence).toFixed(2)}</span> : null}
                         {chiefReview.chief_fields_fallback ? <span className="v3-chip warn">服务端补齐</span> : null}
                       </div>
                       <p style={{ marginTop: 8, lineHeight: 1.75, color: "#2b2533", fontWeight: 600 }}>
@@ -540,13 +603,16 @@ export function InstV3DebatePage() {
                       {(chiefReview.accepted_claims?.length || chiefReview.rejected_claims?.length) ? (
                         <div style={{ marginTop: 8 }}>
                           <div className="v3-eyebrow">采纳与不采纳</div>
-                          {[...(chiefReview.accepted_claims || []), ...(chiefReview.rejected_claims || [])].map((c, i) => (
-                            <div className="v3-claim" key={`${c.claim_id || c.claim || "claim"}-${i}`}>
-                              <div className="who">{c.side === "bull" ? "多方" : c.side === "bear" ? "空方" : c.side || "—"} {c.claim_id || ""}</div>
-                              {c.claim ? <p>{c.claim}</p> : null}
-                              {c.reason ? <div className="fs">{c.reason}</div> : null}
-                            </div>
-                          ))}
+                          {[...(chiefReview.accepted_claims || []), ...(chiefReview.rejected_claims || [])].map((c, i) => {
+                            const claimText = c.claim || (debate?.arguments || []).find((a) => a.claim_id === c.claim_id)?.claim || "";
+                            return (
+                              <div className="v3-claim" key={`${c.claim_id || c.claim || "claim"}-${i}`}>
+                                <div className="who">{c.side === "bull" ? "多方" : c.side === "bear" ? "空方" : c.side || "—"} {c.claim_id || ""}</div>
+                                {claimText ? <p>{claimText}</p> : null}
+                                {c.reason ? <div className="fs">{c.reason}</div> : null}
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : null}
                       {chiefReview.what_would_change?.length ? (
@@ -634,7 +700,7 @@ export function InstV3DebatePage() {
             <section className="v3-card">
               <div className="v3-card-head"><div><h2>议案 · 锁定</h2><p>补齐投资意见、仓位、价格带、资金、有效期与监控条件；锁定后审批角色只读。</p></div>{latestProposal ? <span className="v3-chip ok">{latestProposal.status}</span> : <span className="v3-chip warn">待创建</span>}</div>
               {adviceLoading ? (
-                <div className="v3-empty">交易员 Agent 正在汇总六维评分与辩论结论…</div>
+                <InstV3AgentProgress active title="交易员 Agent 正在生成议案建议" detail="汇总六维评分、辩论结论与仓位约束，完成后自动填入下方表单。" />
               ) : adviceError ? (
                 <div className="v3-note">议案建议加载失败：{adviceError}</div>
               ) : advice ? (
@@ -677,7 +743,12 @@ export function InstV3DebatePage() {
                     </dl>
                     <div className="v3-note" style={{ marginTop: 8 }}>投资意见：{advice.framework?.investment_opinion || "—"}</div>
                   </div>
-                  <button className="v3-btn primary" style={{ marginTop: 8 }} disabled={advice.recommendation === "avoid" || advice.recommendation === "hold"} onClick={adoptAdvice}>
+                  {advice.recommendation === "avoid" || advice.recommendation === "hold" ? (
+                    <div className="v3-note" style={{ marginTop: 8 }}>
+                      主持裁决为“补充研究”，AI 建议暂不买入。采纳只填入价格带、监控条件和投资意见；方向与仓位由投资经理自行判断后提交。
+                    </div>
+                  ) : null}
+                  <button className="v3-btn primary" style={{ marginTop: 8 }} disabled={!advice} onClick={adoptAdvice}>
                     采用建议填入议案
                   </button>
                 </div>
@@ -699,8 +770,9 @@ export function InstV3DebatePage() {
                     <div className="v3-field span-2"><label>投资意见</label><textarea data-testid="inst-investment-opinion" value={opinion} onChange={(e) => setOpinion(e.target.value)} placeholder="写清为什么投、关键假设、最担心什么、什么情况下改变判断。" /></div>
                     <div className="v3-field span-2"><label>监控 / 退出条件</label><textarea value={monitoring} onChange={(e) => setMonitoring(e.target.value)} /></div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-                    <button data-testid="inst-proposal-create" className="v3-btn primary" disabled={!!busy || !opinion.trim()} onClick={createProposal}><Send className="h-3.5 w-3.5" />{busy === "proposal" ? "锁定中…" : "锁定议案并提交审批"}</button>
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 8 }}>
+                    {proposalMissing.length ? <span className="v3-note" style={{ margin: 0 }}>还需填写：{proposalMissing.join("、")}</span> : null}
+                    <button data-testid="inst-proposal-create" className="v3-btn primary" disabled={!!busy || proposalMissing.length > 0} onClick={createProposal}><Send className="h-3.5 w-3.5" />{busy === "proposal" ? "锁定中…" : "锁定议案并提交审批"}</button>
                   </div>
                 </>
               )}

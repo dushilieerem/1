@@ -4,8 +4,9 @@ import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { dedupeBy, latestByKey } from "@/lib/instDedupe";
 import { useInstSession } from "@/components/institution/instSessionContext";
 import { instApi } from "@/lib/instApi";
-import { fetchV3Pipeline } from "@/lib/instV3Api";
+import { fetchV3Pipeline, latestAiJob, waitAiJob } from "@/lib/instV3Api";
 import { InstV3AgentRail, type AgentPanelDef } from "@/components/institution/v3/InstV3AgentRail";
+import InstV3AgentProgress from "./InstV3AgentProgress";
 
 type Dim = {
   key: string;
@@ -123,6 +124,7 @@ type CaseItem = {
   updated_at?: string | null;
   overall_score?: number | null;
   versions?: Version[];
+  tasks?: Array<{ task_key: string; title?: string; status?: string; progress?: number }>;
 };
 
 function dimScore(dim?: Dim | null): number | null {
@@ -178,7 +180,7 @@ const STEPS = [
   { name: "行业分析", sub: "独立底图 · 不占六维", agent: "行业研究员", duty: "只回答行业本身：空间、增速、格局、产业链与关键变量，为六维提供底图。" },
   { name: "六维结论", sub: "六维研究员并行", agent: "六维研究员", duty: "产业 / 商业模式 / 护城河 / 财务 / 治理 / 估值各管一维；每条结论带证据与证伪。" },
   { name: "一页纸", sub: "研究经理合成 · 三问", agent: "研究经理", duty: "只做裁决：该不该投、什么价投、最可能错在哪；保留矛盾，不做平均数。" },
-  { name: "研究定稿", sub: "归档版本 · 移交辩论", agent: "研究经理 + 归档", duty: "确认六维齐全、低置信项已处理、总体得分与证据包；锁定研究定稿，移交辩论。" },
+  { name: "研究定稿", sub: "归档版本 · 移交辩论", agent: "研究经理 + 归档", duty: "确认六维齐全、总体得分与证据包；锁定研究定稿，移交辩论。" },
 ];
 
 function currentCaseId(key: string | null): number | null {
@@ -200,8 +202,6 @@ export function InstV3ResearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [gate, setGate] = useState<ResearchGate | null>(null);
   const [gateLoading, setGateLoading] = useState(false);
-  const [reviewNote, setReviewNote] = useState("");
-  const [allowGaps, setAllowGaps] = useState(false);
 
   const detailSeq = useRef(0);
   const autoRunRef = useRef<string | null>(null);
@@ -278,19 +278,23 @@ export function InstV3ResearchPage() {
       const v = d.versions?.[0];
       const hasDims = Boolean(v?.six_dim?.length);
       const hasIndustry = Boolean(v?.industry_analysis?.summary);
-      if (!hasDims || !hasIndustry) {
+      const running = await latestAiJob(id, "research");
+      if (running?.status === "running") {
         setBusy("auto-research");
-        await instApi(`/cases/${id}/research`, { method: "POST", body: { mode: "full" } });
+        await waitAiJob(id, "research");
+        await loadDetail(id);
+      } else if (!hasDims || !hasIndustry) {
+        setBusy("auto-research");
+        await instApi(`/cases/${id}/research`, { method: "POST", body: { mode: "full", background: true } });
+        await waitAiJob(id, "research");
         await loadDetail(id);
       }
       const cached = await loadMemo(id);
       if (!cached) {
         setBusy("auto-memo");
-        const res = await instApi<{ memo: Memo }>(`/cases/${id}/ai/memo`, {
-          method: "POST",
-          body: { refresh: false },
-        });
-        setMemo(res.memo);
+        await instApi(`/cases/${id}/ai/memo`, { method: "POST", body: { refresh: false, background: true } });
+        await waitAiJob(id, "memo");
+        setMemo(await loadMemo(id));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -330,10 +334,6 @@ export function InstV3ResearchPage() {
   );
   const dims = useMemo(() => dedupeBy(version?.six_dim || [], (d) => d.key), [version]);
   const activeDim = dims.find((d) => d.key === dimKey) || dims[0] || null;
-  const counterpoint =
-    typeof memo?.strongest_counterpoint === "string"
-      ? { point: memo.strongest_counterpoint, response: "", overturns: false }
-      : memo?.strongest_counterpoint || null;
   const blockingGateNote =
     memo?.data_gate_note && (memo.data_gate_note.includes("gate=fail") || memo.data_gate_note.includes("门禁未通过"))
       ? memo.data_gate_note
@@ -383,12 +383,74 @@ export function InstV3ResearchPage() {
     setParams({ key: `case:${id}` });
   };
 
+  const aiBusy =
+    busy === "full" ||
+    busy === "industry" ||
+    busy === "memo" ||
+    busy === "auto-research" ||
+    busy === "auto-memo" ||
+    DIMS.some(([key]) => key === busy);
+  const aiTitle =
+    busy === "full" || busy === "auto-research"
+      ? "AI 正在生成行业分析与六维结论"
+      : busy === "industry"
+        ? "AI 正在生成行业分析"
+        : busy === "memo" || busy === "auto-memo"
+          ? "AI 研究经理正在生成一页纸"
+          : `AI 正在重跑${DIMS.find(([key]) => key === busy)?.[1] || "该维度"}`;
+
+  useEffect(() => {
+    if (!detail?.id || !aiBusy) return;
+    const timer = setInterval(() => {
+      instApi<CaseItem>(`/cases/${detail.id}`)
+        .then((next) => setDetail(next))
+        .catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [detail?.id, aiBusy]);
+
+  useEffect(() => {
+    if (!detail?.id) return;
+    const id = detail.id;
+    let alive = true;
+    (async () => {
+      try {
+        const job = await latestAiJob(id, "research");
+        if (!alive || !job || job.status !== "running") return;
+        setBusy("auto-research");
+        await waitAiJob(id, "research");
+        if (alive) await loadDetail(id);
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setBusy(null);
+      }
+    })();
+    (async () => {
+      try {
+        const job = await latestAiJob(id, "memo");
+        if (!alive || !job || job.status !== "running") return;
+        setBusy("auto-memo");
+        await waitAiJob(id, "memo");
+        if (alive) setMemo(await loadMemo(id));
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setBusy(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [detail?.id]);
+
   const runResearch = async (mode: "full" | string, label: string) => {
     if (!detail) return;
     setBusy(label);
     setError(null);
     try {
-      await instApi(`/cases/${detail.id}/research`, { method: "POST", body: { mode } });
+      await instApi(`/cases/${detail.id}/research`, { method: "POST", body: { mode, background: true } });
+      await waitAiJob(detail.id, "research");
       await loadDetail(detail.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -402,10 +464,9 @@ export function InstV3ResearchPage() {
     setBusy("memo");
     setError(null);
     try {
-      const res = await instApi<{ memo: Memo }>(`/cases/${detail.id}/ai/memo`, {
-        method: "POST",
-        body: { refresh },
-      });
+      await instApi(`/cases/${detail.id}/ai/memo`, { method: "POST", body: { refresh, background: true } });
+      await waitAiJob(detail.id, "memo");
+      const res = await instApi<{ memo: Memo }>(`/cases/${detail.id}/ai/memo`);
       setMemo(res.memo);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -414,41 +475,18 @@ export function InstV3ResearchPage() {
     }
   };
 
-  const lockResearch = async (withGaps = false) => {
+  const lockResearch = async () => {
     if (!version) return;
-    setBusy(withGaps ? "lock-gaps" : "lock");
+    setBusy("lock");
     setError(null);
     try {
       const res = await instApi<Record<string, unknown>>(`/research/${version.id}/lock`, {
         method: "POST",
-        body: withGaps
-          ? { allow_gaps: true, comment: "研究经理已确认数据缺口，带缺口锁定研究定稿" }
-          : {},
+        body: {},
       });
       setDetail(res as unknown as CaseItem);
       setGate(null);
       setStep(3);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const reviewLowDimension = async (key: string) => {
-    if (!version || !detail) return;
-    setBusy(`review:${key}`);
-    setError(null);
-    try {
-      await instApi(`/research/${version.id}/dimensions/${key}/review`, {
-        method: "POST",
-        body: {
-          decision: "approve",
-          comment: reviewNote.trim() || "研究经理复核确认：低置信项已处理",
-        },
-      });
-      setReviewNote("");
-      await loadDetail(detail.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -462,14 +500,6 @@ export function InstV3ResearchPage() {
 
   const locked = Boolean(version?.locked_at || version?.frozen_at);
   const gateBlocked = gate?.status === "block";
-  const lowDims = dims.filter(
-    (d) =>
-      (d.rating != null && Number(d.rating) < 3.3) ||
-      (d.confidence != null && Number(d.confidence) < 0.66),
-  );
-  const unresolvedLow = lowDims.filter(
-    (d) => version?.dim_reviews?.[d.key]?.decision !== "approve",
-  );
 
   return (
     <>
@@ -507,6 +537,20 @@ export function InstV3ResearchPage() {
 
         <div className="v3-work-main">
           {error ? <div className="v3-note" style={{ borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>{error}</div> : null}
+          <InstV3AgentProgress
+            active={aiBusy}
+            title={aiTitle}
+            detail={busy === "full" || busy === "auto-research" ? "六位专业 Agent 并行分析；每完成一维会在这里打勾。" : "正在调用模型并整理证据，完成后自动刷新。"}
+            steps={
+              busy === "full" || busy === "auto-research"
+                ? (detail.tasks || []).map((t) => ({
+                    key: t.task_key,
+                    label: t.title || t.task_key,
+                    status: t.status,
+                  }))
+                : undefined
+            }
+          />
 
           {step === 0 ? (
             <section className="v3-card">
@@ -534,7 +578,11 @@ export function InstV3ResearchPage() {
                     </div>
                   ) : null}
                   {version.industry_analysis.data_used?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>使用数据：{version.industry_analysis.data_used.join("；")}</p> : null}
-                  {version.industry_analysis.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{version.industry_analysis.counter[0]}</div> : null}
+                </div>
+              ) : busy === "industry" || busy === "auto-research" || busy === "full" ? (
+                <div className="v3-ai-inline">
+                  <span className="v3-spinner" aria-hidden="true" />
+                  <div><b>AI 正在生成行业分析与六维结论…</b><span>通常需要 1–3 分钟；完成后本页自动刷新，请勿关闭页面。</span></div>
                 </div>
               ) : (
                 <div className="v3-empty">
@@ -562,8 +610,6 @@ export function InstV3ResearchPage() {
                           <span className={`v3-chip ${activeDim.status === "skipped" ? "warn" : "ok"}`}>
                             {activeDim.status === "skipped" ? "未分析" : "已分析"}
                           </span>
-                          {activeDim.confidence != null ? <span className="v3-chip">置信度 {activeDim.confidence.toFixed ? activeDim.confidence.toFixed(2) : activeDim.confidence}</span> : null}
-                          {version?.dim_reviews?.[activeDim.key]?.decision === "approve" ? <span className="v3-chip ok">低置信已复核</span> : null}
                         </div>
                         {dimScore(activeDim) == null && activeDim.status === "skipped" ? null : (
                           <div className={`v3-dim-score${dimScore(activeDim) == null ? " empty" : ""}`}>
@@ -587,7 +633,6 @@ export function InstV3ResearchPage() {
                         </div>
                       ) : null}
                       {activeDim.data_used?.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6b6370" }}>使用数据：{activeDim.data_used.join("；")}</p> : null}
-                      {activeDim.counter?.length ? <div className="v3-note" style={{ marginTop: 8 }}>反证：{activeDim.counter[0]}</div> : null}
                       <div style={{ marginTop: 8 }}>
                         <button className="v3-btn ghost" disabled={!!busy || activeDim.status === "skipped"} onClick={() => runResearch(activeDim.key, activeDim.key)}>
                           <RefreshCw className="h-3.5 w-3.5" />
@@ -597,6 +642,11 @@ export function InstV3ResearchPage() {
                     </div>
                   ) : <div className="v3-empty">该维还没有结论。</div>}
                 </>
+              ) : busy === "full" || busy === "auto-research" ? (
+                <div className="v3-ai-inline">
+                  <span className="v3-spinner" aria-hidden="true" />
+                  <div><b>六位研究员正在并行分析…</b><span>每完成一维会自动打勾；通常需要 1–3 分钟，请勿关闭页面。</span></div>
+                </div>
               ) : (
                 <div className="v3-empty">还没有六维结论。<button className="v3-btn primary" style={{ marginLeft: 8 }} disabled={!!busy} onClick={() => runResearch("full", "full")}>{busy === "full" ? "生成中…" : "生成六维分析"}</button></div>
               )}
@@ -615,7 +665,6 @@ export function InstV3ResearchPage() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     {memo.decision ? <span className={`v3-chip ${memo.decision === "proceed" ? "ok" : memo.decision === "avoid" ? "bad" : "warn"}`}>{decisionLabel(memo.decision)}</span> : null}
-                    {memo.chief_confidence != null ? <span className="v3-chip">置信 {Number(memo.chief_confidence).toFixed(2)}</span> : null}
                     {memo.decision_original ? <span className="v3-chip warn">原判 {decisionLabel(memo.decision_original)} · 核验降级</span> : null}
                     {memo.chief_fields_fallback ? <span className="v3-chip warn">服务端补齐</span> : null}
                     <span className="v3-memo-score"><span>六维总分</span><b>{overall != null ? overall.toFixed(1) : "未评分"}</b>{overall != null ? <small>/10</small> : null}<em>六维平均</em></span>
@@ -636,13 +685,6 @@ export function InstV3ResearchPage() {
                       ))}
                     </div>
                   ) : null}
-                  {counterpoint?.point ? (
-                    <div className="v3-note" style={{ marginTop: 8 }}>
-                      <b>最强反证：</b>{counterpoint.point}
-                      {counterpoint.response ? ` 回应：${counterpoint.response}` : ""}
-                      {counterpoint.overturns ? <span className="v3-chip bad" style={{ marginLeft: 6 }}>足以推翻</span> : null}
-                    </div>
-                  ) : null}
                   {memo.key_assumptions?.length ? <div style={{ marginTop: 8 }}><div className="v3-eyebrow">关键假设</div><ul className="v3-rule-list" style={{ marginTop: 4 }}>{memo.key_assumptions.map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
                   {memo.what_would_change?.length ? <div style={{ marginTop: 8 }}><div className="v3-eyebrow">什么会改变判断</div><ul className="v3-rule-list" style={{ marginTop: 4 }}>{memo.what_would_change.map((x) => <li key={x}>{x}</li>)}</ul></div> : null}
                   {memo.metrics?.length ? <div className="v3-kpis" style={{ gridTemplateColumns: "repeat(2,minmax(0,1fr))", marginTop: 8 }}>{memo.metrics.slice(0, 4).map((m) => <div className="v3-kpi" key={m.label}><div className="k">{stripParens(m.label)}</div><div className="v">{stripParens(m.value)}</div></div>)}</div> : null}
@@ -658,7 +700,7 @@ export function InstV3ResearchPage() {
           {step === 3 ? (
             <section className="v3-card">
               <div className="v3-card-head">
-                <div><h2>研究定稿</h2><p>六维齐全、低置信项已处理、数据门禁通过后锁定研究定稿；锁定后辩论只读这一版。</p></div>
+                <div><h2>研究定稿</h2><p>六维齐全、数据门禁通过后锁定研究定稿；锁定后辩论只读这一版。</p></div>
                 {locked ? <span className="v3-chip ok">已锁定</span> : gateLoading ? <span className="v3-chip">门禁检查中…</span> : <span className={`v3-chip ${gate?.status === "pass" ? "ok" : gate?.status === "warn" ? "warn" : "bad"}`}>门禁 {gate?.status || "未检查"}</span>}
               </div>
               <div className="v3-final-score">
@@ -684,32 +726,8 @@ export function InstV3ResearchPage() {
                 </div>
               ) : null}
 
-              {unresolvedLow.length ? (
-                <div className="v3-note" style={{ marginTop: 8, borderColor: "#eed2d0", background: "#fbeeed", color: "#ab3a37" }}>
-                  <b>低置信项未复核：</b>{unresolvedLow.map((d) => d.title || d.key).join("、")}。逐项复核通过后才能正常锁定；无法补齐时也可在下方显式带缺口锁定。
-                  <div className="v3-field" style={{ marginTop: 8 }}>
-                    <label>复核说明（写入审计）</label>
-                    <input value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="例如：已核对原始公告，置信度低来自披露粒度，不影响结论。" />
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                    {unresolvedLow.map((d) => (
-                      <button
-                        key={d.key}
-                        className="v3-btn ghost"
-                        disabled={!!busy}
-                        onClick={() => reviewLowDimension(d.key)}
-                      >
-                        {busy === `review:${d.key}` ? "复核中…" : `复核通过 · ${d.title || d.key}`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : lowDims.length ? (
-                <div className="v3-note" style={{ marginTop: 8 }}>低置信项已全部复核通过。</div>
-              ) : null}
-
-              {gateBlocked && unresolvedLow.length === 0 ? (
-                <div className="v3-note" style={{ marginTop: 8 }}>门禁仍有阻断项；请回上一步补齐六维或重跑对应维度。确实无法补齐时，可显式带缺口锁定并记录。</div>
+              {gateBlocked ? (
+                <div className="v3-note" style={{ marginTop: 8 }}>研究门禁未通过：请回上一步检查六维是否齐全，或重跑未通过核验的维度后再锁定。</div>
               ) : null}
 
               {!locked && !gateLoading && gate === null ? (
@@ -722,26 +740,10 @@ export function InstV3ResearchPage() {
                       data-testid="inst-research-lock"
                       className="v3-btn primary"
                       disabled={!!busy || !version || gateLoading || gate === null || gateBlocked}
-                      onClick={() => lockResearch(false)}
+                      onClick={lockResearch}
                     >
                       {busy === "lock" ? "锁定中…" : "锁定研究定稿"}
                     </button>
-                    {gateBlocked ? (
-                      <>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#6b6370" }}>
-                          <input type="checkbox" checked={allowGaps} onChange={(e) => setAllowGaps(e.target.checked)} />
-                          我已确认数据缺口，允许带缺口锁定
-                        </label>
-                        <button
-                          data-testid="inst-research-lock-gaps"
-                          className="v3-btn ghost"
-                          disabled={!allowGaps || !!busy}
-                          onClick={() => lockResearch(true)}
-                        >
-                          {busy === "lock-gaps" ? "锁定中…" : "带缺口锁定"}
-                        </button>
-                      </>
-                    ) : null}
                   </>
                 ) : null}
                 {locked ? <Link className="v3-btn primary" to={`/inst/debate?key=${encodeURIComponent(`case:${detail.id}`)}`}>移交多空辩论 <ArrowRight className="h-3.5 w-3.5" /></Link> : null}

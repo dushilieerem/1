@@ -95,7 +95,8 @@ def test_report_has_research_mark_and_sections() -> None:
     # 缺失的现金流利润率必须显示待补充，不能拿 0 顶替
     assert "现金流利润率 Cash-flow margin | 待补充" in out
     assert "已通过（approved）" in out
-    assert "财务三表未接入或未公告" in out
+    assert "## 六、未解决问题 / Open questions" in out
+    assert "财务三表未接入或未公告" not in out
     assert "2026-11-01 08:00" in out
 
 

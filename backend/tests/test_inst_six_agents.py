@@ -364,7 +364,7 @@ def test_merge_agent_results_skips_missing_dimension_without_score() -> None:
     dim = merged["dims"][0]
     assert dim["status"] == "skipped"
     assert dim["engine"] == "skipped"
-    assert dim["summary"] == "数据未接入，暂不分析。"
+    assert dim["summary"] == "本维度暂不展开。"
     assert dim["score_10"] is None and dim["rating"] is None
     assert dim["gate"] == "fail"
     assert merged["agent_states"]["governance"] == "skipped"
@@ -392,8 +392,8 @@ def test_one_pager_metrics_are_deterministic() -> None:
     metrics = ai_service._one_pager_metrics(version, {"symbol": ""})
     by_label = {m["label"]: m for m in metrics}
     assert by_label["价值区间"]["value"] == "43.43–72.38 元"
-    assert by_label["有效维"]["value"] == "5/6"
-    assert by_label["低置信维"]["value"] == "6 项"
+    assert "有效维" not in by_label
+    assert "低置信维" not in by_label
 
 
 def test_governance_guarantee_not_applicable_unlocks_core() -> None:
@@ -463,3 +463,28 @@ def test_memo_gate_note_uses_chinese_titles_and_gate_wording() -> None:
     assert "门禁未通过" in memo["data_gate_note"]
     assert "行业分析" in memo["data_gate_note"]
     assert "估值与价格" in memo["data_gate_note"]
+
+
+def test_version_read_cleans_gaps_and_internal_terms() -> None:
+    from services.institution.research_service import _clean_version_for_read
+
+    out = _clean_version_for_read(
+        {
+            "six_dim": [
+                {
+                    "key": "valuation",
+                    "summary": "PE_TTM 30x，OCF/净利 0.22",
+                    "checks": ["DIO 170 天"],
+                    "data_used": ["market_data.pe_ttm 21.99x 与分位 55.72%"],
+                    "open_questions": ["缺 PS/EV-EBITDA 序列", "渠道库存何时回补"],
+                }
+            ],
+            "open_questions": ["缺一致预期", "董事会换届影响"],
+        }
+    )
+    dim = out["six_dim"][0]
+    assert "市盈率" in dim["summary"] and "经营现金流/净利润" in dim["summary"]
+    assert "存货周转天数" in dim["checks"][0]
+    assert "market_data" not in dim["data_used"][0]
+    assert dim["open_questions"] == ["渠道库存何时回补"]
+    assert out["open_questions"] == ["董事会换届影响"]

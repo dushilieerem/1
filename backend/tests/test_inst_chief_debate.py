@@ -42,7 +42,7 @@ def test_validate_debate_preserves_and_normalizes_chair_review() -> None:
     assert review["schema_version"] == "chief-debate-v1"
     assert review["agent_tier"] == "chief"
     assert review["role_title"] == "主持（合伙人）"
-    assert review["verdict"] == "supplement_research"
+    assert review["verdict"] == "support_proposal"
     assert review["chair_call"].startswith("证据链")
     assert review["unresolved"][0]["data_needed"] == "行业 TAM/CR5"
     assert review["accepted_claims"][0]["side"] == "bull"
@@ -62,7 +62,7 @@ def test_validate_debate_falls_back_without_chair_review() -> None:
         TaskRequest(variables={"evidence_ids": [1, 2]}),
     )
     review = out["chair_review"]
-    assert review["verdict"] == "supplement_research"
+    assert review["verdict"] == "support_proposal"
     assert review["chief_fields_fallback"] is True
     assert review["chief_confidence"] == 0.5
 
@@ -73,6 +73,52 @@ def test_debate_rule_fallback_has_chair_review() -> None:
         [{"id": 1, "title": "年报", "quote": "q", "source": "filing"}],
         None,
     )
-    assert out["chair_review"]["verdict"] == "supplement_research"
+    assert out["chair_review"]["verdict"] == "support_proposal"
     assert out["chair_review"]["unresolved"]
     assert out["chair_review"]["chief_fields_fallback"] is True
+
+
+def test_get_debate_keeps_nested_chief_review_objects(monkeypatch) -> None:
+    import services.institution.debate_service as ds
+
+    monkeypatch.setattr(
+        ds.repo,
+        "debate",
+        lambda scope, session_id: {
+            "factpack": {
+                "chief_review": {
+                    "chair_call": "OCF 不足，补充研究",
+                    "unresolved": [
+                        {"issue": "估值为演示口径", "bull_view": "先跟踪", "bear_view": "缺 DCF", "reason": "OCF/净利 0.2"}
+                    ],
+                    "accepted_claims": [{"side": "bull", "claim_id": "B1", "claim": "PE 处低分位", "reason": "证据可核验"}],
+                }
+            },
+            "arguments": [{"claim": "OCF/净利 0.2", "falsifier": "DIO 回落"}],
+        },
+    )
+    out = ds.get_debate(1, 1)
+    chief = out["factpack"]["chief_review"]
+    assert isinstance(chief["unresolved"][0], dict)
+    assert chief["unresolved"][0]["issue"] == "估值为演示口径"
+    assert "经营现金流/净利润" in chief["unresolved"][0]["reason"]
+    assert isinstance(chief["accepted_claims"][0], dict)
+    assert chief["accepted_claims"][0]["claim_id"] == "B1"
+    assert "经营现金流/净利润" in out["arguments"][0]["claim"]
+    assert "存货周转天数" in out["arguments"][0]["falsifier"]
+
+
+def test_unresolved_alone_does_not_force_supplement() -> None:
+    out = validate_debate(
+        json.dumps(
+            {
+                "bull": [{"claim": "看多", "evidence_ids": [1]}],
+                "bear": [{"claim": "看空", "evidence_ids": [2]}],
+                "chair": [{"claim": "核心假设可核验，未决项随议案跟踪", "evidence_ids": [1]}],
+                "conclusion": "26 条 claim，24 条已核验，1 项未决；随议案带入审批。",
+            },
+            ensure_ascii=False,
+        ),
+        TaskRequest(variables={"evidence_ids": [1, 2]}),
+    )
+    assert out["chair_review"]["verdict"] == "support_proposal"

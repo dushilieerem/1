@@ -130,33 +130,73 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
     bull = sum(1 for a in args if str(a.get("side")) == "bull")
     bear = sum(1 for a in args if str(a.get("side")) == "bear")
     debate_ready = bool(debate and str(debate.get("status")) == "completed")
-    research_ready = debate_ready and "补充研究" not in conclusion
+
+    factpack = (debate or {}).get("factpack") or {}
+    if isinstance(factpack, str):
+        try:
+            factpack = json.loads(factpack or "{}")
+        except ValueError:
+            factpack = {}
+    chief = factpack.get("chief_review") if isinstance(factpack, dict) else {}
+    chief = chief if isinstance(chief, dict) else {}
+    chair_verdict = str(chief.get("verdict") or "")
+    chair_call = str(chief.get("chair_call") or "")
+
+    memo: dict[str, Any] = {}
+    if version:
+        try:
+            cached = get_latest_output(
+                "inst.research_memo",
+                org_id=org_id,
+                scope_key=f"case:{case_id}:version:{version.get('id')}",
+            )
+            output = (cached or {}).get("output") or {}
+            if isinstance(output, str):
+                output = json.loads(output or "{}")
+            if isinstance(output, dict):
+                memo = output
+        except Exception:
+            memo = {}
+    memo_decision = str(memo.get("decision") or "")
+    memo_conclusion = str(memo.get("conclusion") or version.get("conclusion") or "")
+    memo_call = str(memo.get("chief_call") or memo_conclusion or "").strip()
+    memo_label = {"proceed": "建议进入议案", "watch": "暂列观察", "avoid": "不建议进入议案"}.get(
+        memo_decision, memo_conclusion[:24]
+    )
 
     held, current_weight = _position_hint(org_id, str(case.get("symbol") or ""))
-    gate_fail = [str(d.get("title") or d.get("key")) for d in dims if str(d.get("gate")) == "fail"]
+    gate_fail = [str(d.get("title") or d.get("key")) for d in dims if str(d.get("gate") or "") == "fail"]
+    support = chair_verdict == "support_proposal" or (
+        not chair_verdict and "推进审议" in conclusion
+    )
+    supplement = chair_verdict == "supplement_research" or (
+        not chair_verdict and "补充研究" in conclusion
+    )
 
     if overall is None:
-        recommendation, direction, target_weight = "avoid", "hold", 0.0
+        recommendation, direction, target_weight = "avoid", "buy", 0.0
         reason = "六维评分不完整，暂不具备形成议案的条件"
     elif held:
-        if overall < 5.0 or gate_fail:
+        if memo_decision == "avoid" or gate_fail:
             recommendation, direction, target_weight = "sell", "sell", 0.0
-            reason = "持仓标的研究评分跌破门槛或存在阻断维度，建议退出"
+            reason = "研究经理结论转差或存在阻断维度，持仓建议退出"
         else:
-            recommendation, direction, target_weight = "hold", "hold", current_weight
-            reason = "已持仓且研究未失效，建议维持现有仓位并继续复核"
-    elif research_ready and not gate_fail and overall >= 7.0:
+            recommendation, direction, target_weight = "hold", "buy", current_weight
+            reason = "主持裁决与研究经理结论均未转差，建议维持现有仓位并继续复核"
+    elif gate_fail:
+        recommendation, direction, target_weight = "avoid", "buy", 0.0
+        reason = "存在阻断维度，暂不买入"
+    elif memo_decision != "avoid" and support:
         recommendation, direction = "buy", "buy"
-        target_weight = 0.05 if overall >= 9.0 else 0.03 if overall >= 8.0 else 0.02
-        reason = "六维评分达到买入门槛，辩论未给出补充研究结论，建议建仓"
+        confidence = float(memo.get("chief_confidence") or 0)
+        target_weight = 0.05 if confidence >= 0.7 else 0.03 if confidence >= 0.6 else 0.02
+        reason = f"主持裁决支持进入议案，研究经理结论为{memo_label}，按现有数据建议建仓"
     else:
-        recommendation, direction, target_weight = "avoid", "hold", 0.0
+        recommendation, direction, target_weight = "avoid", "buy", 0.0
         reason = (
-            "存在阻断维度，暂不买入"
-            if gate_fail
-            else "辩论尚未形成可执行结论，暂不买入"
-            if not research_ready
-            else "综合评分未达到买入门槛，暂不买入"
+            f"主持裁决为补充研究，研究经理结论为{memo_label}，暂不买入"
+            if supplement
+            else f"主持裁决与研究经理结论（{memo_label}）尚未一致支持进入议案，暂不买入"
         )
 
     label = {
@@ -189,10 +229,14 @@ def proposal_advice(org_id: int, case_id: int) -> dict[str, Any]:
             monitoring.append(text)
     monitoring = monitoring[:3] or ["季度复核收入、毛利率与现金流；综合评分跌破 6.0 则重开研究"]
     target_text = f"{target_weight * 100:.1f}%"
+    chair_text = (chair_call or conclusion or "尚未形成").strip().rstrip("。")[:80]
+    memo_text = (memo_call or memo_label or "尚未生成").strip().rstrip("。")[:80]
     opinion = (
-        f"六维平均得分 {overall:.1f}/10" if overall is not None else "六维评分不完整"
-    ) + f"，多空辩论结论为“{conclusion}”。{label}，建议目标仓位 {target_text}。"
-    opinion += f"主要风险：{monitoring[0]}；若该风险触发或综合评分跌破 6.0，则重开研究并复核仓位。"
+        f"主持裁决：{chair_text}。"
+        f"研究经理结论：{memo_text}。"
+        f"{label}，目标仓位 {target_text}。"
+    )
+    opinion += f"主要风险：{monitoring[0]}。若该风险触发或综合评分跌破 6.0，则重开研究并复核仓位。"
     if len(opinion) < 60:
         opinion += "本议案仅基于当前锁定研究版本，审批前需复核证据与价格带。"
     valid_until = (date.today() + timedelta(days=30)).isoformat()

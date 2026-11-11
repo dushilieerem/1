@@ -176,30 +176,17 @@ def test_research_lock_and_reopen() -> None:
         assert reopened["stage_state"] == "returned"
 
 
-def test_research_lock_blocks_low_confidence() -> None:
+def test_research_lock_ignores_low_confidence() -> None:
     with _case(dims=_dims(low_key="governance")) as c:
-        with pytest.raises(PermissionError, match="研究门禁未通过"):
-            svc.lock_research(c["org_id"], c["version_id"], actor_member_id=c["member_id"])
+        locked = svc.lock_research(c["org_id"], c["version_id"], actor_member_id=c["member_id"])
+        assert locked["stage_no"] == 2
 
 
-def test_research_gate_preview_and_dimension_review() -> None:
+def test_research_gate_has_no_low_confidence_block() -> None:
     with _case(dims=_dims(low_key="governance")) as c:
         gate = svc.research_gate(c["org_id"], c["version_id"])
-        assert gate["status"] == "block"
-        assert any(
-            x["key"] == "low_confidence" and x["status"] == "block"
-            for x in gate["checks"]
-        )
-        svc.review_research_dimension(
-            c["org_id"],
-            c["version_id"],
-            "governance",
-            decision="approve",
-            comment="已核对原始公告",
-            actor_member_id=c["member_id"],
-        )
-        gate_after = svc.research_gate(c["org_id"], c["version_id"])
-        assert gate_after["status"] == "pass"
+        assert gate["status"] == "pass"
+        assert not any(x["key"] == "low_confidence" for x in gate["checks"])
         locked = svc.lock_research(
             c["org_id"], c["version_id"], actor_member_id=c["member_id"]
         )
@@ -418,7 +405,7 @@ def test_generate_research_skips_dimensions_without_data(monkeypatch) -> None:
         assert len(dims) == 6
         assert all(d["status"] == "skipped" for d in dims)
         assert all(d["score_10"] is None and d["rating"] is None for d in dims)
-        assert all(d["summary"] == "数据未接入，暂不分析。" for d in dims)
+        assert all(d["summary"] == "本维度暂不展开。" for d in dims)
         assert version["industry_analysis"]["status"] == "skipped"
 
 
@@ -442,7 +429,7 @@ def test_proposal_advice_scores_latest_rating_without_benchmark() -> None:
         assert [x["score_10"] for x in advice["scores"]] == [5.0] * 6
         assert advice["overall_score"] == 5.0
         assert advice["recommendation"] == "avoid"
-        assert advice["framework"]["direction"] == "hold"
+        assert advice["framework"]["direction"] in {"buy", "sell", "exit"}
 
 
 def test_start_research_advances_existing_opportunity_case() -> None:

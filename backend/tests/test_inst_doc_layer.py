@@ -171,7 +171,7 @@ def test_document_payload_scopes_fields_by_dimension() -> None:
     fin = doc_layer.document_payload(facts, "financial")
     equity = doc_layer.document_payload(facts, "valuation")
     assert set(biz["fields"]) == set(doc_layer.BUSINESS_DOC_FIELDS)
-    assert set(fin["fields"]) == {"cost_structure", "contract_liabilities"}
+    assert set(fin["fields"]) == {"cost_structure", "contract_liabilities", "inquiry_letter"}
     assert set(doc_layer.document_payload(facts, "governance")["fields"]) == set(doc_layer.GOVERNANCE_DOC_FIELDS)
     assert equity["fields"] == {}
 

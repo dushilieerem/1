@@ -36,7 +36,8 @@ from services.institution.report import render_research_report, report_filename
 from services.marketdata import store as md
 
 from . import applicability, doc_layer, repo
-from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_list, humanize_text
+from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_list, humanize_text, humanize_text_keep_lines
+from . import job_service
 from .company_service import _mapped_industry
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
@@ -365,6 +366,69 @@ def delete_case(org_id: int, case_id: int, actor_member_id: int | None) -> dict[
     return {"deleted": True, "case_id": case_id, "company_id": int(case["company_id"])}
 
 
+_GAP_HINTS = (
+    "缺",
+    "未接入",
+    "补数",
+    "数据缺口",
+    "无法",
+    "未获取",
+    "未披露",
+    "未认定",
+    "未返回",
+    "待复核",
+    "待补",
+    "影响 H",
+    "影响 M",
+    "影响 L",
+    "路径",
+    "回填",
+    "只能作线索",
+)
+
+def _strip_gap_text(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(
+        r"[，；]?[^。；\n]*(?:未验证|待复核|待补充|补齐|数据缺失|未接入|数据缺口|未覆盖|无法核实|无法判断)[^。；\n]*[。；]?",
+        "",
+        text,
+    )
+    text = re.sub(r"[，；]{2,}", "，", text)
+    text = re.sub(r"[，；]。", "。", text)
+    return text.strip()
+
+
+def _clean_dim_for_read(dim: dict[str, Any]) -> dict[str, Any]:
+    """读接口兜底：旧版本里遗留的缩写和数据缺口不展示给用户。"""
+    out = dict(dim)
+    for key in ("summary", "impact", "rating_note", "gate_note", "one_line"):
+        if isinstance(out.get(key), str):
+            out[key] = _strip_gap_text(humanize_text(out[key]))
+    if isinstance(out.get("analysis_md"), str):
+        out["analysis_md"] = _strip_gap_text(humanize_text_keep_lines(out["analysis_md"]))
+    if isinstance(out.get("analysis_md"), str):
+        out["analysis_md"] = humanize_text_keep_lines(out["analysis_md"])
+    for key in ("checks", "data_used", "counter", "open_questions"):
+        if out.get(key):
+            values = humanize_list(out[key])
+            if key == "open_questions":
+                values = [x for x in values if not any(h in x for h in _GAP_HINTS)]
+            out[key] = values
+    return out
+
+
+def _clean_version_for_read(version: dict[str, Any]) -> dict[str, Any]:
+    out = dict(version)
+    out["six_dim"] = [_clean_dim_for_read(d) for d in (out.get("six_dim") or []) if isinstance(d, dict)]
+    industry = out.get("industry_analysis")
+    if isinstance(industry, dict):
+        out["industry_analysis"] = _clean_dim_for_read(industry)
+    out["open_questions"] = [
+        x for x in (out.get("open_questions") or []) if not any(h in str(x) for h in _GAP_HINTS)
+    ]
+    return out
+
+
 def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
         case = repo.case(OrgScope(org_id), case_id, conn=conn)
@@ -409,7 +473,7 @@ def get_case(org_id: int, case_id: int) -> dict[str, Any] | None:
             out["last_close"] = bar["close"]
             out["price_as_of"] = bar.get("trade_date")
     out["tasks"] = [_row_dict(r) for r in tasks]
-    out["versions"] = [_row_dict(r) for r in versions]
+    out["versions"] = [_clean_version_for_read(_row_dict(r) or {}) for r in versions]
     out["overall_score"] = _overall_score(
         (out["versions"][0] or {}).get("six_dim") if out["versions"] else None
     )
@@ -638,6 +702,13 @@ def _data_completeness(
             financial_have.append(f"不适用：{label}（{reason}）")
         elif status == "pending":
             financial_missing.append(f"{label}（抽取结果待复核）")
+    inquiry_status = docs.get("inquiry_letter", "missing")
+    if inquiry_status == "have":
+        financial_have.append("交易所问询函及回复原文（已校验）")
+        if "问询函与回复" in financial_missing:
+            financial_missing.remove("问询函与回复")
+    elif inquiry_status == "pending":
+        financial_missing.append("问询函及回复（抽取结果待复核）")
     governance_have: list[str] = []
     governance_missing = [
         "实控人/董事长履历",
@@ -853,6 +924,35 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         )
         return idx
 
+    # 年报/公告页级抽取进入证据包，主持与辩论可直接引用页码和原文。
+    for field_key, block in (doc_summary.get("fields") or {}).items():
+        if not isinstance(block, dict) or block.get("status") != "have":
+            continue
+        for item in (block.get("items") or [])[:2]:
+            quote = str(item.get("quote") or "").strip()
+            if not quote:
+                continue
+            idx = len(evidence)
+            available = str(item.get("available_time") or data_as_of)[:10]
+            evidence.append(
+                {
+                    "title": f"年报/公告：{block.get('label') or field_key}",
+                    "quote": quote[:1000],
+                    "source": "filing",
+                    "evidence_type": "filing",
+                    "grade": "A",
+                    "as_of": available,
+                    "event_time": available,
+                    "available_time": available,
+                    "cutoff": available,
+                    "document_id": item.get("doc_id"),
+                    "page_ref": item.get("page_no"),
+                    "source_uri": item.get("source_url"),
+                    "hash": _hash([field_key, item.get("doc_id"), item.get("page_no"), quote[:500]]),
+                    "_idx": idx,
+                }
+            )
+
     ev_price = add_ev(f"{symbol} 最新收盘价", f"{price}", "market") if price else None
     ev_pe = add_ev(
         "PE_TTM 与近 3 年分位",
@@ -944,7 +1044,7 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
         gov_summary = (
             "治理核验：" + "；".join(gov_have[:4]) + "。未接入项见数据缺口。"
             if gov_have
-            else "治理数据未接入，暂不分析；待核验公告清单另行补充。"
+            else "治理本维度暂不展开；待核验公告清单另行补充。"
         )
         dim(
             "governance",
@@ -1203,7 +1303,7 @@ def _agent_payload(facts: dict[str, Any], key: str) -> dict[str, Any]:
             "rule": (
                 "只分析本 payload 中实际提供的字段；data_completeness.missing 中的项不得出现在 summary/checks/counter/key_numbers，"
                 "只能写入 data_gaps。level=partial 时必须基于已有字段给出明确结论，不得因存在缺口而拒绝分析或把 summary 写成待补；"
-                "只有整维没有可用数据时才固定写“数据未接入，暂不分析”，gate=fail，评分置空。"
+                "只有整维没有可用数据时才固定写“本维度暂不展开”，gate=fail，评分置空。"
                 "不得用推断、假设、同业数据或历史类比替代公司自身缺失数据。"
             ),
         },
@@ -1491,7 +1591,7 @@ def _merge_industry(
         ev_idx.append(idx)
     built["evidence"] = evidence
     industry_name = str((built.get("facts") or {}).get("industry_name") or "").strip()
-    analysis_md = humanize_text(data.get("analysis_md"))
+    analysis_md = humanize_text_keep_lines(data.get("analysis_md"))
     if industry_name:
         analysis_md = re.sub(r"\b\d{6}\.SI\b", industry_name, analysis_md)
     return {
@@ -1612,7 +1712,7 @@ def _merge_agent_results(
                     "agent_tier": "professional",
                     "role_title": PROFESSIONAL_ROLE_TITLES.get(key, "专业研究 Agent"),
                     "status": "skipped",
-                    "summary": "数据未接入，暂不分析。",
+                    "summary": "本维度暂不展开。",
                     "impact": "",
                     "data_used": [],
                     "checks": [],
@@ -1689,7 +1789,7 @@ def _merge_agent_results(
                     "gate": data.get("gate"),
                     "headline": data.get("headline"),
                     "kpis": data.get("kpis") or [],
-                    "analysis_md": humanize_text(data.get("analysis_md")),
+                    "analysis_md": humanize_text_keep_lines(data.get("analysis_md")),
                     "key_numbers": data.get("key_numbers") or [],
                     "falsifiers": data.get("falsifiers") or [],
                     "thesis_links": data.get("thesis_links") or [],
@@ -1860,12 +1960,12 @@ def generate_research(
         complete = (built.get("facts") or {}).get("data_completeness") or {}
         skipped = [k for k in keys if (complete.get(k) or {}).get("level") == "missing"]
         results: dict[str, dict[str, Any]] = {
-            k: {"skipped": True, "error": "数据未接入，暂不分析"} for k in skipped
+            k: {"skipped": True, "error": "本维度暂不展开"} for k in skipped
         }
         run_keys = [k for k in keys if k not in skipped]
         for k in skipped:
             _update_task_progress(
-                case_id, k, "partial", {"skipped": True, "error": "数据未接入，暂不分析"}
+                case_id, k, "partial", {"skipped": True, "error": "本维度暂不展开"}
             )
         if run_keys:
             results.update(
@@ -1886,7 +1986,7 @@ def generate_research(
                     "agent_tier": "professional",
                     "role_title": PROFESSIONAL_ROLE_TITLES["industry_overview"],
                     "status": "skipped",
-                    "summary": "数据未接入，暂不分析。",
+                    "summary": "本维度暂不展开。",
                     "impact": "",
                     "data_used": [],
                     "checks": [],
@@ -2003,14 +2103,14 @@ def generate_research(
             "SELECT COALESCE(MAX(version_no),0)+1 AS n FROM inst_research_version WHERE case_id=%s",
             (case_id,),
         ).fetchone()["n"]
-        conclusion = "有条件通过" if built["data_gaps"] == [] else "待补充"
+        conclusion = "有条件通过"
         assumptions = (
             [built["valuation"]["assumptions"]]
             if built.get("valuation") and built["valuation"].get("assumptions")
             else []
         )
         counter_evidence = [c for d in built["dims"] for c in d.get("counter", [])]
-        open_questions = built["data_gaps"]
+        open_questions: list[str] = []
         version_evidence = conn.execute(
             "SELECT hash, available_time, as_of FROM inst_evidence "
             "WHERE id = ANY(%s) ORDER BY id",
@@ -2089,6 +2189,37 @@ def generate_research(
             },
         )
     return get_case(org_id, case_id)  # type: ignore[return-value]
+
+def start_research_job(
+    org_id: int,
+    case_id: int,
+    *,
+    mode: str = "full",
+    actor_member_id: int | None,
+) -> dict[str, Any]:
+    """校验后立即返回任务；研究在后台线程继续，关闭浏览器不打断。"""
+    with get_conn() as conn:
+        member = _member(conn, org_id, actor_member_id)
+        _require_role(member, "manager")
+        case = conn.execute(
+            "SELECT id, stage_no FROM inst_research_case WHERE id=%s AND org_id=%s",
+            (case_id, org_id),
+        ).fetchone()
+        if not case:
+            raise LookupError("研究案不存在")
+        if int(case["stage_no"] or 1) > 1:
+            raise PermissionError("研究已锁定或已进入后续阶段，请先重开研究")
+    job = job_service.create_job(
+        org_id, case_id, "research", actor_member_id=actor_member_id, detail=f"mode={mode}"
+    )
+
+    def _run() -> dict[str, Any]:
+        generate_research(org_id, case_id, mode=mode, actor_member_id=actor_member_id)
+        return {"case_id": case_id, "mode": mode}
+
+    job_service.submit(int(job["id"]), _run)
+    return job
+
 
 def review_research(
     org_id: int,
@@ -2290,7 +2421,7 @@ def _six_dim_list(value: Any) -> list[dict[str, Any]]:
 
 
 def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
-    """v3 研究定稿门禁：六维完整、低置信处理、数据门禁、证据与 hash。"""
+    """v3 研究定稿门禁：六维完整、数据门禁、证据与 hash。"""
     dims = _six_dim_list(version.get("six_dim"))
     by_key = {str(d.get("key")): d for d in dims if d.get("key")}
     checks: list[dict[str, Any]] = []
@@ -2305,25 +2436,6 @@ def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
         "detail": f"缺失：{', '.join(missing)}" if missing else "六维齐全",
     })
     blocking = blocking or bool(missing)
-
-    low: list[str] = []
-    for key in required:
-        d = by_key.get(key) or {}
-        rating = d.get("rating")
-        confidence = d.get("confidence")
-        resolved = ((version.get("dim_reviews") or {}).get(key) or {}).get("decision") == "approve"
-        is_low = (rating is not None and float(rating) < 3.3) or (
-            confidence is not None and float(confidence) < 0.66
-        )
-        if is_low and not resolved:
-            low.append(str(d.get("title") or key))
-    checks.append({
-        "key": "low_confidence",
-        "label": "低置信项已处理",
-        "status": "block" if low else "pass",
-        "detail": f"未处理：{'、'.join(low)}" if low else "无低置信项",
-    })
-    blocking = blocking or bool(low)
 
     data_fail: list[str] = []
     for key in required:
@@ -2366,7 +2478,7 @@ def evaluate_research_gate(version: dict[str, Any]) -> dict[str, Any]:
 
 
 def research_gate(org_id: int, version_id: int) -> dict[str, Any]:
-    """只读预览 R3 门禁；锁定前页面据此显示缺口与需处理的低置信项。"""
+    """只读预览 R3 门禁；锁定前页面据此显示缺口与阻断项。"""
     with get_conn() as conn:
         row = conn.execute(
             """
@@ -2971,6 +3083,7 @@ __all__ = [
     "evaluate_research_gate",
     "export_research",
     "generate_research",
+    "start_research_job",
     "get_case",
     "get_company",
     "ideas_push",

@@ -47,6 +47,7 @@ from . import repo
 from .chief_agent import run_chief_agent
 from .common import _clip_brief, _evidence_grade, _hash, _iso, _j, _pc, _row_dict, _yi, humanize_text
 from .guards import POLICY_VERSION, _audit, _member, _require_role, _uid
+from . import job_service
 from .stages import _record_gate, _record_transition, _set_case_stage, _stage_def, _stage_payload
 from .company_service import MAX_SINGLE_WEIGHT, MIN_CASH_RATIO, _mapped_industry
 from .debate_service import start_debate
@@ -147,26 +148,8 @@ def _memo_metrics(case: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[dict[str, Any]]:
-    """一页纸四张卡：价值区间、有效维、低置信维、PE，全部用确定性数据覆盖 AI 文案。"""
+    """一页纸卡片：价值区间、PE，全部用确定性数据覆盖 AI 文案。"""
     dims = [d for d in (version.get("six_dim") or []) if isinstance(d, dict)]
-    valid = [
-        d
-        for d in dims
-        if (d.get("score_10") is not None or d.get("rating") is not None)
-        and str(d.get("gate") or "") != "fail"
-    ]
-    low = []
-    for d in dims:
-        confidence = d.get("confidence")
-        rating = d.get("rating")
-        if (
-            confidence is not None
-            and float(confidence) < 0.66
-        ) or (
-            rating is not None
-            and float(rating) < 3.3
-        ):
-            low.append(d)
     valuation = version.get("valuation") or {}
     if any(valuation.get(k) is not None for k in ("low", "base", "high")):
         low_v = valuation.get("low")
@@ -186,12 +169,6 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
         price_note = reason
     metrics: list[dict[str, Any]] = [
         {"label": "价值区间", "value": price_text, "note": price_note},
-        {
-            "label": "有效维",
-            "value": f"{len(valid)}/{len(dims) or 6}",
-            "note": "有评分且 gate≠fail",
-        },
-        {"label": "低置信维", "value": f"{len(low)} 项", "note": "confidence<0.66 或 rating<3.3"},
     ]
     symbol = str(case.get("symbol") or "")
     val = md.valuation_latest(symbol) or {}
@@ -199,7 +176,7 @@ def _one_pager_metrics(version: dict[str, Any], case: dict[str, Any]) -> list[di
     if val.get("pe_ttm") is not None:
         metrics.append(
             {
-                "label": "PE_TTM",
+                "label": "市盈率",
                 "value": f"{float(val['pe_ttm']):.2f}x",
                 "note": f"历史分位 {_pc(pct.get('pe_percentile'))}",
             }
@@ -214,11 +191,14 @@ def _merge_memo_metrics(
         required = _one_pager_metrics(version, case)
     except Exception:
         return memo
-    existing = [m for m in (memo.get("metrics") or []) if isinstance(m, dict)]
+    existing = [
+        m for m in (memo.get("metrics") or [])
+        if isinstance(m, dict) and str(m.get("label") or "") not in {"有效维", "低置信维"}
+    ]
     by_label = {str(m.get("label") or ""): m for m in existing if m.get("label")}
     for item in required:
         by_label[item["label"]] = item
-    order = ["价值区间", "有效维", "低置信维", "PE_TTM"]
+    order = ["价值区间", "市盈率"]
     merged = [by_label.pop(label) for label in order if label in by_label]
     merged.extend(by_label.values())
     memo["metrics"] = merged
@@ -293,11 +273,26 @@ _HUMAN_FIELDS = (
 _HUMAN_LIST_FIELDS = ("risks", "open_questions", "conditions", "concerns", "evidence")
 
 
+def _strip_gap_clauses(value: Any) -> str:
+    text = str(value or "")
+    text = re.sub(
+        r"[，；]?[^。；]*(?:未验证|待复核|待补充|补齐|数据缺失|未接入|数据缺口|未覆盖|无法核实)[^。；]*[。；]?",
+        "",
+        text,
+    )
+    text = re.sub(r"[，；]{2,}", "，", text)
+    text = re.sub(r"[，；]。", "。", text)
+    return text.strip()
+
+
 def _humanize_memo_output(data: dict[str, Any]) -> dict[str, Any]:
     out = dict(data or {})
     for field in _HUMAN_FIELDS:
         if out.get(field):
-            out[field] = _humanize_user_text(out[field])
+            text = _humanize_user_text(out[field])
+            if field in {"chief_call", "summary", "conclusion", "data_gate_note"}:
+                text = _strip_gap_clauses(text)
+            out[field] = text
     for field in _HUMAN_LIST_FIELDS:
         if isinstance(out.get(field), list):
             out[field] = [_humanize_user_text(x) for x in out[field] if str(x).strip()]
@@ -664,7 +659,7 @@ def ai_research_memo(
                 hit = latest
                 stale = True
         if hit:
-            memo = _ensure_chief_memo_fields(dict(hit["output"]), version, case)
+            memo = _humanize_memo_output(_ensure_chief_memo_fields(dict(hit["output"]), version, case))
             memo = _apply_memo_data_gate(memo, version)
             for field in ("risks", "open_questions", "key_variables"):
                 if memo.get(field):
@@ -727,6 +722,31 @@ def ai_research_memo(
         "version_no": version.get("version_no"),
         "cached": False,
     }
+
+
+def start_memo_job(
+    org_id: int,
+    case_id: int,
+    *,
+    refresh: bool = False,
+    actor_member_id: int | None = None,
+) -> dict[str, Any]:
+    """一页纸后台生成：页面关闭后继续，结果仍落到 ai_agent_output。"""
+    case = get_case(org_id, case_id)
+    if not case:
+        raise LookupError("研究案不存在")
+    if not (case.get("versions") or [{}])[0].get("id"):
+        raise LookupError("还没有研究版本")
+    job = job_service.create_job(
+        org_id, case_id, "memo", actor_member_id=actor_member_id, detail="一页纸生成"
+    )
+
+    def _run() -> dict[str, Any]:
+        ai_research_memo(org_id, case_id, refresh=refresh, actor_member_id=actor_member_id)
+        return {"case_id": case_id}
+
+    job_service.submit(int(job["id"]), _run)
+    return job
 
 
 def ai_dimension_chat_history(
@@ -1462,7 +1482,7 @@ def ai_role_run(
 AI_ROLE_CATALOG: tuple[tuple[str, str, str], ...] = (
     ("research", "研究统筹 / 产业 / 护城河", "inst.research_memo"),
     ("financial", "财务与取证", "inst.role.financial"),
-    ("governance", "治理 / 估值 / 反证", "inst.role.governance"),
+    ("governance", "治理 / 估值", "inst.role.governance"),
     ("debate", "看多 / 看空 / 主持", "inst.debate"),
     ("risk", "风控 / 合规 / 交易", "inst.risk_review"),
     ("post_investment", "投后 / 退出 / 复盘", "inst.role.post_investment"),

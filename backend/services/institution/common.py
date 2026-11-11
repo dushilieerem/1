@@ -50,6 +50,14 @@ _HUMAN_TERMS: tuple[tuple[str, str], ...] = (
     ("均分", "平均评分"),
     ("六维", "六个维度"),
     ("净现比", "经营现金流/净利润"),
+    ("market_data.pe_ttm", "市盈率"),
+    ("market_data.pb_mrq", "市净率"),
+    ("pe_ttm", "市盈率"),
+    ("pb_mrq", "市净率"),
+    ("market_data.", ""),
+    ("valuation_model", "估值模型"),
+    ("document_extracts", "已接入文档"),
+    ("data_gaps", "待补数据"),
     ("A级证据", "最高等级证据"),
     ("B级证据", "次高等级证据"),
     ("C级证据", "一般等级证据"),
@@ -73,23 +81,51 @@ _HUMAN_TERMS: tuple[tuple[str, str], ...] = (
     ("score_10", "评分"),
     ("available=false", "估值服务未给出有效结果"),
     ("available=true", "估值服务结果可用"),
+    ("收入可见度", "收入可预见性"),
+    ("可见度", "收入可预见性"),
+    ("不可核验", "无法核实"),
+    ("无可核验原文", "找不到年报原文"),
+    ("可核验原文", "可核实的年报原文"),
+    ("估值高分位", "估值处于历史较高位置"),
+    ("高分位", "历史较高位置"),
+    ("补研", "补齐资料"),
+    ("定方向", "决定方向"),
+    ("回款证据缺位", "回款数据缺失"),
+    ("订单与回款", "订单和回款"),
+    ("负债口径", "负债计算方式"),
+    ("可执行价格带", "可执行的买入价格区间"),
+    ("利润路径", "利润增长假设"),
 )
 
 
-def humanize_text(value: Any) -> str:
-    """把 Agent 输出里的英文缩写/内部字段名换成人话，保留数字与证据编号。"""
+def humanize_text_keep_lines(value: Any) -> str:
+    """把 Agent 输出里的英文缩写/内部字段名换成人话，保留原有换行。"""
     text = str(value or "")
     for old, new in _HUMAN_TERMS:
         text = text.replace(old, new)
     text = re.sub(r"含金量\s*A\s*档", "现金含量高", text)
     text = re.sub(r"含金量\s*B\s*档", "现金含量中等", text)
     text = re.sub(r"含金量\s*C\s*档", "现金含量偏低", text)
+    text = re.sub(r"未接入项见数据缺口。?", "", text)
+    text = re.sub(r"数据缺口", "未覆盖信息", text)
+    text = re.sub(r"门禁\s*fail[^，。；\n]*", "本轮结论不具备定价条件", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bfail\b", "不成立", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bwatch\b", "观察", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bproceed\b", "进入下一步", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bavoid\b", "回避", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bgate\b", "核验", text, flags=re.IGNORECASE)
+    text = re.sub(r"置信度?", "判断把握", text)
     text = re.sub(r"(?<![A-Za-z0-9])E(\d{2,})(?![A-Za-z0-9])", r"证据 \1", text)
     text = re.sub(r"(\d{4})\s*H1", r"\1 年上半年", text)
     text = re.sub(r"(\d{4})\s*H2", r"\1 年下半年", text)
     text = re.sub(r"(\d+(?:\.\d+)?)\s*pct", r"\1 个百分点", text, flags=re.IGNORECASE)
     text = re.sub(r"(\d+(?:\.\d+)?)\s*pp", r"\1 个百分点", text, flags=re.IGNORECASE)
-    return _clip_brief(text)
+    return text
+
+
+def humanize_text(value: Any) -> str:
+    """把 Agent 输出里的英文缩写/内部字段名换成人话，保留数字与证据编号。"""
+    return _clip_brief(humanize_text_keep_lines(value))
 
 
 def humanize_list(value: Any) -> list[str]:

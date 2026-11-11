@@ -135,3 +135,16 @@ def test_read_without_flag_leaves_symbol_null(tmp_path: Path) -> None:
         tmp_path, "financial_balance", ["Symbol", "m_timetag"], domain="free"
     )
     assert sorted(table["Symbol"].to_pylist(), key=str) == ["000001.SZ", None]
+
+
+def test_iso_day_treats_nan_as_missing() -> None:
+    """财务源里公告日可能是 NaN；不能写成字符串 "nan"，否则 DATE 列整批 COPY 失败。"""
+    import math
+
+    assert loader._iso_day(float("nan")) is None
+    assert loader._iso_day(None) is None
+    assert loader._iso_day("") is None
+    assert loader._iso_day(20240625) == "2024-06-25"
+    assert loader._iso_day(20240625.0) == "2024-06-25"
+    assert loader._iso_day("20240625") == "2024-06-25"
+    assert not math.isnan(0)  # 文档化：数学 NaN 只来自 float

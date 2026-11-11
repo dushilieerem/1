@@ -140,10 +140,26 @@ def _clean(value: Any) -> Any:
 
 
 def _iso_day(value: Any) -> str | None:
-    raw = str(value or "").strip()
+    """日期归一化：NaN/NaT/空串一律返回 None。
+
+    免费源里公告日存在 NaN；以前 str(nan) 得到 "nan" 会被当成有效日期写进 DATE 列，
+    整个财务装载事务因此回滚（COPY fin_indicator ... invalid input syntax for type date）。
+    """
+    if value is None:
+        return None
+    try:
+        if math.isnan(value):
+            return None
+    except TypeError:
+        pass
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    raw = str(value).strip()
+    if raw in {"", "nan", "NaN", "NaT", "None", "<NA>"}:
+        return None
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
-    return raw or None
+    return raw
 
 
 def _norm_symbol(frame, column: str = "Symbol"):

@@ -500,7 +500,6 @@ export function InstV3ResearchPage() {
   if (!detail) return <div className="v3-card">暂无可研究的项目。请先在项目流水线完成立项。</div>;
 
   const locked = Boolean(version?.locked_at || version?.frozen_at);
-  const gateBlocked = gate?.status === "block";
 
   return (
     <>
@@ -701,8 +700,8 @@ export function InstV3ResearchPage() {
           {step === 3 ? (
             <section className="v3-card">
               <div className="v3-card-head">
-                <div><h2>研究定稿</h2><p>六维齐全、数据门禁通过后锁定研究定稿；锁定后辩论只读这一版。</p></div>
-                {locked ? <span className="v3-chip ok">已锁定</span> : gateLoading ? <span className="v3-chip">门禁检查中…</span> : <span className={`v3-chip ${gate?.status === "pass" ? "ok" : gate?.status === "warn" ? "warn" : "bad"}`}>门禁 {gate?.status || "未检查"}</span>}
+                <div><h2>研究定稿</h2><p>确认六维与总体结论后锁定；数据门禁只做提示，不阻断定稿。</p></div>
+                {locked ? <span className="v3-chip ok">已锁定</span> : gateLoading ? <span className="v3-chip">门禁检查中…</span> : <span className={`v3-chip ${gate?.status === "pass" ? "ok" : "warn"}`}>{gate?.status === "pass" ? "门禁通过" : "门禁提示"}</span>}
               </div>
               <div className="v3-final-score">
                 <span>总体得分</span>
@@ -721,18 +720,14 @@ export function InstV3ResearchPage() {
                   {gate.checks.map((c) => (
                     <div className="v3-kv" key={c.key}>
                       <dt>{c.label}</dt>
-                      <dd>{c.detail} <span className={`v3-chip ${c.status === "pass" ? "ok" : c.status === "warn" ? "warn" : "bad"}`}>{c.status}</span></dd>
+                      <dd>{c.detail} <span className={`v3-chip ${c.status === "pass" ? "ok" : "warn"}`}>{c.status === "pass" ? "通过" : c.status === "warn" ? "关注" : "提示"}</span></dd>
                     </div>
                   ))}
                 </div>
               ) : null}
 
-              {gateBlocked ? (
-                <div className="v3-note" style={{ marginTop: 8 }}>研究门禁未通过：请回上一步检查六维是否齐全，或重跑未通过核验的维度后再锁定。</div>
-              ) : null}
-
-              {!locked && !gateLoading && gate === null ? (
-                <div className="v3-note" style={{ marginTop: 8 }}>门禁未返回，暂不能锁定；请刷新页面或重新打开该研究案。</div>
+              {!locked && gate?.status === "block" ? (
+                <div className="v3-note" style={{ marginTop: 8 }}>以上为提示项，不影响锁定；锁定后仍可在辩论与议案阶段继续更新研究。</div>
               ) : null}
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12, alignItems: "center" }}>
                 {!locked ? (
@@ -740,7 +735,7 @@ export function InstV3ResearchPage() {
                     <button
                       data-testid="inst-research-lock"
                       className="v3-btn primary"
-                      disabled={!!busy || !version || gateLoading || gate === null || gateBlocked}
+                      disabled={!!busy || !version || gateLoading}
                       onClick={lockResearch}
                     >
                       {busy === "lock" ? "锁定中…" : "锁定研究定稿"}

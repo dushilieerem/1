@@ -2343,10 +2343,7 @@ def review_research(
         if decision == "approve":
             row = _ensure_version_hash(conn, row)
             gate = evaluate_research_gate(_row_dict(row) or {})
-            if gate["status"] == "block":
-                raise PermissionError("研究门禁未通过：" + "；".join(
-                    x["detail"] for x in gate["checks"] if x["status"] == "block"
-                ))
+            gate_status = "warn" if gate["status"] == "block" else gate["status"]
             conn.execute(
                 "UPDATE inst_research_version SET status='approved', frozen_at=NOW(), locked_at=COALESCE(locked_at,NOW()), approved_by=%s, approved_at=NOW() WHERE id=%s",
                 (actor_member_id, version_id),
@@ -2358,7 +2355,7 @@ def review_research(
                 to_stage=2,
                 trigger="research.lock",
                 actor_member_id=actor_member_id,
-                gate_status=gate["status"],
+                gate_status=gate_status,
                 gate_checks=gate["checks"],
                 object_type="inst_research_version",
                 object_id=version_id,
@@ -2616,11 +2613,8 @@ def lock_research(
             return get_case(org_id, int(row["case_id"]))  # type: ignore[return-value]
         version = _row_dict(_ensure_version_hash(conn, row)) or {}
         gate = evaluate_research_gate(version)
-        if gate["status"] == "block" and not allow_gaps:
-            raise PermissionError("研究门禁未通过：" + "；".join(
-                x["detail"] for x in gate["checks"] if x["status"] == "block"
-            ))
-        status = "warn" if gate["status"] == "block" and allow_gaps else gate["status"]
+        # 门禁只做提示，不阻断定稿：数据缺口不阻止研究进入辩论与议案。
+        status = "warn" if gate["status"] == "block" else gate["status"]
         conn.execute(
             """
             UPDATE inst_research_version
@@ -2641,7 +2635,12 @@ def lock_research(
             gate_checks=gate["checks"],
             object_type="inst_research_version",
             object_id=version_id,
-            detail={"version_no": int(row.get("version_no") or 0), "allow_gaps": allow_gaps, "comment": comment},
+            detail={
+                "version_no": int(row.get("version_no") or 0),
+                "allow_gaps": allow_gaps,
+                "gate_hint": gate["status"],
+                "comment": comment,
+            },
         )
         _audit(
             conn,

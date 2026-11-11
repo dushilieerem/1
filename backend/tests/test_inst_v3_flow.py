@@ -182,6 +182,18 @@ def test_research_lock_ignores_low_confidence() -> None:
         assert locked["stage_no"] == 2
 
 
+def test_research_lock_allows_gate_hints() -> None:
+    dims = _dims()
+    dims[0]["gate"] = "fail"
+    with _case(dims=dims) as c:
+        gate = svc.research_gate(c["org_id"], c["version_id"])
+        assert gate["status"] == "block"
+        locked = svc.lock_research(
+            c["org_id"], c["version_id"], actor_member_id=c["member_id"]
+        )
+        assert locked["stage_no"] == 2
+
+
 def test_research_gate_has_no_low_confidence_block() -> None:
     with _case(dims=_dims(low_key="governance")) as c:
         gate = svc.research_gate(c["org_id"], c["version_id"])

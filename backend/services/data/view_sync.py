@@ -48,6 +48,18 @@ REQUIRED_DATASETS = (
     "industry_code_map",
 )
 
+# 内容指纹只看核心数据集：这些变了就必须重载行情/估值/状态，不能只跑元数据。
+FINGERPRINT_DATASETS = (
+    "daily_bars",
+    "daily_bars_unadjusted",
+    "valuation_daily",
+    "security_status_daily",
+    "limit_prices",
+    "financial_income",
+    "financial_balance",
+    "financial_cashflow",
+)
+
 STATE_DDL = """
 CREATE TABLE IF NOT EXISTS data_sync_state (
   id              SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -330,6 +342,36 @@ def _max_db_date(conn) -> date | None:
     return _parse_day((row or {}).get("d"))
 
 
+def fingerprint(view: ViewInfo) -> str:
+    """核心数据集内容指纹（manifest 里的 sha256），用于识别「换视图但数据日不变」。"""
+    datasets = view.manifest.get("datasets") or {}
+    parts = []
+    for name in FINGERPRINT_DATASETS:
+        sha = (datasets.get(name) or {}).get("sha256")
+        parts.append(f"{name}:{sha or '-'}")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def _state_fingerprint(state: dict[str, Any] | None) -> str | None:
+    rows = (state or {}).get("rows")
+    if isinstance(rows, str):
+        try:
+            rows = json.loads(rows)
+        except ValueError:
+            return None
+    if not isinstance(rows, dict):
+        return None
+    value = rows.get("_fingerprint")
+    return str(value) if value else None
+
+
+def _revision_days() -> int:
+    try:
+        return max(1, min(365, int(env("SVQUANT_SYNC_REVISION_DAYS", "30") or "30")))
+    except (TypeError, ValueError):
+        return 30
+
+
 def plan_sync(
     view: ViewInfo,
     state: dict[str, Any] | None,
@@ -342,7 +384,11 @@ def plan_sync(
     """纯函数：决定本次同步是否执行、从哪天开始。"""
     if not view.data_date:
         raise ValueError("view 没有 data_date")
-    if state and state.get("view_id") == view.view_id and not force and not full:
+    state_fp = _state_fingerprint(state)
+    # 旧状态没有指纹时视为"未知"，保持原有行为（只有 view_id 变化才算变）。
+    same_content = state_fp is None or state_fp == fingerprint(view)
+    same_view = bool(state and state.get("view_id") == view.view_id)
+    if state and same_view and same_content and not force and not full:
         state_date = _parse_day(state.get("data_date"))
         db_ok = max_db_date is None or state_date is None or max_db_date >= state_date
         if state_date and state_date >= view.data_date and db_ok:
@@ -361,17 +407,12 @@ def plan_sync(
         candidates = [d for d in (_parse_day((state or {}).get("data_date")), max_db_date) if d]
         start = (min(candidates) + timedelta(days=1)) if candidates else date(2016, 1, 1)
     end = view.data_date
+    changed = bool(state) and not (same_view and same_content)
+    if state and changed and not force and not full:
+        # 换了 view 或核心数据集内容变了：即使数据日没前进，也要重载近 N 天，
+        # 否则行情/估值/状态会停在旧视图（只跑 sync_meta 会把新数据静默漏掉）。
+        start = min(start, end - timedelta(days=_revision_days()))
     if start > end and not force and not full:
-        # 新 view 可能数据日不变、只补了行业/指数权重/risk_daily 等派生列；
-        # 这种情况仍要跑一次轻量元数据同步，不能直接 fresh。
-        if state and state.get("view_id") and state.get("view_id") != view.view_id:
-            return {
-                "status": "sync_meta",
-                "view_id": view.view_id,
-                "data_date": end.isoformat(),
-                "start": end.isoformat(),
-                "end": end.isoformat(),
-            }
         return {
             "status": "fresh",
             "view_id": view.view_id,
@@ -380,7 +421,7 @@ def plan_sync(
             "end": end.isoformat(),
         }
     return {
-        "status": "sync",
+        "status": "sync_revision" if changed else "sync",
         "view_id": view.view_id,
         "data_date": end.isoformat(),
         "start": start.isoformat(),
@@ -1415,28 +1456,10 @@ def sync_view(
                 view, state, max_db_date=_max_db_date(conn), full=full, force=force, from_date=from_date
             )
             if plan["status"] in {"unchanged", "fresh"}:
-                _upsert_state(conn, view, "ok", rows=(state or {}).get("rows"))
+                kept = dict((state or {}).get("rows") or {})
+                kept["_fingerprint"] = fingerprint(view)
+                _upsert_state(conn, view, "ok", rows=kept)
                 return plan
-            if plan["status"] == "sync_meta":
-                end = _parse_day(plan["end"])
-                assert end
-                _prepare_temp_tables(conn)
-                rows: dict[str, int] = {}
-                rows["ref_security"] = _sync_ref_security(conn, view)
-                rows["calendar"] = _sync_calendar(conn, view)
-                rows["industry"] = _sync_industry(conn, view)
-                rows["index"] = _sync_index(conn, view)
-                rows["risk"] = _sync_risk(conn, view, end, end)
-                rows["us_stock"] = _sync_us_stock(conn, view)
-                rows["news"] = _sync_news_dataset(conn, view)
-                rows["doc_items"] = _sync_doc_items(conn, view)
-                rows["dividends"] = _sync_dividends(conn, view)
-                rows["share_capital"] = _sync_share_capital(conn, view)
-                _merge_temp_tables(conn)
-                rows["invest_stocks"] = _refresh_serving(conn, view)
-                _upsert_state(conn, view, "ok", rows=rows)
-                _record_run(conn, view, "ok", rows=rows)
-                return {**plan, "status": "ok", "rows": rows}
             start = _parse_day(plan["start"])
             end = _parse_day(plan["end"])
             assert start and end
@@ -1463,6 +1486,7 @@ def sync_view(
                 rows["financials"] = sum(int(v or 0) for v in financial.values())
             _merge_temp_tables(conn)
             rows["invest_stocks"] = _refresh_serving(conn, view)
+            rows["_fingerprint"] = fingerprint(view)
             _upsert_state(conn, view, "ok", rows=rows)
             _record_run(conn, view, "ok", rows=rows)
             return {**plan, "status": "ok", "rows": rows}

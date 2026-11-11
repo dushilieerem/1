@@ -50,6 +50,7 @@ def _read(
     domain: str = "derived",
     start: str | None = None,
     end: str | None = None,
+    symbol_from_filename: bool = False,
 ):
     import re
 
@@ -94,6 +95,9 @@ def _read(
                     pa.types.is_string(field_type) or pa.types.is_large_string(field_type)
                 ) else field_type
     target = pa.schema([pa.field(name, types[name]) for name in use])
+    # 免费源的财务表是「一股一文件」，部分新文件（如 BSE）没有 Symbol 列，
+    # 代码只在文件名里；缺列时用文件名补齐，否则这些代码会以空/NAN 符号入库或整只丢失。
+    symbol_col = next((name for name in ("Symbol", "symbol") if name in use), None)
     tables: list[pa.Table] = []
     for path, schema in zip(paths, schemas):
         present = [name for name in use if name in schema.names]
@@ -105,6 +109,16 @@ def _read(
                     pa.field(name, types[name]),
                     pa.nulls(table.num_rows, type=types[name]),
                 )
+        if symbol_from_filename and symbol_col and re.match(r"^\d{6}\.[A-Z]{2}$", path.stem):
+            import pyarrow.compute as pc
+
+            col = table.column(symbol_col)
+            nulls = pc.is_null(col)
+            if pc.any(nulls).as_py():
+                filled = pc.if_else(
+                    nulls, pa.array([path.stem] * table.num_rows, type=types[symbol_col]), col
+                )
+                table = table.set_column(table.schema.get_field_index(symbol_col), symbol_col, filled)
         tables.append(table.select(target.names).cast(target, safe=False))
     return pa.concat_tables(tables)
 
@@ -213,6 +227,7 @@ def _statement_frames(root: Path, symbols: Iterable[str] | None = None):
                 "account_receivable",
             ],
             domain="free",
+            symbol_from_filename=True,
         ).to_pandas()
     )
     cashflow = _norm_symbol(
@@ -229,6 +244,7 @@ def _statement_frames(root: Path, symbols: Iterable[str] | None = None):
                 "cash_pay_acq_const_fiolta",
             ],
             domain="free",
+            symbol_from_filename=True,
         ).to_pandas()
     )
     indicator = _norm_symbol(
@@ -247,6 +263,7 @@ def _statement_frames(root: Path, symbols: Iterable[str] | None = None):
                 "inc_net_profit_rate",
             ],
             domain="free",
+            symbol_from_filename=True,
         ).to_pandas()
     )
     frames = []

@@ -13,6 +13,7 @@ from services.data.view_sync import (
     _dataset_files,
     _is_safe_db,
     _prune_us_snapshot,
+    fingerprint,
     plan_sync,
     resolve_view,
     validate_view,
@@ -82,20 +83,55 @@ def test_plan_incremental_from_min_state_and_db(tmp_path: Path):
         {"view_id": "v1", "data_date": date(2026, 11, 2)},
         max_db_date=date(2026, 10, 30),
     )
-    assert out["status"] == "sync"
-    assert out["start"] == "2026-10-31"
+    # 换视图会把重载窗口往前扩到最近 30 天，覆盖可能的修订行。
+    assert out["status"] == "sync_revision"
+    assert out["start"] == "2026-10-03"
     assert out["end"] == "2026-11-02"
 
 
-def test_plan_sync_meta_when_new_view_same_date(tmp_path: Path):
+def test_plan_reloads_core_datasets_when_view_changes_same_date(tmp_path: Path):
+    """换视图但数据日不变：必须重载核心数据集，不能只跑 sync_meta。"""
     view = ViewInfo("v2", tmp_path, _manifest(), "2026-11-01", date(2026, 11, 2))
     out = plan_sync(
         view,
         {"view_id": "v1", "data_date": date(2026, 11, 2)},
         max_db_date=date(2026, 11, 2),
     )
-    assert out["status"] == "sync_meta"
-    assert out["start"] == "2026-11-02"
+    assert out["status"] == "sync_revision"
+    assert out["end"] == "2026-11-02"
+    assert out["start"] < "2026-11-02"
+
+
+def test_plan_reloads_when_dataset_sha_changes(tmp_path: Path):
+    """view_id 不变但核心数据集 sha 变了，也要重载。"""
+    manifest = _manifest()
+    for name, item in manifest["datasets"].items():
+        item["sha256"] = f"sha-{name}-old"
+    view = ViewInfo("v", tmp_path, manifest, "2026-11-01", date(2026, 11, 2))
+    old_fp = fingerprint(view)
+    manifest2 = _manifest()
+    for name, item in manifest2["datasets"].items():
+        item["sha256"] = f"sha-{name}-new"
+    view2 = ViewInfo("v", tmp_path, manifest2, "2026-11-01", date(2026, 11, 2))
+    out = plan_sync(
+        view2,
+        {"view_id": "v", "data_date": date(2026, 11, 2), "rows": {"_fingerprint": old_fp}},
+        max_db_date=date(2026, 11, 2),
+    )
+    assert out["status"] == "sync_revision"
+
+
+def test_plan_unchanged_when_fingerprint_matches(tmp_path: Path):
+    manifest = _manifest()
+    for name, item in manifest["datasets"].items():
+        item["sha256"] = f"sha-{name}"
+    view = ViewInfo("v", tmp_path, manifest, "2026-11-01", date(2026, 11, 2))
+    out = plan_sync(
+        view,
+        {"view_id": "v", "data_date": date(2026, 11, 2), "rows": {"_fingerprint": fingerprint(view)}},
+        max_db_date=date(2026, 11, 2),
+    )
+    assert out["status"] == "unchanged"
 
 
 def test_plan_fresh_when_start_after_end(tmp_path: Path):

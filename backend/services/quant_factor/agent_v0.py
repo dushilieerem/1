@@ -255,14 +255,26 @@ def _previous_agent_evidence(uid: int):
             (topic['project_id'],),
         ).fetchone()
     code = ((cand or {}).get('snapshot') or {}).get('request', {}).get('factor_code') or ''
+    compact_trials = []
+    for t in trials[-3:]:
+        gate = (t.get('result_summary') or {}).get('gate') or {}
+        compact_trials.append({
+            'trial_no': t['trial_no'],
+            'outcome': t['outcome'],
+            'gate': {
+                'passed': gate.get('passed'),
+                'checks': [{'name': c.get('name'), 'actual': c.get('actual'),
+                            'threshold': c.get('threshold'), 'passed': c.get('passed')}
+                           for c in (gate.get('checks') or [])],
+            },
+        })
     return {
         'task': topic['name'],
         'status': (run or {}).get('status'),
-        'stop_reason': (run or {}).get('stop_reason'),
+        'stop_reason': str((run or {}).get('stop_reason') or '')[:500],
         'candidate_status': (cand or {}).get('status'),
-        'implementation': code[:3000],
-        'trials': [{'trial_no': t['trial_no'], 'outcome': t['outcome'],
-                    'gate': (t.get('result_summary') or {}).get('gate')} for t in trials[-5:]],
+        'implementation': code[:1200],
+        'trials': compact_trials,
     }
 
 

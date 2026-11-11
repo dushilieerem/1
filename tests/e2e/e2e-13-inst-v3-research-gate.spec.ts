@@ -70,6 +70,12 @@ test("研究定稿：门禁预览 → 低置信复核 → 锁定 R3", async ({ p
     company_id: Number(company.id),
   });
   const caseId = Number(created.id);
+  // 一股一流程：重复运行会返回已锁定的旧案，先重开再走研究（会作废旧议案与授权）。
+  if (created.created === false) {
+    await call(request, "POST", `/api/inst/cases/${caseId}/research/reopen`, token, {
+      reason: "E2E 重复运行：重开研究案",
+    });
+  }
   const research = await call(
     request,
     "POST",
@@ -80,8 +86,9 @@ test("研究定稿：门禁预览 → 低置信复核 → 锁定 R3", async ({ p
   const versionId = Number(research.versions[0].id);
   const gate = await call(request, "GET", `/api/inst/research/${versionId}/gate`, token);
   expect(["pass", "warn", "block"]).toContain(gate.status);
+  // 门禁检查项：六维完整、数据门禁、Agent 执行完整、证据包（低置信已并入 Agent 执行）。
   expect(gate.checks.map((x: any) => x.key)).toEqual(
-    expect.arrayContaining(["six_dim_complete", "low_confidence", "data_gate", "evidence"]),
+    expect.arrayContaining(["six_dim_complete", "data_gate", "agent_health", "evidence"]),
   );
 
   await page.addInitScript((t) => sessionStorage.setItem("svquant_inst_token", t), token);
@@ -96,27 +103,10 @@ test("研究定稿：门禁预览 → 低置信复核 → 锁定 R3", async ({ p
   await page.locator(".v3-stepper .v3-step").nth(3).click();
   await expect(page.getByText("研究定稿", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("六维 6/6", { exact: true })).toBeVisible();
-  await expect(page.getByText("低置信项已处理", { exact: true })).toBeVisible();
   await expect(page.getByText("数据门禁", { exact: true })).toBeVisible();
   await expect(page.getByText("总体得分", { exact: true })).toBeVisible();
-
-  // 有低置信项时先逐维复核；复核说明写入审计。
-  for (let i = 0; i < 6; i += 1) {
-    const review = page.getByRole("button", { name: /复核通过 ·/ }).first();
-    if (!(await review.count())) break;
-    await page.locator(".v3-field input").fill(`E2E 复核说明 ${i + 1}`);
-    await review.click();
-    await expect(review).toHaveCount(0, { timeout: 30_000 }).catch(() => undefined);
-  }
-
-  // 门禁仍阻断时走显式带缺口锁定；否则正常锁定。
-  const gapCheckbox = page.locator('input[type="checkbox"]');
-  if (await gapCheckbox.count()) {
-    await gapCheckbox.check();
-    await page.getByTestId("inst-research-lock-gaps").click();
-  } else {
-    await page.getByTestId("inst-research-lock").click();
-  }
+  // 门禁只做提示，不阻断定稿：直接锁定研究定稿。
+  await page.getByTestId("inst-research-lock").click();
   await expect(page.getByText("已锁定", { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole("link", { name: /移交多空辩论/ })).toBeVisible();
 

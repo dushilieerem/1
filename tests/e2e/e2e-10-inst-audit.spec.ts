@@ -3,18 +3,20 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { evaluateWriteGuard } from "./helpers/write-guard.mjs";
 
 /**
- * 主观机构端 v3 审计：八个入口、六角色菜单、控制台/5xx、窄屏、
+ * 主观机构端 v3 审计：九个入口、四角色菜单、控制台/5xx、窄屏、
  * 空/错/加载态、AI 一页纸缓存。默认只读；一页纸落盘需写库闸门放行。
  */
 const BASE = process.env.INST_BASE || "http://127.0.0.1:9533";
 const API = process.env.INST_API || "http://127.0.0.1:8771";
 const PW = process.env.INST_PASSWORD || "inst123456";
-const ROLES = ["manager", "partner", "chairman", "risk", "execution", "monitoring"] as const;
+// 机构端已收敛为四个角色（#211）；execution / monitoring 账号已停用。
+const ROLES = ["manager", "partner", "chairman", "risk"] as const;
 type Role = (typeof ROLES)[number];
 
 const WORKSPACES: Array<[string, string]> = [
   ["/inst", "INVESTMENT OFFICE"],
   ["/inst/pipeline", "PIPELINE"],
+  ["/inst/stocks", "STOCKS"],
   ["/inst/research", "RESEARCH"],
   ["/inst/debate", "DEBATE"],
   ["/inst/approvals", "DECISION"],
@@ -24,12 +26,20 @@ const WORKSPACES: Array<[string, string]> = [
 ];
 
 const EXPECTED_NAV: Record<Role, string[]> = {
-  manager: ["投资工作台", "项目流水线", "价值分析", "多空辩论", "投委会审批", "执行成交", "投资管理", "流程与权限"],
-  partner: ["投资工作台", "项目流水线", "投委会审批", "流程与权限"],
-  risk: ["投资工作台", "项目流水线", "投委会审批", "流程与权限"],
-  chairman: ["投资工作台", "项目流水线", "投委会审批", "流程与权限"],
-  execution: ["投资工作台", "项目流水线", "执行成交", "流程与权限"],
-  monitoring: ["投资工作台", "项目流水线", "投资管理", "流程与权限"],
+  manager: [
+    "投资工作台",
+    "项目流水线",
+    "股票总览",
+    "价值分析",
+    "多空辩论",
+    "投委会审批",
+    "执行成交",
+    "投资管理",
+    "流程与权限",
+  ],
+  partner: ["投资工作台", "项目流水线", "股票总览", "投委会审批", "流程与权限"],
+  risk: ["投资工作台", "项目流水线", "股票总览", "投委会审批", "流程与权限"],
+  chairman: ["投资工作台", "项目流水线", "股票总览", "投委会审批", "流程与权限"],
 };
 
 const TOKENS: Partial<Record<Role, string>> = {};
@@ -136,7 +146,7 @@ test("AI 一页纸落盘后可重复读取，不重复生成", async ({ request 
   expect(again.memo?.summary).toBe(first.memo.summary);
 });
 
-test("八个入口可达，无控制台错误与接口 5xx", async ({ browser }) => {
+test("九个入口可达，无控制台错误与接口 5xx", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!);
   const errors: string[] = [];
   const failures: string[] = [];
@@ -162,7 +172,7 @@ test("八个入口可达，无控制台错误与接口 5xx", async ({ browser })
   await ctx.close();
 });
 
-test("六角色菜单按登录身份裁剪", async ({ browser }) => {
+test("四角色菜单按登录身份裁剪", async ({ browser }) => {
   for (const role of ROLES) {
     const { ctx, page } = await openPage(browser, TOKENS[role]!);
     await page.goto(`${BASE}/inst`, { waitUntil: "networkidle" });
@@ -172,7 +182,7 @@ test("六角色菜单按登录身份裁剪", async ({ browser }) => {
   }
 });
 
-test("窄屏 1024 八个入口无横向溢出", async ({ browser }) => {
+test("窄屏 1024 九个入口无横向溢出", async ({ browser }) => {
   const { ctx, page } = await openPage(browser, TOKENS.manager!, { width: 1024, height: 900 });
   for (const [path, text] of WORKSPACES) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });

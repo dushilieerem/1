@@ -38,7 +38,7 @@ HYPOTHESIS = (
     '短周期反转基线：过去 5 个交易日累计收益最低的固定 40 只样本，'
     '次日存在正向反转；仅使用 OHLCV，不改变固定区间与门槛。'
 )
-_ACCEPTANCE = '方向 Rank IC ≥ 0.005，NW t ≥ t*(K)，有效观测 ≥ 60，最大回撤 ≤ 0.5'
+_ACCEPTANCE = '科学评估 v2：方向 Rank IC ≥ 0.02，NW t ≥ t*(K)，有效观测 ≥ 60，最大回撤 ≤ 0.20；成本必须非零'
 TEMPLATES = [
     {'key': 'reversal_5d', 'title': '5日反转基线', 'window': 5, 'hypothesis': HYPOTHESIS},
     {'key': 'reversal_1d', 'title': '1日反转基线', 'window': 1,
@@ -246,11 +246,14 @@ def _baseline_config(template: dict | None = None) -> dict:
         'analysisLevel': 'core',
         'rebalanceDays': 1,
         'executionTiming': 'next_close',
+        'commissionRate': 0.0003,
+        'stampTax': 0.001,
+        'slippageRate': 0.0005,
         'researchUniverseSymbols': list(DEFAULT_SYMBOLS),
         'researchPlan': {
             'rules': {
                 'icMetric': 'rank_ic', 'direction': 'positive',
-                'maxDrawdown': 0.5, 'minSignedIc': 0.005, 'minObservations': 60,
+                'maxDrawdown': 0.20, 'minSignedIc': 0.02, 'minObservations': 60,
             },
             'target': '未来1个交易日收益',
             'revision': 'agent-v0-' + str(uuid.uuid4()),
@@ -258,6 +261,7 @@ def _baseline_config(template: dict | None = None) -> dict:
             'maxTrials': 5,
             'acceptance': _ACCEPTANCE,
             'hypothesis': template['hypothesis'],
+            'evaluationProtocol': 'scientific-v2',
             'validationEnd': '2026-09-21',
             'developmentEnd': '2025-09-30',
             'researchPurpose': 'discovery',
@@ -266,7 +270,7 @@ def _baseline_config(template: dict | None = None) -> dict:
             'fieldRestriction': 'ohlcv',
             'improvementScope': '只改进实现，不改变经济假设和方向',
             'candidateExpression': '',
-            'noveltyPolicy': {'scope': 'all_accessible', 'maxAbsCorrelation': 0.7, 'minDays': 60, 'minPairs': 30, 'minCoverage': 0.8},
+            'noveltyPolicy': {'scope': 'all_accessible', 'maxAbsCorrelation': 0.6, 'minDays': 60, 'minPairs': 30, 'minCoverage': 0.8},
         },
         'researchContext': {
             'question': template['hypothesis'],

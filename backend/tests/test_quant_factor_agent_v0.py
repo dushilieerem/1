@@ -188,3 +188,15 @@ class AgentFailureAndReviewGuardTests(unittest.TestCase):
             result = agent_v0.tick(1, 2)
         self.assertEqual(result['state'], 'waiting_review')
         create.assert_not_called()
+
+
+class ScientificV2ProfileTests(unittest.TestCase):
+    def test_agent_baseline_uses_real_costs_and_stricter_rules(self):
+        cfg = agent_v0._baseline_config()
+        self.assertEqual(cfg['researchPlan']['evaluationProtocol'], 'scientific-v2')
+        self.assertEqual(cfg['researchPlan']['rules']['minSignedIc'], 0.02)
+        self.assertEqual(cfg['researchPlan']['rules']['maxDrawdown'], 0.20)
+        self.assertGreater(cfg['commissionRate'], 0)
+        self.assertGreater(cfg['stampTax'], 0)
+        self.assertGreater(cfg['slippageRate'], 0)
+        self.assertEqual(cfg['researchPlan']['noveltyPolicy']['maxAbsCorrelation'], 0.6)

@@ -8,6 +8,9 @@ def project():
 def result():
  return {'metrics':{'ic':.05,'max_drawdown':-.1},'meta':{'data_release_id':'r1','spec_hash':'s1','factor_source_hash':'f1'},'factor_analysis':{'ic_series':[{'date':'a','value':.05},{'date':'b','value':.1}]}}
 class PolicyTests(unittest.TestCase):
+ def test_scientific_v2_requires_real_costs(self):
+  p=project();p['config']['researchPlan']['evaluationProtocol']='scientific-v2';p['config']['commissionRate']=0;p['config']['stampTax']=0;p['config']['slippageRate']=0
+  with self.assertRaisesRegex(WorkflowError,'科学评估 v2 要求'):snapshot(p)
  def test_nonoverlap(self):
   p=project();p['config']['researchPlan']['validationStart']='2024-12-31'
   with self.assertRaises(WorkflowError):snapshot(p)

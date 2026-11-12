@@ -64,6 +64,8 @@ def snapshot(project):
         request.pop('universe',None);request['universe_snapshot']=static_sample(c['researchUniverseSymbols'])
     if request['execution_timing']=='same_close': raise WorkflowError('固定验证不允许收盘同刻成交，请使用次日成交')
     for k in ('commission_rate','stamp_tax','slippage_rate'): request[k]=number(request[k],k,0,.1)
+    if p.get('evaluationProtocol')=='scientific-v2' and any(float(request[k])<=0 for k in ('commission_rate','stamp_tax','slippage_rate')):
+        raise WorkflowError('科学评估 v2 要求佣金、印花税和滑点均大于 0，未发回测')
     if draft.get('name')==name and draft.get('body'):
         try: validated_factor_code(draft['body'],name)
         except ValueError as exc: raise WorkflowError(str(exc)) from exc

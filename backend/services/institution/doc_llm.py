@@ -61,6 +61,14 @@ SECTION_KEYWORDS: dict[str, tuple[str, ...]] = {
     "董监高变动": ("辞职", "离任", "聘任", "选举", "变动"),
 }
 
+SECTION_PRIMARY_FIELD: dict[str, str] = {
+    "股份质押冻结": "pledge_freeze",
+    "承诺事项": "commitment_history",
+    "关联交易": "related_party",
+    "对外担保": "guarantee",
+    "董监高变动": "mgmt_change",
+}
+
 MAX_CHARS = 10000
 
 
@@ -249,6 +257,26 @@ def extract_company(
                     "section": section,
                 }
             )
+        # 原文明确为“无”（found=true 且无事实）：登记 not_applicable，避免被当成数据缺口
+        if result.get("available") and result.get("found") and not (result.get("facts") or []):
+            field_key = SECTION_PRIMARY_FIELD.get(section)
+            if field_key:
+                facts.append(
+                    {
+                        "field_key": field_key,
+                        "value": {"stated": "none", "note": result.get("note") or "原文明确为无"},
+                        "quote": (result.get("note") or "原文明确为无")[:300],
+                        "page_no": 0,
+                        "confidence": 0.9,
+                        "quote_verified": True,
+                        "negative": True,
+                        "symbol": symbol,
+                        "doc_id": result.get("doc_id"),
+                        "report_period": result.get("report_period"),
+                        "available_time": result.get("available_time"),
+                        "section": section,
+                    }
+                )
     return {
         "symbol": symbol,
         "name": name,
@@ -337,21 +365,29 @@ def persist_result(result: dict[str, Any], *, org_id: int = ORGANIZATION_ID) -> 
     with get_conn() as conn:
         for (doc_id, field_key), items in grouped.items():
             values = [item.get("value") for item in items]
-            value = values[0] if len(values) == 1 else values
+            if len(values) == 1:
+                value = values[0]
+            elif all(isinstance(v, list) for v in values):
+                value = [row for v in values for row in v]
+            else:
+                value = values
             first = items[0]
+            status = "not_applicable" if all(item.get("negative") for item in items) else "pending"
+            page_no = first.get("page_no") if first.get("page_no") else None
             params = (
                 first.get("symbol"),
                 FIELD_LABELS.get(field_key, ""),
                 json.dumps(value, ensure_ascii=False),
                 first.get("report_period"),
-                first.get("page_no"),
+                page_no,
                 first.get("quote"),
                 first.get("available_time"),
                 EXTRACTOR_VERSION,
                 first.get("confidence"),
+                status,
             )
             existing = conn.execute(
-                "SELECT value_text, review_status FROM svquant.doc_extract WHERE doc_id=%s AND field_key=%s",
+                "SELECT value_text, review_status, extractor_version FROM svquant.doc_extract WHERE doc_id=%s AND field_key=%s",
                 (doc_id, field_key),
             ).fetchone()
             if existing is None:
@@ -361,13 +397,13 @@ def persist_result(result: dict[str, Any], *, org_id: int = ORGANIZATION_ID) -> 
                       (symbol, field_key, field_label, value_text, value_num, unit, report_period,
                        page_no, quote, doc_id, pdf_sha256, source_url, available_time,
                        extractor_version, confidence, review_status)
-                    VALUES (%s,%s,%s,%s,NULL,NULL,%s,%s,%s,%s,NULL,NULL,%s,%s,%s,'pending')
+                    VALUES (%s,%s,%s,%s,NULL,NULL,%s,%s,%s,%s,NULL,NULL,%s,%s,%s,%s)
                     ON CONFLICT (doc_id, field_key) DO NOTHING
                     RETURNING doc_id
                     """,
                     (
                         params[0], field_key, params[1], params[2], params[3], params[4],
-                        params[5], doc_id, params[6], params[7], params[8],
+                        params[5], doc_id, params[6], params[7], params[8], params[9],
                     ),
                 ).fetchone()
                 if row:
@@ -375,25 +411,28 @@ def persist_result(result: dict[str, Any], *, org_id: int = ORGANIZATION_ID) -> 
                 continue
             old_text = existing.get("value_text") if isinstance(existing, dict) else existing[0]
             old_status = existing.get("review_status") if isinstance(existing, dict) else existing[1]
-            if not is_low_quality(field_key, old_text):
+            old_extractor = existing.get("extractor_version") if isinstance(existing, dict) else existing[2]
+            refresh_own = str(old_extractor or "") == EXTRACTOR_VERSION
+            if not refresh_own and not is_low_quality(field_key, old_text):
                 continue
             row = conn.execute(
                 """
                 UPDATE svquant.doc_extract
-                   SET superseded_at=NOW(),
-                       superseded_value_text=value_text,
-                       superseded_quote=quote,
-                       superseded_page_no=page_no,
-                       superseded_review_status=review_status,
-                       superseded_extractor_version=extractor_version,
+                   SET superseded_at = CASE WHEN %s THEN superseded_at ELSE NOW() END,
+                       superseded_value_text = CASE WHEN %s THEN superseded_value_text ELSE value_text END,
+                       superseded_quote = CASE WHEN %s THEN superseded_quote ELSE quote END,
+                       superseded_page_no = CASE WHEN %s THEN superseded_page_no ELSE page_no END,
+                       superseded_review_status = CASE WHEN %s THEN superseded_review_status ELSE review_status END,
+                       superseded_extractor_version = CASE WHEN %s THEN superseded_extractor_version ELSE extractor_version END,
                        field_label=%s, value_text=%s, report_period=%s, page_no=%s, quote=%s,
-                       available_time=%s, extractor_version=%s, confidence=%s, review_status='pending'
+                       available_time=%s, extractor_version=%s, confidence=%s, review_status=%s
                  WHERE doc_id=%s AND field_key=%s
                  RETURNING doc_id
                 """,
                 (
+                    refresh_own, refresh_own, refresh_own, refresh_own, refresh_own, refresh_own,
                     params[1], params[2], params[3], params[4], params[5],
-                    params[6], params[7], params[8], doc_id, field_key,
+                    params[6], params[7], params[8], params[9], doc_id, field_key,
                 ),
             ).fetchone()
             if row:

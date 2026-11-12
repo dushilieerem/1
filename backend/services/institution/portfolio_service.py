@@ -79,6 +79,20 @@ def portfolio(org_id: int) -> dict[str, Any]:
             if bar and bar.get("close") is not None and p.get("qty") is not None:
                 p["last_close"] = bar["close"]
                 p["market_value"] = float(p["qty"]) * float(bar["close"])
+                prev_close = bar.get("pre_close")
+                if prev_close is None:
+                    history = md.bar_history(str(p.get("symbol") or ""), adjust="none", limit=2)
+                    prev_close = history[0]["close"] if len(history) > 1 else None
+                qty = float(p["qty"])
+                cost = float(p.get("cost") or 0)
+                last = float(bar["close"])
+                if cost > 0:
+                    p["pnl"] = qty * (last - cost)
+                    p["pnl_pct"] = (last / cost - 1) * 100
+                if prev_close:
+                    p["today_pnl"] = qty * (last - float(prev_close))
+                    p["today_pnl_pct"] = (last / float(prev_close) - 1) * 100
+                    p["pre_close"] = prev_close
             p["idea"] = _idea_questions(p, "holdings")
     invested = sum(float(p.get("market_value") or 0) for p in positions)
     cash = float(pf["cash"] or 0)

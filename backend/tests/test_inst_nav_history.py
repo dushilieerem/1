@@ -87,3 +87,30 @@ def test_holding_nav_history_uses_net_qty_and_avg_cost(monkeypatch):
 def test_max_drawdown():
     assert svc._max_drawdown([100, 120, 90, 130]) == -25.0
     assert svc._max_drawdown([100, 110, 120]) == 0.0
+
+
+def test_portfolio_position_pnl_and_today(monkeypatch):
+    class _Ctx:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(svc, "get_conn", lambda: _Ctx())
+    monkeypatch.setattr(
+        svc.repo,
+        "portfolio",
+        lambda scope, conn=None: (
+            {"cash": 1_000.0, "nav": 2_000.0},
+            [{"symbol": "AAA.SZ", "qty": 10.0, "cost": 100.0, "market_value": 1_000.0}],
+        ),
+    )
+    monkeypatch.setattr(svc, "_idea_questions", lambda pos, scope: None)
+    monkeypatch.setattr(svc.md, "latest_bar", lambda symbol, adjust="none": {"close": 110.0, "pre_close": 105.0})
+    out = svc.portfolio(1)
+    pos = out["positions"][0]
+    assert pos["pnl"] == 100.0
+    assert round(pos["pnl_pct"], 2) == 10.0
+    assert pos["today_pnl"] == 50.0
+    assert round(pos["today_pnl_pct"], 4) == round((110 / 105 - 1) * 100, 4)

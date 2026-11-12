@@ -18,6 +18,11 @@ type Position = {
   market_value: number;
   weight: number;
   last_close?: number;
+  pre_close?: number;
+  pnl?: number;
+  pnl_pct?: number;
+  today_pnl?: number;
+  today_pnl_pct?: number;
 };
 
 type Portfolio = {
@@ -138,6 +143,25 @@ function textOf(value: unknown, fallback = "—"): string {
 function parseHolding(key: string | null): string | null {
   const m = String(key || "").match(/holding:([A-Za-z0-9.]+)/);
   return m ? m[1] : null;
+}
+
+function pnlColor(value?: number | null): string | undefined {
+  if (value === null || value === undefined || Number.isNaN(value)) return undefined;
+  if (value > 0) return "#c03434";
+  if (value < 0) return "#1f8a5b";
+  return undefined;
+}
+
+function fmtSignedMoney(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${fmtMoney(value)}`;
+}
+
+function fmtSignedPct(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
 }
 
 export function InstV3ManagePage() {
@@ -443,13 +467,22 @@ export function InstV3ManagePage() {
                 <div className="v3-card-head"><div><h2>持仓明细</h2><p>点任意持仓进入单票盘中；权重按市值/净值。</p></div><span className="v3-chip">{positions.length} 只</span></div>
                 <div className="table-wrap" style={{ overflowX: "auto" }}>
                   <table className="v3-table">
-                    <thead><tr><th>标的</th><th>数量</th><th>成本</th><th>最新</th><th>市值</th><th>权重</th><th>盘中</th></tr></thead>
+                    <thead><tr><th>标的</th><th>数量</th><th>成本</th><th>最新</th><th>市值</th><th>今日盈亏</th><th>累计盈亏</th><th>权重</th><th>盘中</th></tr></thead>
                     <tbody>
                       {positions.map((p) => (
                         <tr key={p.symbol}>
                           <td><b>{p.name || p.symbol}</b><span>{p.symbol} · {p.industry || "—"}</span></td>
                           <td>{p.qty}</td><td>{p.cost ? p.cost.toFixed(2) : "—"}</td><td>{p.last_close ? p.last_close.toFixed(2) : "—"}</td>
-                          <td>{fmtMoney(p.market_value)}</td><td>{fmtPct(p.weight)}</td>
+                          <td>{fmtMoney(p.market_value)}</td>
+                          <td style={{ color: pnlColor(p.today_pnl) }}>
+                            {fmtSignedMoney(p.today_pnl)}
+                            <span>{fmtSignedPct(p.today_pnl_pct)}</span>
+                          </td>
+                          <td style={{ color: pnlColor(p.pnl) }}>
+                            {fmtSignedMoney(p.pnl)}
+                            <span>{fmtSignedPct(p.pnl_pct)}</span>
+                          </td>
+                          <td>{fmtPct(p.weight)}</td>
                           <td><button className="v3-btn ghost" onClick={() => selectHolding(p.symbol)}>盘中 →</button></td>
                         </tr>
                       ))}

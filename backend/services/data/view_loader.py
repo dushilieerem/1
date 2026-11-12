@@ -237,6 +237,17 @@ def _to_ytd(income):
     income = income.copy()
     period = income["m_timetag"].astype(str)
     income["_fy"] = period.str[:4]
+    # 退市股 F10 给的是年内累计（caliber=cumulative），先差分成单季再加总，
+    # 否则会被重复累计。单季口径（绝大多数）保持原值。
+    if "caliber" in income.columns:
+        cumulative = income["caliber"].fillna("").astype(str).str.lower() == "cumulative"
+        if bool(cumulative.any()):
+            groups = income.groupby(["symbol", "_fy"], sort=False)
+            for col in ("revenue", "oper_profit", "net_profit_excl_min_int_inc"):
+                if col not in income.columns:
+                    continue
+                diffed = (income[col] - groups[col].shift()).fillna(income[col])
+                income[col] = income[col].where(~cumulative, diffed)
     # 2014/2015 只有年报行：单季字段实为 Q4，无法还原全年；留空而不是冒充累计
     annual_only = period.str.endswith("1231") & (
         income.groupby(["symbol", "_fy"], sort=False)["m_timetag"].transform("size") == 1
@@ -278,6 +289,7 @@ def _statement_frames(root: Path, symbols: Iterable[str] | None = None):
             "gross_margin",
             "tot_profit",
             "s_fa_eps_basic",
+            "caliber",
         ],
     ).to_pandas()
     income["symbol"] = income["symbol"].astype(str).str.upper()

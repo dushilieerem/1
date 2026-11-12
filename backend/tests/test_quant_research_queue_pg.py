@@ -77,6 +77,12 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
   self.assertEqual(self.queue_row(parent)['status'],'waiting');self.assertIsNone(q.claim())
   b.abandon_unconfirmed(self.uid,self.org,saved[0]['id'],'BFF process restarted before receipt','test-operator')
   self.assertEqual(q.claim()['id'],second['id'])
+ def test_foreign_host_owner_is_not_left_pinned_forever(self):
+  first=self.add('first');second=self.add('second');running=q.claim()
+  with self.connection() as c:c.execute("UPDATE quant_research_queue_jobs SET owner_host='other-host',owner_instance='old',owner_pid=2147483000,owner_start='gone' WHERE id=%s",(running['id'],))
+  q.recover_owned()
+  self.assertEqual(self.queue_row(first)['status'],'waiting')
+  self.assertEqual(q.claim()['id'],second['id'])
  def test_old_usage_gaps_without_queue_identity_do_not_occupy_slot(self):
   with patch.dict(os.environ,{'QUANT_RESEARCH_DURABLE_QUEUE':'0'}):
    historic=b.reserve(self.uid,self.org,'project','old-gap','quant.factor.research_assistant','old',100,3000);b.claim(self.uid,self.org,historic['id']);b.unresolved(self.uid,self.org,historic['id'],'historic receipt gap')

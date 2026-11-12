@@ -98,8 +98,11 @@ def recover_owned():
   _lock(c)
   rows=c.execute("SELECT * FROM quant_research_queue_jobs WHERE deployment_id=%s AND status='running' FOR UPDATE",(DEPLOYMENT_ID,)).fetchall()
   for row in rows:
-   if row['owner_host']!=HOST or row['owner_instance']==INSTANCE:continue
-   if _start_ticks(row['owner_pid'])==row['owner_start']:continue
+   if row['owner_instance']==INSTANCE:continue
+   # A local owner is live only while its exact process start token exists.
+   # A different hostname means the deployment was recreated (or the row came
+   # from another instance); no local process can prove it is still running.
+   if row['owner_host']==HOST and _start_ticks(row['owner_pid'])==row['owner_start']:continue
    uncertain=unknown_calls(c,row['root_id']) or compute_pending(c,row['root_id'])
    reason='原物理调用结果待确认；不会重新发送' if uncertain else '原执行进程已退出；动作中途检查点需确认，未自动重放'
    c.execute("UPDATE quant_research_queue_jobs SET status='waiting',reason=%s,updated_at=NOW() WHERE id=%s",(reason,row['id']))

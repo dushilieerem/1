@@ -120,3 +120,22 @@ class AgentV0Test(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
+
+
+class AgentSafetyCapTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for target in ('_STATE_PATH',):
+            guard = patch.object(agent_v0, target, Path(self.tmp.name) / 'state.json')
+            guard.start(); self.addCleanup(guard.stop)
+        control = patch.object(agent_v0.service, 'control_status', return_value={'paused': False})
+        control.start(); self.addCleanup(control.stop)
+
+    def test_daily_task_cap_stops_new_baselines_without_calling_planner(self):
+        from datetime import date
+        Path(self.tmp.name, 'state.json').write_text(json.dumps({'enabled': True, 'user_id': 1, 'org_id': 2, 'task_date': date.today().isoformat(), 'tasks_today': 3}))
+        with patch.object(agent_v0, 'MAX_TASKS_PER_DAY', 3), patch.object(agent_v0, 'get_conn', return_value=FakeConn()), patch.object(agent_v0, '_pending_project', return_value=None), patch.object(agent_v0, '_create_baseline_project') as create:
+            result = agent_v0.tick(1, 2)
+        self.assertEqual(result['state'], 'waiting_limit')
+        create.assert_not_called()

@@ -51,6 +51,25 @@ _STATE_PATH = Path(env('QUANT_AGENT_V0_STATE', '') or (
 _AUDIT_PATH = Path(env('QUANT_AGENT_V0_AUDIT')) if env('QUANT_AGENT_V0_AUDIT') else None
 _STATE_LOCK = threading.RLock()
 _TICK_LOCK = threading.Lock()
+MAX_TASKS_PER_DAY = int(env('QUANT_AGENT_V0_MAX_TASKS_PER_DAY', '20') or 20)
+
+
+def _today_local() -> str:
+    return datetime.now().date().isoformat()
+
+
+def _record_task_created() -> None:
+    """Count only new baselines; a re-enable cannot bypass the daily safety cap."""
+    state = _read_state()
+    if state.get('task_date') != _today_local():
+        state['task_date'] = _today_local()
+        state['tasks_today'] = 0
+    state['tasks_today'] = int(state.get('tasks_today') or 0) + 1
+    _update_state(task_date=state['task_date'], tasks_today=state['tasks_today'])
+
+
+def _daily_cap_reached(state: dict) -> bool:
+    return state.get('task_date') == _today_local() and int(state.get('tasks_today') or 0) >= MAX_TASKS_PER_DAY
 
 
 def _audit(action: str, **fields) -> None:
@@ -133,11 +152,11 @@ def _public_state(uid: int, org: int, *, can_control: bool = False) -> dict:
         reason = '已有研究在运行；同一时间只推进 1 项。'
     elif pending and topic:
         wait_state = state.get('last_state')
-        status = 'waiting_quota' if wait_state == 'waiting_quota' else 'waiting_data' if wait_state == 'waiting_data' else 'pending_start'
-        reason = (state.get('last_error') if status in ('waiting_data', 'waiting_quota') else '') or 'Agent 已起草任务，等待启动。'
+        status = wait_state if wait_state in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review') else 'pending_start'
+        reason = (state.get('last_error') if status in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review') else '') or 'Agent 已起草任务，等待启动。'
     elif pending:
         wait_state = state.get('last_state')
-        status = 'waiting_quota' if wait_state == 'waiting_quota' else 'waiting_data' if wait_state == 'waiting_data' else 'drafting'
+        status = wait_state if wait_state in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review') else 'drafting'
         reason = state.get('last_error') or 'Agent 已起草任务，等待固定数据。'
     else:
         status = 'idle'
@@ -506,9 +525,10 @@ def tick(uid: int, org: int) -> dict:
             pending = _pending_project(c, uid)
             topic = None
             last_run = None
+            open_review = None
             if pending:
                 topic = c.execute(
-                    'SELECT id,status FROM quant_factor_topics WHERE user_id=%s AND project_id=%s LIMIT 1',
+                    'SELECT id,status,project_id FROM quant_factor_topics WHERE user_id=%s AND project_id=%s LIMIT 1',
                     (uid, pending['id']),
                 ).fetchone()
                 if topic:
@@ -516,6 +536,11 @@ def tick(uid: int, org: int) -> dict:
                         'SELECT status FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s '
                         'ORDER BY created_at DESC LIMIT 1',
                         (uid, org, topic['id']),
+                    ).fetchone()
+                    open_review = c.execute(
+                        "SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s "
+                        "AND (archive->'review'->>'status'='requested' OR archive->'research_asset' IS NOT NULL) LIMIT 1",
+                        (uid, org, pending['id']),
                     ).fetchone()
         if active:
             _update_state(last_state='running', last_tick_at=_now())
@@ -525,13 +550,28 @@ def tick(uid: int, org: int) -> dict:
                 _update_state(last_state='running', last_tick_at=_now())
                 return {'state': 'running', 'reason': '已有研究在运行；同一时间只推进 1 项。'}
             if last_run and last_run['status'] in ('stopped', 'failed', 'completed'):
+                if open_review:
+                    reason = '上一项研究仍在等待复核或登记；未新建下一项任务'
+                    _update_state(last_state='waiting_review', last_error=reason, last_tick_at=_now())
+                    return {'state': 'waiting_review', 'reason': reason}
+                if _daily_cap_reached(state):
+                    reason = f'今日自动研究任务已达上限 {MAX_TASKS_PER_DAY} 项；未新建下一项任务'
+                    _update_state(last_state='waiting_limit', last_error=reason, last_tick_at=_now())
+                    return {'state': 'waiting_limit', 'reason': reason}
                 # One task at a time: the previous research ended, so propose
                 # the next baseline instead of retrying the terminal topic.
                 project = _create_baseline_project(uid, org)
+                _record_task_created()
                 return _start_pending(uid, org, project, state)
             project = _project(uid, pending['id'])
             return _start_pending(uid, org, project, state)
+        if _daily_cap_reached(state):
+            reason = f'今日自动研究任务已达上限 {MAX_TASKS_PER_DAY} 项；未新建下一项任务'
+            _update_state(last_state='waiting_limit', last_error=reason, last_tick_at=_now())
+            return {'state': 'waiting_limit', 'reason': reason}
         project = _project(uid, pending['id']) if pending else _create_baseline_project(uid, org)
+        if not pending:
+            _record_task_created()
         return _start_pending(uid, org, project, state)
 
 

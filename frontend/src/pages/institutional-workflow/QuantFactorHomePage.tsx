@@ -33,7 +33,7 @@ const statusText=(t:Pick<Topic,'status'|'dispatch_status'|'pending_review'|'seal
  return '待启动';
 };
 
-const agentStateText=(a?:AgentStatus)=>{if(!a)return '读取中';if(!a.enabled)return '未开启';if(a.state==='running')return '运行中';if(a.state==='waiting_data')return '等待固定数据';if(a.state==='waiting_quota')return '等待模型调用额度';if(a.state==='pending_start')return '待启动';if(a.state==='paused')return '已暂停';if(a.state==='not_enabled')return '未开启';return '已开启';};
+const agentStateText=(a?:AgentStatus)=>{if(!a)return '读取中';if(!a.enabled)return '未开启';if(a.state==='running')return '运行中';if(a.state==='waiting_data')return '等待固定数据';if(a.state==='waiting_quota')return '等待模型调用额度';if(a.state==='waiting_limit')return '今日任务已达上限';if(a.state==='waiting_review')return '等待复核';if(a.state==='pending_start')return '待启动';if(a.state==='paused')return '已暂停';if(a.state==='not_enabled')return '未开启';return '已开启';};
 const purposeText=(p?:string|null)=>p==='replication'?'复现':p==='discovery'?'新发现':'类型未记录';
 const executorText=(value:string)=>value==='human'?'人工研究':value==='agent'?'研究系统':value==='service'?'计算服务':'研究执行';
 const outcomeText=(t:Trial)=>t.outcome==='passed'?'通过':t.outcome==='failed'?'未达标':t.outcome==='error'?'执行错误':t.outcome;

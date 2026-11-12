@@ -148,3 +148,24 @@ def test_iso_day_treats_nan_as_missing() -> None:
     assert loader._iso_day(20240625.0) == "2024-06-25"
     assert loader._iso_day("20240625") == "2024-06-25"
     assert not math.isnan(0)  # 文档化：数学 NaN 只来自 float
+
+
+def test_to_ytd_differences_cumulative_rows() -> None:
+    """caliber=cumulative 的行先差分成单季，再累计后应与原始累计值一致。"""
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "symbol": ["A"] * 3 + ["B"] * 2,
+            "m_timetag": ["20260331", "20260630", "20260930", "20260331", "20260630"],
+            "m_anntime": ["20260430", "20260830", "20261030", "20260430", "20260830"],
+            "revenue": [100.0, 250.0, 400.0, 50.0, 60.0],
+            "oper_profit": [10.0, 25.0, 40.0, 5.0, 6.0],
+            "net_profit_excl_min_int_inc": [8.0, 20.0, 32.0, 4.0, 5.0],
+            "gross_margin": [90.0] * 5,
+            "caliber": ["cumulative"] * 3 + ["single_quarter"] * 2,
+        }
+    )
+    out = loader._to_ytd(frame)
+    assert out["revenue"].tolist() == [100.0, 250.0, 400.0, 50.0, 110.0]
+    assert out["net_profit_excl_min_int_inc"].tolist() == [8.0, 20.0, 32.0, 4.0, 9.0]

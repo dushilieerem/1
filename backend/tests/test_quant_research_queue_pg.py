@@ -8,6 +8,7 @@ from services.quant_factor.policy import WorkflowError
 from tests.test_quant_model_budget_pg import IsolatedBudgetPostgresTests
 
 class IsolatedQueueTests(IsolatedBudgetPostgresTests):
+ QUEUE_METHODS=frozenset({'test_scheduler_checkpoint_yields_to_older_root_without_ending_research', 'test_child_finish_resumes_a_yielded_f0_root', 'test_resume_waiting_refusal_rolls_back_f0_status_in_same_transaction', 'test_actual_novelty_submit_intent_blocks_slot_even_with_saved_development_result', 'test_unknown_physical_call_blocks_other_children_and_roots_until_receipt_arrives', 'test_two_database_claimants_get_one_root_and_children_can_run_while_parent_waits', 'test_foreign_host_owner_is_not_left_pinned_forever', 'test_cancel_queued_keeps_history_and_stale_owner_cannot_finish_current_job', 'test_confirmed_provider_rejection_is_not_an_unknown_running_request', 'test_explicit_lightweight_advice_is_metered_while_heavy_queue_remains_occupied', 'test_checkpoint_only_waiting_root_does_not_starve_the_next_root', 'test_restart_preserves_queued_and_reclaims_only_proved_dead_owned_owner', 'test_old_usage_gaps_without_queue_identity_do_not_occupy_slot', 'test_actual_development_retry_requeues_original_get_and_unknown_submit_keeps_error', 'test_actual_f0_parent_creates_agent_child_and_waits_without_changing_controller', 'test_operator_abandoned_unconfirmed_call_releases_root_after_restart'})
  @classmethod
  def setUpClass(cls):
   super().setUpClass()
@@ -20,7 +21,7 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
   super().setUp()
   for target,name,value in [(q,'get_conn',self.connection),(q,'DEPLOYMENT_ID','owned-fixture:'+self.schema),(f0,'get_conn',self.connection),(repo,'get_conn',self.connection)]:
    guard=patch.object(target,name,value);guard.start();self.addCleanup(guard.stop)
-  guard=patch.dict(os.environ,{'QUANT_RESEARCH_DURABLE_QUEUE':'1'});guard.start();self.addCleanup(guard.stop)
+  guard=patch.dict(os.environ,{'QUANT_RESEARCH_DURABLE_QUEUE':'1' if self._testMethodName in self.QUEUE_METHODS else '0'});guard.start();self.addCleanup(guard.stop)
   with self.connection() as c:c.execute('TRUNCATE quant_research_queue_slots,quant_research_queue_jobs CASCADE')
  def add(self,obj,kind='f0'):
   with self.connection() as c:return q.enqueue(c,kind,obj,self.uid,self.org)
@@ -107,7 +108,7 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
    c.execute("INSERT INTO quant_factor_f0_runs(id,user_id,org_id,project_id,topic_id,branch_id,idempotency_key,status,decision,rounds,stop_reason,view_id) VALUES('resume-run',%s,%s,'project','topic','branch','same','stopped','{}',0,'technical waiting','view')",(self.uid,self.org))
    job=q.enqueue(c,'f0','resume-run',self.uid,self.org)
    c.execute("UPDATE quant_research_queue_jobs SET status='waiting' WHERE id=%s",(job['id'],))
-  with patch.object(f0,'published_view',return_value={'view_id':'view'}),patch.object(f0.service,'control_status',return_value={'paused':False}),patch('services.factor.detect_store.get_project',return_value={'project':{'config':{'v5ActiveBranch':'branch'}}}),patch('services.quant_factor.resources.require_config'),patch('services.quant_factor.research_contract.project_contract',return_value=None):
+  with patch.object(f0,'published_view',return_value={'view_id':'view'}),patch.object(f0.service,'locked_view_available',return_value=True),patch.object(f0.service,'control_status',return_value={'paused':False}),patch('services.factor.detect_store.get_project',return_value={'project':{'config':{'v5ActiveBranch':'branch'}}}),patch('services.quant_factor.resources.require_config'),patch('services.quant_factor.research_contract.project_contract',return_value=None):
    with self.assertRaisesRegex(WorkflowError,'原物理调用仍待确认'):f0.resume(self.uid,self.org,'resume-run')
   with self.connection() as c:self.assertEqual(c.execute("SELECT status FROM quant_factor_f0_runs WHERE id='resume-run'").fetchone()['status'],'stopped')
   self.assertEqual(self.queue_row(job)['status'],'waiting')

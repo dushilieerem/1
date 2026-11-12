@@ -53,7 +53,7 @@ export function QuantFactorHomePage(){
  const inspectedBranchRef=useRef<string|undefined>(undefined);inspectedBranchRef.current=inspectedBranch;
  const [f0,setF0]=useState<{id:string;status:string;method_compatibility?:{requires_new_run:boolean;configuration_changed?:boolean;reason:string;available_snapshot:{snapshot_hash:string;revision:string;roles:Record<string,{max_output:number|null;output_policy?:string;timeout_seconds:number;prompt_version:string}>};saved_snapshot?:{revision:string}|null};decision?:{candidate_status?:string;reason?:string;current_action?:string;current_phase?:string;technical_wait?:{kind:string;message:string};progress_events?:Array<{at:string;action:string;message:string;references?:Record<string,string>}>;human_advice?:Array<{id:string;input:{message:string};status:string;reason:string}>;steps?:Array<{step:number;at?:string;decision:{action:string;rationale:string};usage?:{tokens_in?:number;tokens_out?:number};result:{status?:string;candidate_status?:string;reason?:string;branch_id?:string;needed_capabilities?:string[]}}>};stop_reason?:string}>();
  const [diagnosticsOpen,setDiagnosticsOpen]=useState(false),[methodOpen,setMethodOpen]=useState(false);
- const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false);
+ const [error,setError]=useState(''),[notice,setNotice]=useState(''),[starting,setStarting]=useState(false),[archiving,setArchiving]=useState(false);
  const canManage=!!getQuantSession()?.can_manage;
  const canWrite=getQuantSession()?.permissions.quant==='write';
  const [paused,setPaused]=useState(false),[controlBusy,setControlBusy]=useState(false);
@@ -190,6 +190,14 @@ export function QuantFactorHomePage(){
   const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'挖掘任务状态更新失败');return;}
   setTopics(list=>list.map(t=>t.id===d.id?{...t,status:d.status}:t));
   setNotice(status==='active'?'挖掘任务已恢复，可启动挖掘继续研究。':'挖掘任务已暂停，不会继续调度。');
+ }
+ async function archiveTopic(){
+  const id=selectedRef.current;if(!id||archiving)return;
+  if(!window.confirm('归档这个已结束任务？证据和报告会保留，默认列表将隐藏。'))return;
+  setArchiving(true);setError('');setNotice('');
+  try{const r=await researchFetch('/api/inst/quant/factor-workflow/topics/'+encodeURIComponent(id)+'/archive',{method:'POST'});const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'归档失败');setTopics(list=>list.map(t=>t.id===id?{...t,status:d.status}:t));setNotice('任务已归档；历史证据保留，可在“全部任务（含已归档）”查看。');}
+  catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setArchiving(false);}
  }
  async function resumeF0(){if(!f0)return;const r=await researchFetch('/api/inst/quant/factor-workflow/f0-runs/'+f0.id+'/resume',{method:'POST'});const d=await r.json();if(!r.ok){setError(typeof d.detail==='string'?d.detail:'F0 继续失败');return;}setF0(d);}
  async function takeOver(){
@@ -447,7 +455,7 @@ export function QuantFactorHomePage(){
   <section className="ff-detail">
    <header className="ff-detail-head">
     <div><span className={'badge '+taskState?.tone}>{taskState?.label}</span><h2>{topic.project_name||'未命名挖掘任务'}</h2><p>{purposeText(topic.research_purpose)} · 日频 · 已检验 {topic.trial_count} 次 / 上限 {topic.max_trials} 次 · 当前第 {currentVersion} 版</p></div>
-    <div className="actions"><button className="btn small" onClick={()=>setAuthOpen(true)}>范围与预算</button>{topic.status==='active'&&f0&&['queued','running'].includes(f0.status)&&<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('paused')}>暂停研究</button>}{topic.status==='paused'&&<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('active')}>恢复任务</button>}{topic.status==='active'&&canStart?<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':startLabel}</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>{neverDelegated?'继续人工研究':'人工研究'}</Link></div>
+    <div className="actions"><button className="btn small" onClick={()=>setAuthOpen(true)}>范围与预算</button>{topic.status==='active'&&f0&&['queued','running'].includes(f0.status)&&<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('paused')}>暂停研究</button>}{topic.status==='paused'&&<button className="btn small" disabled={!canWrite} onClick={()=>void setTopicStatus('active')}>恢复任务</button>}{topic.status!=='archived'&&['ended','error'].includes(taskState?.key||'')&&<button className="btn small" disabled={!canWrite||archiving} onClick={()=>void archiveTopic()}>{archiving?'归档中…':'归档任务'}</button>}{topic.status==='active'&&canStart?<button className="btn small primary" disabled={!canWrite||starting||!selectedBranch} onClick={()=>void handBackF0()}>{starting?'正在提交…':startLabel}</button>:null}<Link className="btn small" to={'/quant/factor/workflow/'+topic.project_id+'/F4'+(selectedBranch?'?branch='+selectedBranch.id:'')}>{neverDelegated?'继续人工研究':'人工研究'}</Link></div>
    </header>
    {updatesError&&<p className="hint error" role="alert">{updatesError}</p>}<nav className="ff-steps" aria-label="任务业务环节">
     {stageDefs.map((s,i)=><button key={s.id} className={'ff-step '+(stageView===s.id?'selected ':'')+(s.status==='current'?'current ':'')+(s.status==='done'?'done':'')} onClick={()=>setStageView(s.id)} aria-current={s.status==='current'?'step':undefined} aria-label={'查看'+s.label}><span className="ff-num">{s.status==='done'?'✓':i+1}</span><span><b>{s.label}</b><small>{s.role}</small><em>{s.status==='done'?'已完成':s.status==='current'?'当前环节':'尚未开始'}</em></span></button>)}

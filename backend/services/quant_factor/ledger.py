@@ -681,7 +681,7 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         work=c.execute("SELECT config->>'v5ActiveBranch' AS branch_id FROM detect_projects WHERE user_id=%s AND id=%s",(uid,topic['project_id'])).fetchone()
     with get_conn() as c:
         sealed_records=[dict(row) for row in c.execute(
-            """SELECT id,branch_id,status,report_id,candidate_id,created_at,evaluated_at
+            """SELECT id,status,report_id,candidate_id,created_at,evaluated_at
                FROM quant_factor_sealed_validations
                WHERE user_id=%s AND org_id=%s AND topic_id=%s
                ORDER BY created_at""",(uid,org,topic_id)).fetchall()]

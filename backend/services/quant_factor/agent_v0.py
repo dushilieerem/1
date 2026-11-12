@@ -574,7 +574,7 @@ def tick(uid: int, org: int) -> dict:
                     ).fetchone()
                     open_review = c.execute(
                         "SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s "
-                        "AND archive->'review'->>'status'='requested' LIMIT 1",
+                        "AND archive->'review'->>'status'='requested' AND COALESCE(archive->'review'->>'purpose','research_admission')='research_admission' LIMIT 1",
                         (uid, org),
                     ).fetchone()
         if active:

@@ -7,11 +7,13 @@ F0 services and does not create tables or bypass the fixed-data preflight.
 from __future__ import annotations
 
 import copy
+import fcntl
 import json
 import os
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -85,6 +87,21 @@ def _record_task_created() -> None:
 
 def _daily_cap_reached(state: dict) -> bool:
     return state.get('task_date') == _today_local() and int(state.get('tasks_today') or 0) >= MAX_TASKS_PER_DAY
+
+
+@contextmanager
+def _tick_guard():
+    # Serialize across BFF workers that share the same state file, not only
+    # threads inside one process.
+    with _TICK_LOCK:
+        lock_path = _STATE_PATH.with_suffix('.tick.lock')
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open('w') as stream:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def _audit(action: str, **fields) -> None:
@@ -533,7 +550,7 @@ def tick(uid: int, org: int) -> dict:
     if service.control_status(uid, org).get('paused'):
         _update_state(last_state='paused', last_tick_at=_now())
         return {'state': 'paused', 'reason': '全局调度已暂停。'}
-    with _TICK_LOCK:
+    with _tick_guard():
         with get_conn() as c:
             active = c.execute(
                 "SELECT id FROM quant_factor_f0_runs WHERE org_id=%s AND status IN ('queued','running') LIMIT 1",

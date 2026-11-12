@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   createPaperAccount,
   listPaperAccounts,
+  paperErrorLabel,
+  paperErrorText,
   settlePaperAccount,
 } from "../src/lib/paperTradingApi";
 
@@ -56,4 +58,19 @@ test("settlePaperAccount surfaces machine error code", async () => {
       error.message.includes("行情数据尚未就绪"),
   );
   globalThis.fetch = originalFetch;
+});
+
+test("paperErrorText explains known codes and keeps unknown ones verbose", () => {
+  assert.equal(
+    paperErrorText("DATA_NOT_READY", "data_not_ready"),
+    "行情数据尚未就绪，数据发布后会自动重试",
+  );
+  assert.equal(
+    paperErrorText("STRATEGY_CODE_INVALID", "策略代码执行失败: AttributeError: ..."),
+    "策略代码执行失败，请修正后同步策略再重试",
+  );
+  assert.equal(paperErrorText("SOME_NEW_CODE", "boom"), "SOME_NEW_CODE: boom");
+  assert.equal(paperErrorText(null, "兜底说明"), "兜底说明");
+  assert.equal(paperErrorLabel("DATA_NOT_READY") !== null, true);
+  assert.equal(paperErrorLabel("SOME_NEW_CODE"), null);
 });

@@ -30,10 +30,11 @@ logs/
 # KnowledgeHub 上传附件（已入库的示例文件仍由 Git 跟踪）
 KnowledgeHub/data/kh_attachments/*
 
-# 外部行情目录若被误放回仓库，不纳入 Git
-marketdata/
-MarketData/
-!MarketData/README.md
+# 外部行情目录若被误放回仓库，不纳入 Git（只匹配仓库根目录，
+# 不能误伤 backend/services/marketdata）
+/marketdata/
+/MarketData/
+!/MarketData/README.md
 
 # 前端依赖和构建产物
 node_modules/
@@ -63,3 +64,23 @@ _tmp_*
 _notes/
 .claude/
 .codex/
+
+# 前端/端到端测试运行产物（每次运行都会变）
+test-results/
+
+# CI 本地运行产物（venv、临时 env 备份、部署回滚点、WebHook 任务日志）
+.ci/
+**/.env.ci-backup
+deploy/.last-good.env
+deploy/runtime/
+deploy/backups/
+deploy/webhook-logs/
+
+# Private server runtime and historical isolated checkouts
+/institutional-workflow/
+
+# Generated internal product review pack (rebuild with scripts/publish_quant_delivery.py)
+/frontend/public/quant-delivery/
+
+# Isolated developer service state
+/.runtime/

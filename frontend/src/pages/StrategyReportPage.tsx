@@ -1,3 +1,4 @@
+import { researchPagePath, inQuantWorkspace } from "@/lib/researchClient";
 import { useEffect, useMemo, useState, Fragment, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
@@ -25,7 +26,7 @@ import {
   darkTooltip,
   legendBase,
 } from "@/components/chartTheme";
-import { getStoredUser, prepareAuthHandoff } from "@/lib/auth";
+import { getStoredUser, prepareAuthHandoff } from "@/lib/researchClient";
 import { buildStrategyShareDraft } from "@/lib/communityShare";
 import {
   STRATEGY_BENCHMARK_OPTIONS,
@@ -252,7 +253,18 @@ function mddMarkLine(troughDate: string) {
   };
 }
 
-export function StrategyReportPage() {
+export type StrategyReportNavigation = {
+  listPath?: string;
+  projectPath?: (projectId: string) => string;
+  reportPath?: (runId: string) => string;
+  historyPath?: (projectId: string) => string;
+};
+
+export function StrategyReportPage({ navigation }: { navigation?: StrategyReportNavigation } = {}) {
+  const listPath = navigation?.listPath || "/strategy/research";
+  const projectPath = navigation?.projectPath || ((id: string) => `/strategy/research/${id}`);
+  const reportPath = navigation?.reportPath || ((id: string) => `/strategy/research/report/${id}`);
+  const historyPath = navigation?.historyPath || ((id: string) => `/strategy/research/${id}/history`);
   const { runId = "", archiveStrategyId = "" } = useParams();
   const navigate = useNavigate();
   const isArchiveSnap = Boolean(archiveStrategyId.trim());
@@ -665,7 +677,7 @@ export function StrategyReportPage() {
             : "没有找到回测结果。"}
         </p>
         <Link
-          to={isArchiveSnap ? "/strategy/library" : "/strategy/research"}
+          to={isArchiveSnap ? researchPagePath("/strategy/library") : listPath}
           className="mt-4 inline-block text-sm font-medium text-blue-600 underline"
         >
           {isArchiveSnap ? "返回策略库" : "返回策略研究"}
@@ -700,7 +712,8 @@ export function StrategyReportPage() {
         excessReturn: result?.excess_return,
         // 内置策略源码是历史快照，但过渡期不在用户分享/展示链路中暴露。
         strategyCode: req?.strategy_id ? undefined : req?.strategy_code,
-        returnTo: `/strategy/research/report/${rec.id || runId}`,
+        runId: rec.id || runId,
+        returnTo: reportPath(rec.id || runId),
         returnLabel: "返回策略回测报告",
       });
       navigate(next, { state: draft });
@@ -711,7 +724,7 @@ export function StrategyReportPage() {
     if (!getStoredUser()) {
       prepareAuthHandoff();
       navigate(
-        `/login?next=${encodeURIComponent(`/strategy/research/report/${runId}`)}`,
+        `/login?next=${encodeURIComponent(reportPath(runId))}`,
       );
       return;
     }
@@ -788,7 +801,7 @@ export function StrategyReportPage() {
             <p className="text-xs text-slate-500 sm:text-sm">
               {isArchiveSnap || rec.immutable ? (
                 <>
-                  <Link to="/strategy/library" className="hover:text-blue-600">
+                  <Link to={researchPagePath("/strategy/library")} className="hover:text-blue-600">
                     策略库
                   </Link>
                   {rec.libraryName ? (
@@ -801,12 +814,12 @@ export function StrategyReportPage() {
                 </>
               ) : (
                 <>
-                  <Link to="/strategy/research" className="hover:text-blue-600">
+                  <Link to={listPath} className="hover:text-blue-600">
                     策略研究
                   </Link>
                   {" / "}
                   <Link
-                    to={`/strategy/research/${rec.projectId}`}
+                    to={projectPath(rec.projectId)}
                     className="hover:text-blue-600"
                   >
                     {rec.name || rec.description}
@@ -827,14 +840,14 @@ export function StrategyReportPage() {
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             {isArchiveSnap || rec.immutable ? (
               <Link
-                to="/strategy/library"
+                to={researchPagePath("/strategy/library")}
                 className="col-span-2 inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 sm:col-span-1"
               >
                 返回策略库
               </Link>
             ) : (
               <>
-                <button
+                {!inQuantWorkspace() && (<button
                   type="button"
                   onClick={shareToPlaza}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-sm font-medium text-cyan-950 hover:bg-cyan-100"
@@ -842,8 +855,8 @@ export function StrategyReportPage() {
                   <Share2 className="h-3.5 w-3.5" />
                   <span className="sm:hidden">广场</span>
                   <span className="hidden sm:inline">分享到策略广场</span>
-                </button>
-                <button
+                </button>)}
+                {!inQuantWorkspace() && (<button
                   type="button"
                   onClick={shareToCommunity}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
@@ -851,16 +864,16 @@ export function StrategyReportPage() {
                   <Share2 className="h-3.5 w-3.5" />
                   <span className="sm:hidden">社区</span>
                   <span className="hidden sm:inline">分享到社区</span>
-                </button>
+                </button>)}
                 <Link
-                  to={`/strategy/research/${rec.projectId}/history`}
+                  to={historyPath(rec.projectId)}
                   className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   <span className="sm:hidden">历史</span>
                   <span className="hidden sm:inline">历史记录</span>
                 </Link>
                 <Link
-                  to={`/strategy/research/${rec.projectId}?runId=${encodeURIComponent(rec.id)}`}
+                  to={`${projectPath(rec.projectId)}?runId=${encodeURIComponent(rec.id)}`}
                   className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
                 >
                   返回配置
@@ -912,12 +925,17 @@ export function StrategyReportPage() {
               />
             ))}
           </div>
+          {highlightMetrics.some((item) => item.value === "—") && (
+            <p className="mt-2 text-xs text-slate-400">
+              「—」表示本次回测未返回该指标（数据不足或计算失败），不代表 0。
+            </p>
+          )}
         </div>
       </div>
 
       <div className="mx-auto max-w-[1400px] px-3 py-4 sm:px-6 sm:py-5">
         <nav className="sticky top-0 z-10 mb-4 flex gap-1 overflow-x-auto border-b border-slate-200 bg-white/95 pb-2 backdrop-blur [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden">
-          {NAV.map((item) => (
+          {NAV.filter(item => !inQuantWorkspace() || item.id !== "ai").map((item) => (
             <button
               key={item.id}
               type="button"
@@ -934,7 +952,7 @@ export function StrategyReportPage() {
         <div className="flex gap-6">
           <aside className="hidden w-44 shrink-0 lg:block">
             <nav className="sticky top-20 space-y-0.5">
-              {NAV.map((item) => (
+              {NAV.filter(item => !inQuantWorkspace() || item.id !== "ai").map((item) => (
                 <button
                   key={item.id}
                   type="button"

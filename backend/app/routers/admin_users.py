@@ -1,0 +1,136 @@
+# -*- coding: utf-8 -*-
+"""管理员：用户管理（列表/禁用/角色/重置密码）。"""
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+
+from app.deps import require_admin
+from services.admin import user_admin_store as store
+from services.core.audit_log_store import write_audit
+from services.core.db import get_conn
+
+router = APIRouter(tags=["admin-users"])
+
+
+def _ip(request: Request) -> str | None:
+    xf = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+    if xf:
+        return xf.split(",")[0].strip() or None
+    return request.client.host if request.client else None
+
+
+def _audit(request: Request, admin: dict[str, Any], action: str, detail: str, user_id: int | None = None) -> None:
+    write_audit(
+        action=action,
+        user_id=int(admin["id"]),
+        username=str(admin.get("username") or ""),
+        role=str(admin.get("role") or "admin"),
+        module="admin",
+        method="POST",
+        path=str(request.url.path),
+        status_code=200,
+        ip=_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        detail=detail[:300],
+    )
+
+
+@router.get("/api/admin/users")
+def users(
+    q: str | None = Query(None),
+    status: str | None = Query(None),
+    role: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    _admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    return {"ok": True, **store.list_users(q=q, status=status, role=role, limit=limit, offset=offset)}
+
+
+@router.post("/api/admin/users/{user_id}/status")
+def set_status(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] = Body(...),
+    admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    status = str(body.get("status") or "")
+    if int(user_id) == int(admin["id"]) and status != "active":
+        raise HTTPException(status_code=400, detail="不能禁用当前管理员账号")
+    try:
+        user = store.set_status(user_id, status)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit(request, admin, "admin.user.status", f"user={user_id} status={status}", user_id)
+    return {"ok": True, "user": user}
+
+
+@router.post("/api/admin/users/{user_id}/role")
+def set_role(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] = Body(...),
+    admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    role = str(body.get("role") or "")
+    if int(user_id) == int(admin["id"]) and role != "admin":
+        raise HTTPException(status_code=400, detail="不能降级当前管理员账号")
+    try:
+        user = store.set_role(user_id, role)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit(request, admin, "admin.user.role", f"user={user_id} role={role}", user_id)
+    return {"ok": True, "user": user}
+
+
+@router.post("/api/admin/users/{user_id}/reset-password")
+def reset_password(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] = Body(...),
+    admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    try:
+        out = store.reset_password(user_id, str(body.get("password") or ""))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit(request, admin, "admin.user.reset_password", f"user={user_id}", user_id)
+    return {"ok": True, **out}
+
+@router.get("/api/admin/usage")
+def usage(
+    days: int = Query(7, ge=1, le=90),
+    _admin: dict = Depends(require_admin),
+) -> dict[str, Any]:
+    """P2-12 首版：按日聚合 AI/社区/策略/资讯使用量。"""
+    with get_conn() as conn:
+        def series(table: str, date_col: str, extra: str = "") -> list[dict[str, Any]]:
+            rows = conn.execute(
+                f"""
+                SELECT to_char(date_trunc('day', {date_col}), 'YYYY-MM-DD') AS d,
+                       COUNT(*)::int AS n {extra}
+                  FROM {table}
+                 WHERE {date_col} >= NOW() - (%s || ' days')::interval
+                 GROUP BY 1 ORDER BY 1
+                """,
+                (days,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+        ai = series("ai_usage", "created_at", ", COALESCE(SUM(tokens_in+tokens_out),0)::bigint AS tokens")
+        posts = series("posts", "created_at")
+        runs = series("strategy_runs", "finished_at")
+        news = series("news_items", "published_at")
+        users = conn.execute(
+            "SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='active')::int AS active FROM users"
+        ).fetchone()
+    return {"ok": True, "days": days, "users": dict(users), "ai": ai, "posts": posts, "strategyRuns": runs, "news": news}
+

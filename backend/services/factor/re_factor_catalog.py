@@ -88,8 +88,16 @@ def ensure_re_factor_catalog_schema() -> None:
               content_hash TEXT,
               factor_count INT,
               message TEXT,
+              detail JSONB,
               created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
+            """
+        )
+        # 旧库补列（P1-F04：记录变更 diff）
+        conn.execute(
+            """
+            ALTER TABLE re_factor_catalog_sync_log
+            ADD COLUMN IF NOT EXISTS detail JSONB
             """
         )
     _schema_ready = True
@@ -181,6 +189,40 @@ def content_hash(libraries: list[dict[str, Any]], factors: list[dict[str, Any]])
     return hashlib.sha256(raw).hexdigest()
 
 
+def _factor_key(f: dict[str, Any]) -> str:
+    return f"{f.get('library') or ''}::{f.get('name') or ''}"
+
+
+def factor_diff(
+    old: dict[str, Any] | None, new: dict[str, Any], *, limit: int = 50
+) -> dict[str, Any]:
+    """两次同步之间的因子增删 diff（P1-F04）。
+
+    以「库名::因子名」为键；首次同步没有旧快照，不算 diff。
+    """
+    if old is None:
+        return {
+            "first_sync": True,
+            "added_count": len(new.get("factors") or []),
+            "removed_count": 0,
+            "added": [],
+            "removed": [],
+            "truncated": False,
+        }
+    old_keys = {_factor_key(f) for f in old.get("factors") or []}
+    new_keys = {_factor_key(f) for f in new.get("factors") or []}
+    added = sorted(new_keys - old_keys)
+    removed = sorted(old_keys - new_keys)
+    return {
+        "first_sync": False,
+        "added_count": len(added),
+        "removed_count": len(removed),
+        "added": added[:limit],
+        "removed": removed[:limit],
+        "truncated": len(added) > limit or len(removed) > limit,
+    }
+
+
 def _pull_from_re(*, include_all: bool = False) -> dict[str, Any]:
     t0 = time.time()
     lib_payload = _get_json("/api/factor-libraries")
@@ -251,7 +293,13 @@ def _load_db(include_all: bool) -> dict[str, Any] | None:
     return out
 
 
-def _save_db(payload: dict[str, Any], *, changed: bool, message: str) -> None:
+def _save_db(
+    payload: dict[str, Any],
+    *,
+    changed: bool,
+    message: str,
+    diff: dict[str, Any] | None = None,
+) -> None:
     ensure_re_factor_catalog_schema()
     scope = _scope(bool(payload.get("include_all")))
     h = str(payload.get("content_hash") or "")
@@ -315,10 +363,17 @@ def _save_db(payload: dict[str, Any], *, changed: bool, message: str) -> None:
         conn.execute(
             """
             INSERT INTO re_factor_catalog_sync_log (
-              scope, changed, content_hash, factor_count, message
-            ) VALUES (%s, %s, %s, %s, %s)
+              scope, changed, content_hash, factor_count, message, detail
+            ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
             """,
-            (scope, changed, h, factor_count, message),
+            (
+                scope,
+                changed,
+                h,
+                factor_count,
+                message,
+                json.dumps(diff, ensure_ascii=False) if diff else None,
+            ),
         )
 
 
@@ -330,17 +385,21 @@ def sync_from_re(*, include_all: bool = False) -> dict[str, Any]:
     old_hash = (old or {}).get("content_hash")
     new_hash = pulled.get("content_hash")
     changed = old_hash != new_hash
+    diff = factor_diff(old, pulled)
 
     if changed or old is None:
-        msg = (
-            f"已更新：{old.get('factor_count') if old else 0} → {pulled.get('factor_count')} 个因子"
-            if old
-            else f"首次写入 {pulled.get('factor_count')} 个因子"
-        )
-        _save_db(pulled, changed=True, message=msg)
+        if old:
+            msg = (
+                f"已更新：{old.get('factor_count')} → {pulled.get('factor_count')} 个因子"
+                f"（新增 {diff['added_count']} / 移除 {diff['removed_count']}）"
+            )
+        else:
+            msg = f"首次写入 {pulled.get('factor_count')} 个因子"
+        _save_db(pulled, changed=True, message=msg, diff=diff)
         result = dict(pulled)
         result["changed"] = True
         result["message"] = msg
+        result["diff"] = diff
     else:
         msg = f"无变更（hash={str(new_hash)[:12]}…，{pulled.get('factor_count')} 个）"
         _save_db(old, changed=False, message=msg)
@@ -358,6 +417,90 @@ def sync_from_re(*, include_all: bool = False) -> dict[str, Any]:
     out = dict(result)
     out["source"] = "re-sync"
     return out
+
+
+def catalog_scope_status() -> dict[str, Any]:
+    """P0-14：primary/all 双 scope 的一致性/陈旧检查。"""
+    out: dict[str, Any] = {"ok": True, "scopes": {}, "warnings": []}
+    now = time.time()
+    for scope, flag in (("primary", False), ("all", True)):
+        snap = _load_db(flag)
+        if not snap:
+            out["ok"] = False
+            out["warnings"].append(f"{scope} 未同步")
+            out["scopes"][scope] = None
+            continue
+        fetched = int(snap.get("fetched_at_unix") or 0)
+        age_hours = round((now - fetched) / 3600, 1) if fetched else None
+        out["scopes"][scope] = {
+            "factor_count": len(snap.get("factors") or []),
+            "content_hash": snap.get("content_hash"),
+            "fetched_at": snap.get("fetched_at"),
+            "age_hours": age_hours,
+        }
+        if age_hours is not None and age_hours > 24 * 7:
+            out["warnings"].append(f"{scope} 已 {age_hours} 小时未同步")
+    pri = out["scopes"].get("primary")
+    alls = out["scopes"].get("all")
+    if pri and alls and int(pri["factor_count"]) > int(alls["factor_count"]):
+        out["ok"] = False
+        out["warnings"].append("primary 因子数大于 all，scope 可能写反")
+    if out["warnings"]:
+        out["ok"] = False
+    return out
+
+
+def sync_log(limit: int = 20) -> list[dict[str, Any]]:
+    """最近的同步记录（含 diff），供管理后台诊断（P1-F04）。"""
+    ensure_re_factor_catalog_schema()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT scope, changed, content_hash, factor_count, message, detail, created_at
+            FROM re_factor_catalog_sync_log
+            ORDER BY id DESC
+            LIMIT %s
+            """,
+            (max(1, min(200, int(limit))),),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        created = item.get("created_at")
+        if created is not None:
+            item["created_at"] = created.isoformat()
+        out.append(item)
+    return out
+
+
+def catalog_sync_status(limit: int = 20) -> dict[str, Any]:
+    """P1-F04：双 scope 一致性 + 陈旧告警 + 最近同步 diff。"""
+    status = catalog_scope_status()
+    status["recent_syncs"] = sync_log(limit)
+    return status
+
+
+def sync_all_scopes() -> dict[str, Any]:
+    """同一周期刷新 primary 与 all，并返回一致性检查（P0-14）。"""
+    errors: list[str] = []
+    primary: dict[str, Any] | None = None
+    all_scope: dict[str, Any] | None = None
+    try:
+        primary = sync_from_re(include_all=False)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"primary: {exc}")
+    try:
+        all_scope = sync_from_re(include_all=True)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"all: {exc}")
+    status = catalog_scope_status()
+    return {
+        "ok": not errors and bool(primary) and bool(all_scope) and status.get("ok", False),
+        "primary": primary,
+        "all": all_scope,
+        "consistency": status,
+        "errors": errors,
+    }
 
 
 def fetch_re_catalog(*, force: bool = False, include_all: bool = False) -> dict[str, Any]:
@@ -412,7 +555,8 @@ def warm_re_catalog_async() -> None:
                     _cache_by_scope["all"] = all_db
                 if pri_db is not None:
                     _cache_by_scope["primary"] = pri_db
-            if all_db is not None:
+            status = catalog_scope_status()
+            if all_db is not None and status.get("ok"):
                 n = len(all_db.get("factors") or [])
                 print(f"  re-catalog 已从 PostgreSQL 载入全库 {n} 个因子")
                 return
@@ -421,8 +565,10 @@ def warm_re_catalog_async() -> None:
                 print(f"  re-catalog 仅有 primary {n} 个，后台补全库…")
             else:
                 print("  re-catalog 库空，后台首次同步 RE（全库）…")
-            out = sync_from_re(include_all=True)
-            print(f"  re-catalog 同步完成：{out.get('message')}")
+            out = sync_all_scopes()
+            primary_msg = ((out.get("primary") or {}).get("message") or "")
+            all_msg = ((out.get("all") or {}).get("message") or "")
+            print(f"  re-catalog 同步完成：primary={primary_msg} / all={all_msg}")
         except Exception as exc:  # noqa: BLE001
             print(f"  re-catalog 预热失败: {exc}")
 

@@ -1,0 +1,19 @@
+# SVQuant 数据视图自动同步（oneshot）
+# 由 deploy/systemd/install-data-sync.sh 安装时替换 __REPO_DIR__ / __PYTHON__ / __RUN_USER__。
+[Unit]
+Description=SVQuant data view -> PG sync
+Documentation=file://__REPO_DIR__/docs/运维/数据自动同步.md
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+Group=__RUN_USER__
+WorkingDirectory=__REPO_DIR__
+EnvironmentFile=-/etc/svquant/svquant-data-sync.env
+# 生产库写入需要显式 allow；脚本仍会校验当前 database() 不是裸 svquant 以外的库。
+ExecStart=__PYTHON__ __REPO_DIR__/scripts/sync_data_view.py --allow-production --json
+Nice=10
+CPUQuota=50%
+TimeoutStartSec=3600

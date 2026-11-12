@@ -22,6 +22,7 @@ import {
   fetchMarketIndices,
   fetchMarketSymbols,
   formatSymbolLabel,
+  fmtPct,
   symbolMatchesQuery,
   type MarketIndex,
   type MarketSymbol,
@@ -954,6 +955,14 @@ export function WatchlistPage() {
                           >
                             {labelOf(row)}
                           </Link>
+                        </div>
+                        <div className="hidden text-right sm:block">
+                          <p className="font-mono text-sm text-slate-900">
+                            {row.price == null ? "—" : row.price.toFixed(2)}
+                          </p>
+                          <p className={`font-mono text-[11px] ${(row.changePct ?? 0) >= 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                            {row.changePct == null ? "—" : fmtPct(row.changePct)}
+                          </p>
                         </div>
                         <button
                           type="button"

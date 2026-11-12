@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from services.core.db import get_conn
+from services.strategy.result_signature import result_hash, verify_result
 
 SAMPLE_ID = "sample_momentum_20d"
 SAMPLE_NAME = "多因子合成 样例"
@@ -108,7 +110,7 @@ class MultiFactorSampleStrategy(FactorPortfolioStrategy):
     @factor
     def small_size(self):
         """小市值：负总市值。"""
-        return -self.total_mv
+        return -self.current_mv
 
     @factor
     def ep_ttm(self):
@@ -175,6 +177,8 @@ def ensure_strategy_schema() -> None:
               result        JSONB NOT NULL DEFAULT '{}'::jsonb,
               finished_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               elapsed_sec   DOUBLE PRECISION NOT NULL DEFAULT 0,
+              verified      BOOLEAN NOT NULL DEFAULT FALSE,
+              result_hash   TEXT,
               PRIMARY KEY (user_id, id),
               CONSTRAINT strategy_runs_project_fk
                 FOREIGN KEY (user_id, project_id)
@@ -193,6 +197,14 @@ def ensure_strategy_schema() -> None:
         conn.execute(
             "ALTER TABLE strategy_runs "
             "ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        conn.execute(
+            "ALTER TABLE strategy_runs "
+            "ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        conn.execute(
+            "ALTER TABLE strategy_runs "
+            "ADD COLUMN IF NOT EXISTS result_hash TEXT"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_strategy_runs_user_finished "
@@ -273,6 +285,8 @@ def _row_run(row: dict[str, Any]) -> dict[str, Any]:
         "description": row.get("description") or "",
         "remark": row.get("remark") or "",
         "flagged": bool(row.get("flagged")),
+        "verified": bool(row.get("verified")),
+        "resultHash": row.get("result_hash"),
         "request": req,
         "result": res,
         "finishedAt": _iso(row.get("finished_at")),
@@ -284,8 +298,21 @@ def _row_run(row: dict[str, Any]) -> dict[str, Any]:
 _BLOB_ROOT = Path(__file__).resolve().parents[2] / "data" / "strategy_run_blobs"
 
 
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+
+
 def _blob_path(user_id: int, run_id: str) -> Path:
-    return _BLOB_ROOT / str(int(user_id)) / f"{run_id}.json.gz"
+    """run_id 只允许服务端 UUID/安全字符；拒绝路径穿越。"""
+    rid = str(run_id or "")
+    if not _RUN_ID_RE.fullmatch(rid):
+        raise ValueError("run_id 非法")
+    root = (_BLOB_ROOT / str(int(user_id))).resolve()
+    path = (root / f"{rid}.json.gz").resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("run_id 非法") from exc
+    return path
 
 
 def _json_default(obj: Any) -> Any:
@@ -495,6 +522,7 @@ def upsert_project(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     if (
         not str(config.get("strategy_code") or "").strip()
         and not str(config.get("strategy_id") or "").strip()
+        and not config.get("quant_local_only")
     ):
         config = {**config, "strategy_code": DEFAULT_STRATEGY_CODE}
 
@@ -593,9 +621,13 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
         if project_id:
             rows = conn.execute(
                 """
-                SELECT id, project_id, name, description, remark, flagged,
+                SELECT id, project_id, name, description, remark, flagged, verified, result_hash,
                        finished_at, elapsed_sec,
                        COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
+                       COALESCE(result->'date_range', '{}'::jsonb) AS date_range,
+                       COALESCE(request->'quant_factors', '[]'::jsonb) AS quant_factors,
+                       NULLIF(TRIM(request->>'engine'), '') AS engine,
+                       NULLIF(TRIM(request->>'engine_reason'), '') AS engine_reason,
                        NULLIF(TRIM(COALESCE(
                          request->>'universe',
                          result->'meta'->>'universe',
@@ -610,9 +642,13 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
         else:
             rows = conn.execute(
                 """
-                SELECT id, project_id, name, description, remark, flagged,
+                SELECT id, project_id, name, description, remark, flagged, verified, result_hash,
                        finished_at, elapsed_sec,
                        COALESCE(result->'metrics', '{}'::jsonb) AS metrics,
+                       COALESCE(result->'date_range', '{}'::jsonb) AS date_range,
+                       COALESCE(request->'quant_factors', '[]'::jsonb) AS quant_factors,
+                       NULLIF(TRIM(request->>'engine'), '') AS engine,
+                       NULLIF(TRIM(request->>'engine_reason'), '') AS engine_reason,
                        NULLIF(TRIM(COALESCE(
                          request->>'universe',
                          result->'meta'->>'universe',
@@ -634,6 +670,24 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
         slim_req: dict[str, Any] = {}
         if universe:
             slim_req["universe"] = universe
+        quant_factors = row.get("quant_factors")
+        if isinstance(quant_factors, str):
+            try:
+                quant_factors = json.loads(quant_factors)
+            except ValueError:
+                quant_factors = []
+        if quant_factors:
+            slim_req["quant_factors"] = quant_factors
+        if row.get("engine"):
+            slim_req["engine"] = row["engine"]
+        if row.get("engine_reason"):
+            slim_req["engine_reason"] = row["engine_reason"]
+        date_range = row.get("date_range") or {}
+        if isinstance(date_range, str):
+            try:
+                date_range = json.loads(date_range)
+            except ValueError:
+                date_range = {}
         runs.append(
             {
                 "id": row["id"],
@@ -642,8 +696,9 @@ def _list_runs_query(user_id: int, *, project_id: str | None) -> dict[str, Any]:
                 "description": row.get("description") or "",
                 "remark": row.get("remark") or "",
                 "flagged": bool(row.get("flagged")),
+                "verified": bool(row.get("verified")),
                 "request": slim_req,
-                "result": {"metrics": metrics},
+                "result": {"metrics": metrics, "date_range": date_range},
                 "finishedAt": _iso(row.get("finished_at")),
                 "elapsedSec": float(row.get("elapsed_sec") or 0),
             }
@@ -715,6 +770,15 @@ def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     full_result = _strip_code_hash(payload.get("result") or {})
     if not isinstance(full_result, dict):
         full_result = {}
+    verified_token = str(
+        payload.get("verified_token")
+        or payload.get("verifiedToken")
+        or full_result.get("_svquant_verified_token")
+        or ""
+    ).strip()
+    verified = verify_result(user_id, full_result, verified_token)
+    rhash = result_hash(full_result)
+    full_result.pop("_svquant_verified_token", None)
     request = slim_strategy_request(full_request)
     result = slim_strategy_result_for_db(full_result)
     finished_at = payload.get("finishedAt") or payload.get("finished_at")
@@ -741,16 +805,18 @@ def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         row = conn.execute(
             """
             INSERT INTO strategy_runs
-              (id, user_id, project_id, name, description, request, result, finished_at, elapsed_sec)
+              (id, user_id, project_id, name, description, request, result, finished_at, elapsed_sec, verified, result_hash)
             VALUES (
               %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb,
-              COALESCE(%s::timestamptz, NOW()), %s
+              COALESCE(%s::timestamptz, NOW()), %s, %s, %s
             )
             ON CONFLICT (user_id, id) DO UPDATE SET
               request = EXCLUDED.request,
               result = EXCLUDED.result,
               finished_at = EXCLUDED.finished_at,
-              elapsed_sec = EXCLUDED.elapsed_sec
+              elapsed_sec = EXCLUDED.elapsed_sec,
+              verified = EXCLUDED.verified,
+              result_hash = EXCLUDED.result_hash
             RETURNING *
             """,
             (
@@ -763,6 +829,8 @@ def save_run(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 res_json,
                 finished_at,
                 elapsed,
+                bool(verified),
+                rhash,
             ),
         ).fetchone()
         conn.execute(

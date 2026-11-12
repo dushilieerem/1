@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# 发布：构建带标签镜像 → compose 起新版本 → 冒烟 → 失败自动回滚上一组镜像。
+# 用法：bash scripts/ci/deploy.sh [tag]
+# 前置：deploy/.env 已配置；宿主机已登录镜像仓库（仅 REGISTRY 模式需要）。
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+COMPOSE_FILE="$ROOT_DIR/deploy/compose.yml"
+ENV_FILE="$ROOT_DIR/deploy/.env"
+LAST_GOOD="$ROOT_DIR/deploy/.last-good.env"
+IMAGE_PREFIX="${IMAGE_PREFIX:-svquant}"
+REGISTRY="${REGISTRY:-}"
+
+log() { printf '[deploy] %s\n' "$*" >&2; }
+
+[[ -f "$ENV_FILE" ]] || { log "缺少 deploy/.env"; exit 1; }
+
+# 宿主机端口优先取 deploy/.env（生产与开发端口分离），再退回环境变量/默认值
+env_val() { sed -n "s/^$1=//p" "$ENV_FILE" | head -n1; }
+WEB_PORT_GUESS="${WEB_PORT:-$(env_val WEB_PORT)}"
+WEB_PORT_GUESS="${WEB_PORT_GUESS:-9530}"
+API_PORT="${API_PORT:-$(env_val BACKEND_PORT)}"
+API_PORT="${API_PORT:-8766}"
+WEB_BASE="http://127.0.0.1:${WEB_PORT_GUESS}"
+API_BASE="http://127.0.0.1:${API_PORT}"
+
+TAG="${1:-}"
+if [[ -z "$TAG" ]]; then
+  TAG="$(git -C "$ROOT_DIR" describe --tags --exact-match 2>/dev/null || git -C "$ROOT_DIR" rev-parse --short HEAD)"
+fi
+
+IMAGE_BASE="$IMAGE_PREFIX"
+[[ -n "$REGISTRY" ]] && IMAGE_BASE="$REGISTRY/$IMAGE_PREFIX"
+NEW_BACKEND="$IMAGE_BASE-backend:$TAG"
+NEW_WEB="$IMAGE_BASE-web:$TAG"
+
+compose() {
+  BACKEND_IMAGE="$1" WEB_IMAGE="$2" \
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "${@:3}"
+}
+
+# 读取上一组已验证镜像作为回滚目标（grep 取值，避免 source 覆盖上面的新 tag）
+PREV_BACKEND=""
+PREV_WEB=""
+if [[ -f "$LAST_GOOD" ]]; then
+  PREV_BACKEND="$(sed -n 's/^BACKEND_IMAGE=//p' "$LAST_GOOD" | head -n1)"
+  PREV_WEB="$(sed -n 's/^WEB_IMAGE=//p' "$LAST_GOOD" | head -n1)"
+fi
+
+PREV_TAG=""
+if [[ -n "$PREV_BACKEND" ]]; then
+  PREV_TAG="${PREV_BACKEND##*:}"
+fi
+
+# 前端相关文件没变就复用上一版 Web 镜像：docker/backend.Dockerfile 有层缓存（约 2s），
+# 前端 npm ci 在 package.json 变化时会从零重装（2~3 分钟），是 CD 的主要耗时。
+BUILD_WEB=1
+WEB_REASON="前端相关文件有变化或缺少可比对的上一版"
+if [[ -n "$PREV_WEB" && -n "$PREV_TAG" ]] \
+  && git -C "$ROOT_DIR" rev-parse --verify --quiet "$PREV_TAG^{commit}" >/dev/null; then
+  if git -C "$ROOT_DIR" diff --quiet "$PREV_TAG" "$TAG" -- \
+      frontend docker/frontend.Dockerfile docker/nginx.conf "docs/用户指南"; then
+    if docker image inspect "$PREV_WEB" >/dev/null 2>&1; then
+      BUILD_WEB=0
+      WEB_REASON="前端未变化（$PREV_TAG → $TAG），复用 $PREV_WEB"
+      docker tag "$PREV_WEB" "$NEW_WEB"
+    else
+      WEB_REASON="前端未变化，但上一版镜像 $PREV_WEB 已不在本机，需要重建"
+    fi
+  fi
+fi
+log "发布 $TAG（$NEW_BACKEND / $NEW_WEB）"
+if [[ "$BUILD_WEB" == "0" ]]; then
+  log "复用 Web 镜像：$WEB_REASON"
+else
+  log "构建 Web 镜像：$WEB_REASON"
+fi
+BUILD_WEB="$BUILD_WEB" bash "$ROOT_DIR/scripts/ci/docker-build.sh" "$TAG"
+
+# 纯代码发布不重复全量备份（8GB+ 库的 pg_dump 是 CD 主耗时）；
+# 只有 migrations 变化、首次发布或显式 FORCE_DB_BACKUP=1 才备份。
+NEED_DB_BACKUP=0
+BACKUP_REASON="首次发布/无上一版本"
+if [[ "${FORCE_DB_BACKUP:-0}" == "1" ]]; then
+  NEED_DB_BACKUP=1; BACKUP_REASON="FORCE_DB_BACKUP=1"
+elif [[ "${SKIP_DB_BACKUP:-0}" == "1" ]]; then
+  NEED_DB_BACKUP=0; BACKUP_REASON="SKIP_DB_BACKUP=1"
+elif [[ -n "$PREV_TAG" ]] && git -C "$ROOT_DIR" rev-parse --verify --quiet "$PREV_TAG^{commit}" >/dev/null; then
+  if ! git -C "$ROOT_DIR" diff --quiet "$PREV_TAG" "$TAG" -- backend/migrations; then
+    NEED_DB_BACKUP=1; BACKUP_REASON="migrations 变化（$PREV_TAG → $TAG）"
+  else
+    BACKUP_REASON="纯代码发布，migrations 未变化（$PREV_TAG → $TAG）"
+  fi
+fi
+if [[ "$NEED_DB_BACKUP" == "1" ]]; then
+  log "数据库备份：$BACKUP_REASON"
+  bash "$ROOT_DIR/scripts/ci/backup-db.sh" "$TAG" || { log "数据库备份失败，终止发布"; exit 1; }
+else
+  log "跳过数据库备份：$BACKUP_REASON；如需强制备份设 FORCE_DB_BACKUP=1"
+fi
+
+log "启动新版本"
+if ! compose "$NEW_BACKEND" "$NEW_WEB" up -d --wait --wait-timeout 300; then
+  log "compose 启动失败"
+  START_OK=0
+else
+  START_OK=1
+fi
+
+if [[ "$START_OK" == "1" ]] && bash "$ROOT_DIR/scripts/ci/smoke.sh" "$WEB_BASE" "$API_BASE"; then
+  printf 'BACKEND_IMAGE=%s\nWEB_IMAGE=%s\n' "$NEW_BACKEND" "$NEW_WEB" > "$LAST_GOOD"
+  log "发布成功，已记录回滚点 $LAST_GOOD"
+  if [[ "${SKIP_PUBLIC_SERVICES:-0}" != "1" ]]; then
+    bash "$ROOT_DIR/scripts/ci/serve-public.sh" start \
+      || log "警告：手机 H5 或外网通道启动失败（主服务不受影响）"
+  fi
+  exit 0
+fi
+
+log "发布未通过，开始回滚"
+if [[ -n "$PREV_BACKEND" && -n "$PREV_WEB" ]]; then
+  log "回滚到 $PREV_BACKEND / $PREV_WEB"
+  if compose "$PREV_BACKEND" "$PREV_WEB" up -d --wait --wait-timeout 300; then
+    bash "$ROOT_DIR/scripts/ci/smoke.sh" "$WEB_BASE" "$API_BASE" || \
+      log "警告：回滚后冒烟仍失败，需要人工介入"
+  else
+    log "回滚启动失败，需要人工介入"
+  fi
+else
+  log "没有可用回滚点（首次发布？），请人工处理"
+fi
+exit 1

@@ -1,0 +1,10 @@
+[Unit]
+Description=交易日 16:30 运行 Invest 值守扫描
+
+[Timer]
+OnCalendar=Mon..Fri 16:30 Asia/Shanghai
+Persistent=true
+Unit=svquant-invest-scan.service
+
+[Install]
+WantedBy=timers.target

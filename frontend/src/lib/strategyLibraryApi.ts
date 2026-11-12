@@ -1,6 +1,7 @@
+import { researchFetch as fetch } from "./researchClient";
 /** 平台内置策略库 — PG `builtin_strategies`；用户库见 userStrategyLibraries */
 
-import { authHeaders, assertAuthConsistency } from "./auth";
+import { authHeaders, assertAuthConsistency } from "./researchClient";
 import {
   inferEngineModeFromCode,
   parseParamsFromCode,
@@ -8,6 +9,7 @@ import {
   DEFAULT_STRATEGY_CODE,
 } from "./strategyCodeSync";
 import { parseLibrarySignalSelection } from "./strategyFactorSync";
+import { normalizeExecutionTiming } from "./detectStore";
 import {
   createStrategyProject,
   defaultStrategyConfig,
@@ -285,6 +287,9 @@ export function configFromRunRequest(
       ? String(r.start)
       : String(fromCode.startDate || ""),
     endDate: hasRange ? String(r.end) : String(fromCode.endDate || ""),
+    execution_timing: normalizeExecutionTiming(
+      r.execution_timing ?? fromCode.execution_timing,
+    ),
     commission_rate:
       typeof r.commission_rate === "number"
         ? r.commission_rate

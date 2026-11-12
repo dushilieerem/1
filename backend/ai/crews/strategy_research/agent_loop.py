@@ -10,9 +10,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ai.gateway.llm_client import LlmError, chat_completions
+from ai.errors import AiError
+from ai.router import run_task
 from ai.crews.strategy_research.registry import execute_tool, openai_tools_spec
 from ai.runtime import store as agent_store
+
+#: 兼容旧调用点的异常捕获。
+LlmError = AiError
 
 SYSTEM_PROMPT = (
     "你是 SVQuant 量化投研平台的策略研究助手。\n"
@@ -79,7 +83,11 @@ def run_backtest_chat(
     answer = ""
 
     for _round in range(_MAX_TOOL_ROUNDS + 1):
-        resp = chat_completions(messages=messages, tools=tools_spec, temperature=0.2)
+        resp = run_task(
+            "strategy_research.agent",
+            messages=messages,
+            tools=tools_spec,
+        )
         tokens_in += int(resp.get("tokens_in") or 0)
         tokens_out += int(resp.get("tokens_out") or 0)
         calls = _tool_call_items(resp.get("tool_calls") or [])

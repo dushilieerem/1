@@ -95,17 +95,20 @@ def request_json(
     method: str = "GET",
     payload: dict[str, Any] | None = None,
     timeout: float | int = 120,
+    headers: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, str], Any]:
     """?????? JSON??? (status, headers_lower, body)?
 
     4xx/5xx ??? status+body??????? BFF ??????
     """
     data_bytes = None
-    headers = {"Accept": "application/json"}
+    request_headers = {"Accept": "application/json"}
+    if headers:
+        request_headers.update({str(k): str(v) for k, v in headers.items()})
     if payload is not None:
         data_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method.upper())
+        request_headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data_bytes, headers=request_headers, method=method.upper())
     try:
         with urlopen_direct(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")

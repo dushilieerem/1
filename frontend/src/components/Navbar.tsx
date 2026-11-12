@@ -164,6 +164,29 @@ function UserMenu({ user }: { user: AuthUser }) {
           />
           <div className="absolute right-0 top-full z-50 min-w-[10rem] pt-1">
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              {user.role === "admin" ? (
+                <Link
+                  to="/admin"
+                  onClick={() => setOpen(false)}
+                  className="block px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                >
+                  管理后台
+                </Link>
+              ) : null}
+              <Link
+                to="/org"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                组织与团队
+              </Link>
+              <Link
+                to="/research/assets"
+                onClick={() => setOpen(false)}
+                className="block px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                研究资产
+              </Link>
               <Link
                 to="/community/me"
                 onClick={() => setOpen(false)}
@@ -301,9 +324,13 @@ export function Navbar() {
       <NavLink to="/" end className={({ isActive }) => navLinkClass(isActive)}>
         首页
       </NavLink>
-      <NavLink to="/community" className={({ isActive }) => navLinkClass(isActive)}>
-        社区
-      </NavLink>
+      {/* 未登录也展示行情/因子/策略菜单；点子项再跳登录 */}
+      <NavDropdown
+        label="行情"
+        active={dataActive}
+        items={DATA_NAV_ITEMS}
+        gateAuth={!user}
+      />
       <NavLink
         to="/news"
         className={({ isActive }) =>
@@ -312,19 +339,13 @@ export function Navbar() {
       >
         资讯
       </NavLink>
-      <NavLink
-        to={user ? PAPER_NAV.to : loginWithNext(PAPER_NAV.to)}
-        className={({ isActive }) =>
-          navLinkClass(Boolean(user) && (isActive || pathname.startsWith("/paper")))
-        }
-      >
-        {PAPER_NAV.label}
+      <NavLink to="/community" className={({ isActive }) => navLinkClass(isActive)}>
+        社区
       </NavLink>
-      {/* 未登录也展示数据/策略/因子菜单；点子项再跳登录 */}
       <NavDropdown
-        label="数据"
-        active={dataActive}
-        items={DATA_NAV_ITEMS}
+        label="因子"
+        active={factorActive}
+        items={FACTOR_NAV_ITEMS}
         gateAuth={!user}
       />
       <NavDropdown
@@ -333,12 +354,14 @@ export function Navbar() {
         items={STRATEGY_NAV_ITEMS}
         gateAuth={!user}
       />
-      <NavDropdown
-        label="因子"
-        active={factorActive}
-        items={FACTOR_NAV_ITEMS}
-        gateAuth={!user}
-      />
+      <NavLink
+        to={user ? PAPER_NAV.to : loginWithNext(PAPER_NAV.to)}
+        className={({ isActive }) =>
+          navLinkClass(Boolean(user) && (isActive || pathname.startsWith("/paper")))
+        }
+      >
+        {PAPER_NAV.label}
+      </NavLink>
       <NavLink
         to={HELP_NAV.to}
         className={({ isActive }) =>
@@ -481,9 +504,6 @@ export function Navbar() {
                     <NavLink to="/" end onClick={closeMobile} className={({ isActive }) => drawerLinkClass(isActive)}>
                       首页
                     </NavLink>
-                    <NavLink to="/community" onClick={closeMobile} className={({ isActive }) => drawerLinkClass(isActive)}>
-                      社区
-                    </NavLink>
                     <NavLink
                       to="/news"
                       onClick={closeMobile}
@@ -492,6 +512,9 @@ export function Navbar() {
                       }
                     >
                       资讯
+                    </NavLink>
+                    <NavLink to="/community" onClick={closeMobile} className={({ isActive }) => drawerLinkClass(isActive)}>
+                      社区
                     </NavLink>
                     <NavLink
                       to={user ? PAPER_NAV.to : loginWithNext(PAPER_NAV.to)}
@@ -531,22 +554,8 @@ export function Navbar() {
                     </NavLink>
                   </DrawerSection>
 
-                  <DrawerSection title="数据">
+                  <DrawerSection title="行情">
                     {DATA_NAV_ITEMS.map(({ to, label }) => (
-                      <NavLink
-                        key={to}
-                        to={user ? to : loginWithNext(to)}
-                        onClick={closeMobile}
-                        className={({ isActive }) =>
-                          drawerLinkClass(Boolean(user) && isActive)
-                        }
-                      >
-                        {label}
-                      </NavLink>
-                    ))}
-                  </DrawerSection>
-                  <DrawerSection title="策略">
-                    {STRATEGY_NAV_ITEMS.map(({ to, label }) => (
                       <NavLink
                         key={to}
                         to={user ? to : loginWithNext(to)}
@@ -561,6 +570,20 @@ export function Navbar() {
                   </DrawerSection>
                   <DrawerSection title="因子">
                     {FACTOR_NAV_ITEMS.map(({ to, label }) => (
+                      <NavLink
+                        key={to}
+                        to={user ? to : loginWithNext(to)}
+                        onClick={closeMobile}
+                        className={({ isActive }) =>
+                          drawerLinkClass(Boolean(user) && isActive)
+                        }
+                      >
+                        {label}
+                      </NavLink>
+                    ))}
+                  </DrawerSection>
+                  <DrawerSection title="策略">
+                    {STRATEGY_NAV_ITEMS.map(({ to, label }) => (
                       <NavLink
                         key={to}
                         to={user ? to : loginWithNext(to)}

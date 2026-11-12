@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Camera, Loader2 } from "lucide-react";
-import { getStoredUser } from "@/lib/auth";
+import { ArrowLeft, Camera, Loader2, Trash2 } from "lucide-react";
+import { authHeaders, clearSession, getStoredUser } from "@/lib/auth";
 import { compressImageFile } from "@/lib/imageCompress";
 import {
   getUserProfile,
@@ -31,6 +31,30 @@ export function CommunityProfileEditPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const onDeleteAccount = async () => {
+    setDeleting(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/auth/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ password: deletePassword, confirm: deleteConfirm }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { detail?: string };
+      if (!res.ok) throw new Error(data.detail || `注销失败（${res.status}）`);
+      clearSession();
+      navigate("/login?deleted=1", { replace: true });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     const uname = me?.username;
@@ -254,6 +278,63 @@ export function CommunityProfileEditPage() {
                     {bio.length} / 2000
                   </span>
                 </label>
+              </div>
+
+              <div className="mt-8 rounded-2xl border border-red-100 bg-red-50/50 p-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-red-700">
+                  <Trash2 className="h-4 w-4" />
+                  注销账号
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  注销后个人数据（自选、组合、模拟盘、策略、因子、知识库、通知等）会被删除；
+                  已发布的帖子和评论保留，并显示为「已注销用户」。此操作不可恢复。
+                </p>
+                {!deleteOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteOpen(true)}
+                    className="mt-3 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                  >
+                    我要注销账号
+                  </button>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    <input
+                      type="password"
+                      className={fieldClassName()}
+                      placeholder="登录密码"
+                      value={deletePassword}
+                      onChange={(e) => setDeletePassword(e.target.value)}
+                    />
+                    <input
+                      className={fieldClassName()}
+                      placeholder={`输入用户名 ${me?.username || ""} 或「注销」确认`}
+                      value={deleteConfirm}
+                      onChange={(e) => setDeleteConfirm(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => void onDeleteAccount()}
+                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-500 disabled:opacity-60"
+                      >
+                        {deleting ? "注销中…" : "确认注销"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteOpen(false);
+                          setDeletePassword("");
+                          setDeleteConfirm("");
+                        }}
+                        className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:bg-white"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {err ? <p className="mt-4 text-sm text-red-600">{err}</p> : null}

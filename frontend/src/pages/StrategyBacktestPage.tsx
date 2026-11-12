@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { DraftRestoreBanner } from "@/components/DraftRestoreBanner";
+import { clearDraft, draftNewerThan, loadDraft, saveDraft } from "@/lib/autosave";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -27,6 +29,7 @@ import {
   FACTORS_BEGIN,
   FACTORS_END,
   applySignalFactorsToCode,
+  findUneditedFactorStub,
   hydrateSignalSelection,
   normalizeSignalPowers,
   normalizeSignalWeights,
@@ -89,7 +92,18 @@ function syncProjectCode(cfg: StrategyProjectConfig): string {
   return cfg.strategy_id ? cfg.strategy_code : syncCodeFromLeft(cfg);
 }
 
-export function StrategyBacktestPage() {
+export type StrategyBacktestNavigation = {
+  listPath?: string;
+  projectPath?: (projectId: string) => string;
+  reportPath?: (runId: string) => string;
+  historyPath?: (projectId: string) => string;
+};
+
+export function StrategyBacktestPage({ navigation }: { navigation?: StrategyBacktestNavigation } = {}) {
+  const listPath = navigation?.listPath || "/strategy/research";
+  const projectPath = navigation?.projectPath || ((id: string) => `/strategy/research/${id}`);
+  const reportPath = navigation?.reportPath || ((id: string) => `/strategy/research/report/${id}`);
+  const historyPath = navigation?.historyPath || ((id: string) => `/strategy/research/${id}/history`);
   const { projectId = "" } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -106,9 +120,44 @@ export function StrategyBacktestPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [factorSyncing, setFactorSyncing] = useState(false);
   const [mobilePane, setMobilePane] = useState<"config" | "code">("config");
+  const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
+  const autosaveKey = `svquant.autosave.strategy.${projectId}`;
   const syncLock = useRef<"left" | "right" | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const factorSyncGen = useRef(0);
+
+  useEffect(() => {
+    if (loading || !cfg || !project) return;
+    const draft = loadDraft<StrategyProjectConfig>(autosaveKey);
+    if (draft && draftNewerThan(draft, project.updatedAt)) {
+      setDraftBanner({ savedAt: draft.savedAt });
+    } else {
+      setDraftBanner(null);
+    }
+    // 只在资源切换/加载完成时检查，避免每次编辑弹提示
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, project?.id]);
+
+  useEffect(() => {
+    if (loading || !cfg || !project) return;
+    const timer = window.setTimeout(() => saveDraft(autosaveKey, cfg), 800);
+    return () => window.clearTimeout(timer);
+  }, [cfg, loading, project?.id, autosaveKey]);
+
+  const restoreDraft = () => {
+    const draft = loadDraft<StrategyProjectConfig>(autosaveKey);
+    if (draft?.data) {
+      setCfg(normalizeStrategyConfig(draft.data));
+      setSavedHint("已恢复本地草稿");
+      window.setTimeout(() => setSavedHint(""), 2000);
+    }
+    setDraftBanner(null);
+  };
+
+  const discardDraft = () => {
+    clearDraft(autosaveKey);
+    setDraftBanner(null);
+  };
 
   const pushLog = (msg: string) => {
     const t = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -388,7 +437,7 @@ export function StrategyBacktestPage() {
         setProject(next);
         setCfg(config);
         clearStrategyCloneDraft();
-        navigate(`/strategy/research/${saved.id}`, { replace: true });
+        navigate(projectPath(saved.id), { replace: true });
         return next;
       }
       const saved = await saveStrategyProject({
@@ -474,6 +523,13 @@ export function StrategyBacktestPage() {
       pushLog("策略代码为空");
       return;
     }
+    const uneditedStub = findUneditedFactorStub(snapshotCode);
+    if (uneditedStub) {
+      pushLog(
+        `临时因子「${uneditedStub}」尚未编辑（仍是零值占位），请先补全公式再回测`,
+      );
+      return;
+    }
     const range = resolveStrategyRange(cfg);
     if (cfg.rangeMode === "custom" && (!range.start || !range.end)) {
       pushLog("请填写自定义起止日期");
@@ -551,7 +607,7 @@ export function StrategyBacktestPage() {
         }
       }
       pushLog(`已保存 · ${sec}s`);
-      navigate(`/strategy/research/report/${run.id}`);
+      navigate(reportPath(run.id));
     } catch (e) {
       if ((e as Error)?.name === "AbortError") pushLog("已取消");
       else pushLog(e instanceof Error ? e.message : String(e));
@@ -573,7 +629,7 @@ export function StrategyBacktestPage() {
     return (
       <div className="p-10 text-center">
         <p className="text-slate-600">{loadErr || "项目不存在"}</p>
-        <Link to="/strategy/research" className="mt-3 inline-block text-blue-600 underline">
+        <Link to={listPath} className="mt-3 inline-block text-blue-600 underline">
           返回列表
         </Link>
       </div>
@@ -585,7 +641,7 @@ export function StrategyBacktestPage() {
       <div className="flex flex-col gap-2 border-b border-slate-200 bg-white px-3 py-2.5 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <Link
-            to="/strategy/research"
+            to={listPath}
             className="hidden text-slate-400 hover:text-slate-700 sm:inline"
           >
             策略研究
@@ -630,7 +686,7 @@ export function StrategyBacktestPage() {
             </button>
           ) : null}
           <Link
-            to={`/strategy/research/${projectId}/history`}
+            to={historyPath(projectId)}
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
             <BarChart3 className="h-3.5 w-3.5" />
@@ -638,7 +694,7 @@ export function StrategyBacktestPage() {
             <span className="sm:hidden">报告</span>
           </Link>
           <Link
-            to="/strategy/research"
+            to={listPath}
             className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -679,6 +735,13 @@ export function StrategyBacktestPage() {
           }`}
         >
           <div className="flex-1 space-y-5 overflow-y-auto px-3 py-4 text-sm sm:px-5 sm:py-5">
+            {draftBanner && (
+              <DraftRestoreBanner
+                savedAt={draftBanner.savedAt}
+                onRestore={restoreDraft}
+                onDiscard={discardDraft}
+              />
+            )}
             <section>
               <h2 className="mb-2 text-sm font-bold text-blue-600">执行模式</h2>
               <div className="flex flex-wrap gap-1.5">
@@ -734,7 +797,7 @@ export function StrategyBacktestPage() {
                 <h2 className="text-sm font-bold text-slate-400">因子选择 + 权重</h2>
                 <p className="mt-1 text-[11px] leading-snug text-slate-400">
                   当前为 <code className="text-slate-500">generate_signals()</code>{" "}
-                  自由策略，左侧因子积木已隐藏；请直接改右侧代码。
+                  自由策略，左侧因子积木与持仓数/调仓周期表单已隐藏；这些参数由代码内常量控制，请直接改右侧代码。
                   平台策略库已统一为 FactorPortfolio 模板，可从策略库重新打开以刷新。
                 </p>
               </section>
@@ -856,7 +919,8 @@ export function StrategyBacktestPage() {
                     </label>
                   </>
                 )}
-                {cfg.engine_mode === "event" ? null : (
+                {cfg.engine_mode === "event" ? null : cfg.strategy_id ||
+                  usesFactorPortfolioTemplate(cfg.strategy_code) ? (
                   <>
                     <label className="block text-xs text-slate-500">
                       持仓数
@@ -901,6 +965,10 @@ export function StrategyBacktestPage() {
                       />
                     </label>
                   </>
+                ) : (
+                  <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2.5 text-[11px] leading-relaxed text-slate-500 lg:col-span-2">
+                    当前为 <code>generate_signals()</code> 自由策略，持仓数、调仓周期由代码内常量控制；这里的表单改不到策略内部，已隐藏。请直接修改右侧代码。
+                  </p>
                 )}
                 <label className="block text-xs text-slate-500">
                   佣金率

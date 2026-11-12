@@ -4,9 +4,8 @@ import { Search } from "lucide-react";
 import { SymbolPreviewCard } from "@/components/data/SymbolPreviewCard";
 import { PageJump, PagerBar } from "@/components/PageJump";
 import {
-  fetchMarketSymbols,
   fetchQuotesBatch,
-  symbolMatchesQuery,
+  searchMarketSymbols,
   type MarketSymbol,
   type SymbolQuote,
 } from "@/lib/marketDataApi";
@@ -20,6 +19,7 @@ export function DataSearchResultsPage() {
   const pageFromUrl = Math.max(1, Number(params.get("page") || "1") || 1);
   const [draftQ, setDraftQ] = useState(qFromUrl);
   const [symbols, setSymbols] = useState<MarketSymbol[]>([]);
+  const [total, setTotal] = useState(0);
   const [symErr, setSymErr] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<Record<string, SymbolQuote>>({});
   const [loadingSym, setLoadingSym] = useState(true);
@@ -30,10 +30,22 @@ export function DataSearchResultsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!qFromUrl) {
+      setSymbols([]);
+      setTotal(0);
+      setLoadingSym(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     setLoadingSym(true);
-    void fetchMarketSymbols()
-      .then((list) => {
-        if (!cancelled) setSymbols(list);
+    setSymErr(null);
+    void searchMarketSymbols(qFromUrl, PAGE_SIZE, (pageFromUrl - 1) * PAGE_SIZE)
+      .then((data) => {
+        if (!cancelled) {
+          setSymbols(data.items);
+          setTotal(data.total);
+        }
       })
       .catch((ex) => {
         if (!cancelled) setSymErr(ex instanceof Error ? ex.message : String(ex));
@@ -44,20 +56,11 @@ export function DataSearchResultsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [qFromUrl, pageFromUrl]);
 
-  const allMatches = useMemo(() => {
-    if (!qFromUrl) return [];
-    return symbols.filter((s) => symbolMatchesQuery(s, qFromUrl));
-  }, [symbols, qFromUrl]);
-
-  const totalPages = Math.max(1, Math.ceil(allMatches.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const page = Math.min(pageFromUrl, totalPages);
-
-  const pageItems = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return allMatches.slice(start, start + PAGE_SIZE);
-  }, [allMatches, page]);
+  const pageItems = symbols;
 
   const pageCodes = useMemo(
     () => pageItems.map((m) => m.symbol),
@@ -147,7 +150,7 @@ export function DataSearchResultsPage() {
           </p>
         ) : loadingSym ? (
           <p className="py-16 text-center text-sm text-slate-400">加载中…</p>
-        ) : allMatches.length === 0 && !symErr ? (
+        ) : total === 0 && !symErr ? (
           <p className="rounded-2xl border border-slate-200 bg-white px-4 py-16 text-center text-sm text-slate-400">
             未找到匹配代码
           </p>
@@ -169,7 +172,7 @@ export function DataSearchResultsPage() {
                 {/* PC：原样 */}
                 <div className="mt-6 hidden flex-wrap items-center justify-between gap-3 lg:flex">
                   <p className="text-sm text-slate-500">
-                    共 {allMatches.length} 条 · 第 {page}/{totalPages} 页 · 每页{" "}
+                    共 {total} 条 · 第 {page}/{totalPages} 页 · 每页{" "}
                     {PAGE_SIZE} 条
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
@@ -195,7 +198,7 @@ export function DataSearchResultsPage() {
                 {/* 手机：单行 */}
                 <div className="mt-4 flex items-center gap-2 lg:hidden">
                   <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
-                    {allMatches.length}条
+                    {total}条
                   </span>
                   <PagerBar
                     page={page}

@@ -1,3 +1,4 @@
+import { researchPagePath, inQuantWorkspace } from "@/lib/researchClient";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactECharts from "echarts-for-react";
@@ -15,7 +16,7 @@ import {
   Archive,
 } from "lucide-react";
 import { AiBacktestInterpretDialog } from "@/components/AiBacktestInterpretDialog";
-import { getStoredUser } from "@/lib/auth";
+import { getStoredUser } from "@/lib/researchClient";
 import { buildFactorDetectShareDraft } from "@/lib/communityShare";
 import {
   CHART,
@@ -218,7 +219,16 @@ function mddMarkLine(troughDate: string) {
   };
 }
 
-export function FactorDetectReportPage() {
+export type FactorReportNavigation = {
+  listPath?: string;
+  projectPath?: (projectId: string) => string;
+  reportPath?: (runId: string) => string;
+};
+
+export function FactorDetectReportPage({ navigation }: { navigation?: FactorReportNavigation } = {}) {
+  const listPath = navigation?.listPath ?? "/factor/detect";
+  const projectPath = navigation?.projectPath ?? ((id: string) => `/factor/detect/${id}`);
+  const reportPath = navigation?.reportPath ?? ((id: string) => `/factor/detect/report/${id}`);
   const { runId = "" } = useParams();
   const navigate = useNavigate();
   const [rec, setRec] = useState<DetectRunRecord | null | undefined>(() =>
@@ -430,7 +440,7 @@ export function FactorDetectReportPage() {
     }
   };
 
-  const visibleNav = useMemo(() => visibleNavFor(rec), [rec]);
+  const visibleNav = useMemo(() => visibleNavFor(rec).filter(item => !inQuantWorkspace() || item.id !== "ai"), [rec]);
 
   useEffect(() => {
     if (!visibleNav.some((n) => n.id === tab)) {
@@ -898,7 +908,7 @@ export function FactorDetectReportPage() {
     return (
       <div className="mx-auto max-w-lg px-6 py-20 text-center">
         <p className="text-slate-600">没有找到检测结果，请先运行检测。</p>
-        <Link to="/factor/detect" className="mt-4 inline-block text-sm font-medium text-blue-600 underline">
+        <Link to={listPath} className="mt-4 inline-block text-sm font-medium text-blue-600 underline">
           返回检测报告
         </Link>
       </div>
@@ -932,7 +942,8 @@ export function FactorDetectReportPage() {
         factorCode: req?.factor_code,
         libraryName: req?.library_name,
         factorName: req?.factor_name,
-        returnTo: `/factor/detect/report/${rec.id || runId}`,
+        runId: rec.id || runId,
+        returnTo: reportPath(rec.id || runId),
         returnLabel: "返回因子检测报告",
       });
       navigate(next, { state: draft });
@@ -946,11 +957,11 @@ export function FactorDetectReportPage() {
         <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-6">
           <div className="min-w-0 flex-1">
             <p className="text-sm text-slate-500">
-              <Link to="/factor/detect" className="hover:text-blue-600">
+              <Link to={listPath} className="hover:text-blue-600">
                 检测报告
               </Link>
               {" / "}
-              <Link to={`/factor/detect/${rec.projectId}`} className="hover:text-blue-600">
+              <Link to={projectPath(rec.projectId)} className="hover:text-blue-600">
                 {projectName || "检测项目"}
               </Link>
               {" / 检测报告"}
@@ -974,7 +985,7 @@ export function FactorDetectReportPage() {
                 入库
               </button>
             ) : null}
-            <button
+            {!inQuantWorkspace() && (<button
               type="button"
               onClick={shareToCommunity}
               className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
@@ -982,16 +993,16 @@ export function FactorDetectReportPage() {
               <Share2 className="h-3.5 w-3.5 shrink-0" />
               <span className="sm:hidden">分享</span>
               <span className="hidden sm:inline">分享到社区</span>
-            </button>
+            </button>)}
             <Link
-              to={`/factor/detect/${rec.projectId}?runId=${encodeURIComponent(rec.id || runId)}`}
+              to={`${projectPath(rec.projectId)}?runId=${encodeURIComponent(rec.id || runId)}`}
               className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             >
               <span className="sm:hidden">配置</span>
               <span className="hidden sm:inline">返回配置</span>
             </Link>
             <Link
-              to="/factor/detect"
+              to={listPath}
               className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
             >
               <span className="sm:hidden">报告</span>

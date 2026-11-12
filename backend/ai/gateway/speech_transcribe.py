@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from ai.errors import AiError, AiNotConfigured
 from services.core.env_config import env, load_env
 from services.core.lan_http import urlopen_direct
 
@@ -20,8 +21,14 @@ DEFAULT_MODEL = "FunAudioLLM/SenseVoiceSmall"
 _TAG_RE = re.compile(r"<\|[^|]*\|>")
 
 
-class SpeechError(RuntimeError):
-    pass
+class SpeechError(AiError):
+    """语音识别失败（沿用 ADR-037 的统一异常基类）。"""
+
+    http_status = 400
+
+
+class SpeechNotConfigured(AiNotConfigured, SpeechError):
+    """语音识别未配置密钥（映射 503，但仍可被 `except SpeechError` 捕获）。"""
 
 
 def _pull_windows_user_env(name: str) -> str:
@@ -120,7 +127,7 @@ def transcribe_bytes(
 
     key = _silicon_key()
     if not key:
-        raise SpeechError("未配置 SILICONFLOW_API_KEY")
+        raise SpeechNotConfigured("未配置 SILICONFLOW_API_KEY")
 
     model = _model()
     body, boundary = _build_multipart(

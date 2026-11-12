@@ -324,3 +324,17 @@ def set_user_ai_quota(
             "remaining": max(0, quota - int(used)),
         },
     }
+
+
+def tokens_used_today() -> int:
+    """全站今日已用 token（P1-A03 预算闸门）。"""
+    ensure_ai_usage_schema()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(tokens_in + tokens_out), 0)::bigint AS n
+            FROM ai_usage
+            WHERE created_at >= date_trunc('day', NOW())
+            """
+        ).fetchone()
+    return int(row["n"] or 0)

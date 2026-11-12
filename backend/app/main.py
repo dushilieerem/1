@@ -2,13 +2,17 @@
 """SVQuant FastAPI 入口（对齐旧 api_server 路径与响应形状）。"""
 from __future__ import annotations
 
+import logging
 import sys
+import threading
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 # backend root + KnowledgeHub/backend（knowledge_hub 包）
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -22,21 +26,40 @@ from app.bootstrap import bootstrap_schemas  # noqa: E402
 from app.errors import install_exception_handlers  # noqa: E402
 from app.routers import (  # noqa: E402
     admin_logs,
+    admin_users,
+    support,
+    research_assets,
+    billing,
+    fund,
     agent,
     ai,
+    ai_backtest,
+    ai_factor_generation,
+    ai_strategy_generation,
+    ai_transcription,
     auth,
     community,
     detect,
     factor,
     health,
+    inst,
+    inst_quant,
+    inst_workflow,
+    invest,
+    invest_ai,
     kh,
+    market_data,
+    metrics,
     news,
     paper,
     re_gateway,
     strategy,
     watchlists,
 )
+from services.core import http_metrics  # noqa: E402
 from services.core.env_config import env  # noqa: E402
+from services.core.public_switches import docs_enabled  # noqa: E402
+from services.core.rate_limit import enforce_rate_limit_key  # noqa: E402
 
 
 def _configure_threadpool() -> None:
@@ -50,10 +73,26 @@ def _configure_threadpool() -> None:
         pass
 
 
+def _warm_quant_cache() -> None:
+    """后台预热量化因子面板，避免首次进入 /quant 等待全市场计算。"""
+    if "pytest" in sys.modules:
+        return
+    try:
+        from services.core.db import get_conn
+        from services.invest import quant
+        from services.invest.db import PGConn
+
+        with get_conn() as raw:
+            quant.warm_board(PGConn(raw))
+    except Exception:
+        logging.getLogger(__name__).warning("quant cache prewarm failed", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _configure_threadpool()
     bootstrap_schemas()
+    threading.Thread(target=_warm_quant_cache, name="quant-prewarm", daemon=True).start()
     yield
 
 
@@ -70,22 +109,131 @@ def _cors_origins() -> list[str]:
 app = FastAPI(
     title="SVQuant",
     lifespan=lifespan,
-    docs_url="/docs",
+    docs_url="/docs" if docs_enabled() else None,
     redoc_url=None,
+    openapi_url="/openapi.json" if docs_enabled() else None,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
 install_exception_handlers(app)
 
+
+def _csp_policy() -> str:
+    return (
+        env(
+            "CONTENT_SECURITY_POLICY",
+            "default-src 'self'; img-src 'self' data: https:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "connect-src 'self' https: http: ws: wss:; frame-ancestors 'self';",
+        )
+        or ""
+    ).strip()
+
+
+_WRITE_SKIP_PREFIXES = ("/api/auth/", "/api/health")
+
+
+@app.middleware("http")
+async def api_v1_alias(request: Request, call_next):
+    """P1-O01：/api/v1/* 作为 /api/* 的兼容别名。"""
+    path = request.url.path
+    if path.startswith("/api/v1/"):
+        request.scope["path"] = path[len("/api/v1"):]
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def write_rate_limit(request: Request, call_next):
+    """P0-06：所有非 GET API 默认按用户/IP 限流（单 worker；多实例见 D-06）。"""
+    method = request.method.upper()
+    path = request.url.path
+    if method not in {"POST", "PUT", "PATCH", "DELETE"} or not path.startswith("/api/"):
+        return await call_next(request)
+    if any(path.startswith(prefix) for prefix in _WRITE_SKIP_PREFIXES):
+        return await call_next(request)
+    identity = None
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        try:
+            from services.auth.auth_store import decode_token
+
+            identity = f"u:{decode_token(auth.split(None, 1)[1].strip()).get('sub')}"
+        except Exception:
+            identity = None
+    if not identity:
+        xf = request.headers.get("x-forwarded-for") or ""
+        identity = f"ip:{(xf.split(',')[0].strip() if xf else (request.client.host if request.client else 'unknown'))}"
+    try:
+        limit = max(1, int(env("WRITE_RATE_LIMIT", "120") or "120"))
+    except (TypeError, ValueError):
+        limit = 120
+    try:
+        enforce_rate_limit_key(identity, scope="write", limit=limit, window_sec=60)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "请求过于频繁，请稍后再试"},
+            headers=exc.headers or {"Retry-After": "60"},
+        )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def request_metrics(request: Request, call_next):
+    """记录按路由模板聚合的耗时/状态；/api/metrics 自身不计入，避免抓取噪声。"""
+    if request.url.path == "/api/metrics":
+        return await call_next(request)
+    rid = (request.headers.get("x-request-id") or uuid.uuid4().hex).strip()[:64]
+    request.state.request_id = rid
+    http_metrics.in_flight(1)
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+        http_metrics.observe(
+            method=request.method, route=route, status=500,
+            seconds=time.perf_counter() - started,
+        )
+        raise
+    else:
+        route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+        http_metrics.observe(
+            method=request.method, route=route, status=response.status_code,
+            seconds=time.perf_counter() - started,
+        )
+        response.headers.setdefault("X-Request-ID", rid)
+        return response
+    finally:
+        http_metrics.in_flight(-1)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    csp = _csp_policy()
+    if csp:
+        response.headers.setdefault("Content-Security-Policy", csp)
+    return response
+
 for mod in (
     health,
     auth,
+    inst,
+    inst_quant,
+    inst_workflow,
+    invest,
+    invest_ai,
     detect,
     strategy,
     paper,
@@ -96,11 +244,25 @@ for mod in (
     community,
     agent,
     ai,
+    ai_backtest,
+    ai_factor_generation,
+    ai_strategy_generation,
+    ai_transcription,
     kh,
+    market_data,
+    metrics,
     admin_logs,
+    admin_users,
+    support,
+    research_assets,
+    billing,
+    fund,
 ):
     app.include_router(mod.router)
 
+
+app.include_router(support.admin_router)
+app.include_router(billing.admin_router)
 
 _AUDIT_SKIP_PREFIXES = (
     "/docs",
@@ -129,7 +291,11 @@ def _should_audit(method: str, path: str, status: int) -> bool:
         if path.startswith(pref):
             return False
     # 登录/注册由路由显式写业务审计，避免与中间件重复
-    if path in ("/api/auth/login", "/api/auth/register"):
+    if path in (
+        "/api/auth/login",
+        "/api/auth/register",
+        "/api/inst/auth/login",
+    ):
         return False
     # 管理页轮询自身不记，避免刷屏
     if method == "GET" and path.startswith("/api/admin/logs"):
@@ -181,7 +347,7 @@ async def audit_access_log(request: Request, call_next) -> Response:
                 auth = request.headers.get("authorization") or request.headers.get(
                     "Authorization"
                 )
-                user = user_from_authorization(auth) if auth else None
+                user = user_from_authorization(auth, allow_inst=True, allow_quant=True) if auth else None
                 ms = int((time.perf_counter() - t0) * 1000)
                 action = infer_action(method, path)
                 detail = None
@@ -217,3 +383,17 @@ async def cache_control_headers(request: Request, call_next) -> Response:
         response.headers["Pragma"] = "no-cache"
         response.headers["Vary"] = "Authorization"
     return response
+
+# Institutional factor workflow uses the same quant identity and existing compute APIs.
+from app.routers.quant_factor_workflow import router as quant_factor_workflow_router
+app.include_router(quant_factor_workflow_router)
+from app.routers.quant_data_resources import router as quant_data_resources_router
+app.include_router(quant_data_resources_router)
+from app.routers.portfolio import router as portfolio_router
+app.include_router(portfolio_router)
+from app.routers.quant_monitor import router as quant_monitor_router
+app.include_router(quant_monitor_router)
+from app.routers.quant_agents import router as quant_agents_router
+app.include_router(quant_agents_router)
+from app.routers.strategy_research import router as strategy_research_router
+app.include_router(strategy_research_router)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, BadgeCheck, History, Loader2 } from "lucide-react";
-import { loadChainReport, runFactorEval, type EvalResult } from "@/lib/agentChain";
+import { fetchChainState, loadChainReport, runFactorEval, saveChainReport, type EvalResult } from "@/lib/agentChain";
 import {
   loadEvalHistory,
   loadLastEval,
@@ -12,7 +12,7 @@ import {
 
 export function AgentEvalPage() {
   const navigate = useNavigate();
-  const report = useMemo(() => loadChainReport(), []);
+  const [report, setReport] = useState(() => loadChainReport());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [histTick, setHistTick] = useState(0);
@@ -77,7 +77,28 @@ export function AgentEvalPage() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 text-sm text-slate-600">
-          {report ? `已载入报告 ${report.report_id}` : "请先跑回测报告，或从下方历史回看。"}
+          {report ? (
+            `已载入报告 ${report.report_id}`
+          ) : (
+            <div className="space-y-2">
+              <p>请先跑回测报告，或从下方历史回看。</p>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                onClick={async () => {
+                  const state = await fetchChainState();
+                  if (state?.report) {
+                    saveChainReport(state.report);
+                    setReport(state.report);
+                  } else {
+                    setErr("服务端没有可恢复的回测报告");
+                  }
+                }}
+              >
+                从服务端恢复上次报告
+              </button>
+            </div>
+          )}
           {history.length > 0 && (
             <div className="mt-5">
               <div className="flex items-center gap-1.5 text-sm font-medium text-slate-700">

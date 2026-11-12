@@ -1,6 +1,7 @@
+import { researchFetch as fetch } from "./researchClient";
 /** 用户自建因子库（与「内置因子库」同级的文件夹）+ 库内因子 */
 
-import { authHeaders, assertAuthConsistency } from "./auth";
+import { authHeaders, assertAuthConsistency } from "./researchClient";
 import type { FactorMeta } from "./factorCatalog";
 
 export type UserFactorLibrary = {

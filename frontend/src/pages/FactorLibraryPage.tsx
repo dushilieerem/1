@@ -1,3 +1,6 @@
+import { quantLoginUrl } from "@/lib/quantAuth";
+import { inQuantWorkspace } from "@/lib/researchClient";
+import { researchPagePath } from "@/lib/researchClient";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -19,7 +22,7 @@ import {
   getStoredUser,
   prepareAuthHandoff,
   subscribeAuth,
-} from "@/lib/auth";
+} from "@/lib/researchClient";
 import {
   builtinCategoryLabelsFromFactors,
   clearFactorCache,
@@ -408,7 +411,7 @@ export function FactorLibraryPage() {
 
   const openCreate = () => {
     if (!user) {
-      window.location.href = "/login?next=/factor/library";
+      window.location.href = inQuantWorkspace() ? quantLoginUrl("/quant/factor/library") : "/login?next=/factor/library";
       return;
     }
     setCreateName("");
@@ -418,7 +421,7 @@ export function FactorLibraryPage() {
 
   const openFactorCreate = () => {
     if (!user) {
-      window.location.href = "/login?next=/factor/library";
+      window.location.href = inQuantWorkspace() ? quantLoginUrl("/quant/factor/library") : "/login?next=/factor/library";
       return;
     }
     if (!userLibs.length) {
@@ -634,7 +637,7 @@ export function FactorLibraryPage() {
                 新建因子
               </button>
               <Link
-                to="/factor/detect"
+                to={researchPagePath("/factor/detect")}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => prepareAuthHandoff()}

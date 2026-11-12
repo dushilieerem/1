@@ -1,10 +1,10 @@
-/** 帮助中心目录（对应 docs/08-使用文档/因子与策略指南） */
+/** 帮助中心目录（对应 docs/用户指南/因子与策略指南） */
 export type HelpDocId =
   | "factor-writing"
   | "vectorized-strategy"
   | "event-strategy"
   | "examples-faq"
-  | "frontend-factor-library";
+  | "paper-trading";
 
 export type HelpDocMeta = {
   id: HelpDocId;
@@ -40,10 +40,10 @@ export const HELP_DOCS: HelpDocMeta[] = [
     file: "04-examples-and-faq.md",
   },
   {
-    id: "frontend-factor-library",
-    title: "前端因子库映射",
-    group: "平台与开发",
-    file: "05-frontend-factor-library.md",
+    id: "paper-trading",
+    title: "模拟盘使用说明",
+    group: "功能使用",
+    file: "05-paper-trading.md",
   },
 ];
 
@@ -74,3 +74,5 @@ export function slugifyHeading(text: string): string {
     .replace(/[^\w\u4e00-\u9fff\-]/g, "")
     .toLowerCase();
 }
+
+

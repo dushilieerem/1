@@ -69,11 +69,22 @@ def ensure_schema() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_status ON users (status)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auth_login_failures (
+              username     TEXT PRIMARY KEY,
+              failures     INTEGER NOT NULL DEFAULT 0,
+              locked_until TIMESTAMPTZ,
+              updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
         for col_sql in (
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS headline TEXT",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0",
         ):
             try:
                 conn.execute(col_sql)
@@ -106,6 +117,7 @@ def _public_user(row: dict[str, Any]) -> dict[str, Any]:
         "headline": row.get("headline") or "",
         "bio": row.get("bio") or "",
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "token_version": int(row.get("token_version") or 0),
     }
 
 
@@ -185,7 +197,8 @@ def register_user(
     return {"ok": True, "user": user, "token": issue_token(user)}
 
 
-def login_user(*, username: str, password: str) -> dict[str, Any]:
+def authenticate_user(*, username: str, password: str) -> dict[str, Any]:
+    """校验用户名密码并返回公开用户；不签发令牌（供不同会话类型复用）。"""
     ensure_schema()
     username = (username or "").strip()
     row = get_user_by_username(username)
@@ -193,19 +206,30 @@ def login_user(*, username: str, password: str) -> dict[str, Any]:
         raise ValueError("用户名或密码错误")
     if row.get("status") != "active":
         raise ValueError("账号已停用")
-    user = _public_user(row)
+    return _public_user(row)
+
+
+def login_user(*, username: str, password: str) -> dict[str, Any]:
+    user = authenticate_user(username=username, password=password)
     return {"ok": True, "user": user, "token": issue_token(user)}
 
 
-def issue_token(user: dict[str, Any]) -> str:
+def issue_token(user: dict[str, Any], *, extra: dict[str, Any] | None = None) -> str:
+    """签发 JWT；`extra` 用于机构会话等附加 claims，不能覆盖身份字段。"""
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user["id"]),
         "username": user["username"],
         "role": user["role"],
+        "tv": int(user.get("token_version") or 0),
         "iat": now,
         "exp": now + timedelta(days=_jwt_expire_days()),
     }
+    if extra:
+        for key, value in extra.items():
+            if key in {"sub", "username", "role", "iat", "exp"}:
+                continue
+            payload[key] = value
     return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
 
 
@@ -213,7 +237,21 @@ def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
 
 
-def user_from_authorization(header: str | None) -> dict[str, Any] | None:
+def revoke_user_tokens(user_id: int) -> None:
+    """P1-U05：token_version + 1，使该用户已签发的 JWT 全部失效。"""
+    uid = int(user_id)
+    if uid <= 0:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = %s",
+            (uid,),
+        )
+
+
+def user_from_authorization(
+    header: str | None, *, allow_inst: bool = False, allow_quant: bool = False
+) -> dict[str, Any] | None:
     if dev_skip_auth():
         return {
             "id": 0,
@@ -232,11 +270,17 @@ def user_from_authorization(header: str | None) -> dict[str, Any] | None:
         return None
     try:
         payload = decode_token(parts[1].strip())
+        if payload.get("scope") == "inst" and not (allow_inst or allow_quant):
+            return None
+        if payload.get("product") == "quant" and not allow_quant:
+            return None
         uid = int(payload["sub"])
     except Exception:
         return None
     row = get_user_by_id(uid)
     if not row or row.get("status") != "active":
+        return None
+    if int(payload.get("tv") or 0) != int(row.get("token_version") or 0):
         return None
     return _public_user(row)
 

@@ -190,6 +190,9 @@ def normalize_platform_ref(raw: Any) -> dict[str, Any] | None:
         "label": label,
         "metrics_display": display,
         "metrics": nums,
+        "ref_id": (str(raw.get("ref_id") or "").strip() or None),
+        "metrics_verified": bool(raw.get("metrics_verified")),
+        "verify_note": (str(raw.get("verify_note") or "").strip() or None),
         "factor_name": (str(raw.get("factor_name") or "").strip() or None),
         "universe": (str(raw.get("universe") or "").strip() or None),
         "period": (str(raw.get("period") or "").strip() or None),
@@ -267,15 +270,30 @@ def evaluate_metrics_trust(
     if not ref and body_claims_platform_share(body or ""):
         ref = infer_platform_ref_from_share_body(body or "")
 
-    if ref:
-        # 面板/检测/策略分享带来的引用即真源。
-        # 不再扫正文数字做 conflict：分享稿与展示口径（%、小数、日期）极易误伤，
-        # 导致「刚从报告点分享就被 Critic 拦住」。有引用一律 verified。
+    if ref and ref.get("metrics_verified"):
+        # P1-A05：只有服务端回查过运行记录的引用才算 verified。
         return {
             "status": "verified",
-            "summary": "已挂平台结果，润色以引用指标为准。",
+            "summary": "已挂平台结果并通过服务端回查，润色以引用指标为准。",
             "platform_ref": ref,
-            "flags": flags,  # 仅保留 promise 等，不含 metrics_conflict
+            "flags": flags,
+        }
+
+    if ref:
+        # 客户端提交、服务端未回查（或回查不一致）：仍展示引用，但不背书指标。
+        note = ref.get("verify_note") or "引用未通过服务端回查"
+        return {
+            "status": "unverified",
+            "summary": f"平台引用未验证：{note}。指标仅供原文复述，不作平台背书。",
+            "platform_ref": ref,
+            "flags": [
+                *flags,
+                {
+                    "code": "unverified_platform_ref",
+                    "severity": "warn",
+                    "message": f"平台引用未经服务端确认：{note}",
+                },
+            ],
         }
 
     # 无平台引用
@@ -325,6 +343,7 @@ def trust_prompt_block(trust: dict[str, Any] | None) -> dict[str, Any]:
             "universe": (ref or {}).get("universe"),
             "period": (ref or {}).get("period"),
             "metrics_display": (ref or {}).get("metrics_display") or {},
+            "metrics_verified": bool((ref or {}).get("metrics_verified")),
         }
         if ref
         else None,

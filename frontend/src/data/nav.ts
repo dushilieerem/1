@@ -71,6 +71,7 @@ export const STRATEGY_NAV_ITEMS = [
   { to: "/strategy/library", label: "策略库" },
   { to: "/strategy/ai", label: "AI策略生成" },
   { to: "/strategy/research", label: "检测报告" },
+  { to: "/strategy/convert", label: "代码转换" },
 ] as const;
 
 export const FACTOR_NAV_ITEMS = [

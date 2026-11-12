@@ -7,5 +7,10 @@ PyJWT>=2.8
 PyYAML>=6.0
 python-docx>=1.0
 pypdf>=4.0
+# KnowledgeHub P1-K06：.xlsx 文本抽取（未安装时上传 xlsx 会返回明确错误）
+openpyxl>=3.1
+# 本地 marketdata release 读取（P1-D01/D02/D03/D08）
+pyarrow>=15
 fastapi>=0.115
 uvicorn[standard]>=0.30
+cryptography>=42

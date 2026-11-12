@@ -1,6 +1,7 @@
+import { researchFetch as fetch } from "./researchClient";
 /** 用户自建策略库（与内置策略库同级） */
 
-import { authHeaders, assertAuthConsistency } from "./auth";
+import { authHeaders, assertAuthConsistency } from "./researchClient";
 
 export type UserStrategyLibrary = {
   id: number;

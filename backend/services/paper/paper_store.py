@@ -407,7 +407,9 @@ def create_account(user_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         except ValueError as exc:
             raise ValueError("first_settlement_date 必须是 YYYY-MM-DD") from exc
     first = first or initial_next_settlement_date()
-    next_date = initial_next_settlement_date(requested=first)
+    # 收盘后/非工作日创建时，first 是下一个工作日；它不是“显式回补”参数，
+    # 不能再用 initial_next_settlement_date(requested=...) 的未来日期校验。
+    next_date = first
 
     with get_conn() as conn:
         row = conn.execute(

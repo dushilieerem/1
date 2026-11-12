@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1060" viewBox="0 0 1680 1060" role="img">
+<title>投资组合与执行平台</title><desc>P1 目标与授权预算 → P2 策略选择与穿透分析 → P3 配置优化与方案比较 → P4 风险审核与授权审批 → P5 部署执行与对账 → P6 调仓、退出与版本管理。；各支骨列出功能和责任角色，详细输入输出见配套说明。</desc>
+<rect width="1680" height="1060" fill="#FFFFFF"/>
+<text x="48.00" y="35.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="43" font-weight="600" fill="#272332">04  投资组合与执行平台</text>
+<text x="1390.00" y="48.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="23" font-weight="400" fill="#625D6C">设计评审 · V2</text>
+<text x="48.00" y="105.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="25" font-weight="400" fill="#625D6C">业务分解鱼骨图 · 按编号读取推荐流程；支骨列功能，角色对应表见说明</text>
+<polyline points="48,505 1455,505" fill="none" stroke="#65517F" stroke-width="3"/>
+<polygon points="1467,505 1447,495 1447,515" fill="#65517F"/>
+<text x="1480.00" y="421.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#625D6C">模块交付</text>
+<text x="1480.00" y="464.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">获准组合</text>
+<text x="1480.00" y="508.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">执行回执</text>
+<polyline points="108,409 248,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="117.19999999999999,435.88 147.2,435.88" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="159.2,464.68 189.2,464.68" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="248" cy="505" r="24" fill="#65517F"/>
+<text x="239.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">1</text>
+<text x="48.00" y="160.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">P1  目标与授权预算</text>
+<text x="48.00" y="205.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">P-A1 组合配置</text>
+<circle cx="53" cy="264" r="3" fill="#625D6C"/>
+<text x="67.00" y="251.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">组合目标与基准</text>
+<circle cx="53" cy="303" r="3" fill="#625D6C"/>
+<text x="67.00" y="290.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">资金、账户和现金预算</text>
+<circle cx="53" cy="342" r="3" fill="#625D6C"/>
+<text x="67.00" y="329.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">风险、杠杆与流动性限额</text>
+<circle cx="53" cy="381" r="3" fill="#625D6C"/>
+<text x="67.00" y="368.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">责任人及审批授权</text>
+<polyline points="310,622 450,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="319.2,589.24 349.2,589.24" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="361.2,554.14 391.2,554.14" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="450" cy="505" r="24" fill="#65517F"/>
+<text x="441.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">2</text>
+<text x="250.00" y="655.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">P2  策略筛选与穿透分析</text>
+<text x="250.00" y="700.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">P-A1 组合配置</text>
+<circle cx="255" cy="759" r="3" fill="#625D6C"/>
+<text x="269.00" y="746.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">策略准入与适用范围</text>
+<circle cx="255" cy="798" r="3" fill="#625D6C"/>
+<text x="269.00" y="785.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">相关性和重复持仓</text>
+<circle cx="255" cy="837" r="3" fill="#625D6C"/>
+<text x="269.00" y="824.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">行业、风格与账户敞口</text>
+<circle cx="255" cy="876" r="3" fill="#625D6C"/>
+<text x="269.00" y="863.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">策略容量与流动性</text>
+<polyline points="512,409 652,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="521.2,435.88 551.2,435.88" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="563.2,464.68 593.2,464.68" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="652" cy="505" r="24" fill="#65517F"/>
+<text x="643.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">3</text>
+<text x="452.00" y="160.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">P3  配置优化与方案比较</text>
+<text x="452.00" y="205.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">P-A1 组合配置</text>
+<circle cx="457" cy="264" r="3" fill="#625D6C"/>
+<text x="471.00" y="251.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">策略权重与现金配置</text>
+<circle cx="457" cy="303" r="3" fill="#625D6C"/>
+<text x="471.00" y="290.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">约束优化与风险预算</text>
+<circle cx="457" cy="342" r="3" fill="#625D6C"/>
+<text x="471.00" y="329.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">压力情景和备选方案</text>
+<circle cx="457" cy="381" r="3" fill="#625D6C"/>
+<text x="471.00" y="368.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">目标持仓与调仓成本</text>
+<polyline points="714,622 854,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="723.2,589.24 753.2,589.24" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="765.2,554.14 795.2,554.14" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="854" cy="505" r="24" fill="#65517F"/>
+<text x="845.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">4</text>
+<text x="654.00" y="655.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">P4  风险审核与授权审批</text>
+<text x="654.00" y="700.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">P-A2 方案 · T-A3 风控</text>
+<circle cx="659" cy="759" r="3" fill="#625D6C"/>
+<text x="673.00" y="746.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">方案证据与版本核对</text>
+<circle cx="659" cy="798" r="3" fill="#625D6C"/>
+<text x="673.00" y="785.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">独立风险检查与意见</text>
+<circle cx="659" cy="837" r="3" fill="#625D6C"/>
+<text x="673.00" y="824.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">按金额和事项匹配授权</text>
+<circle cx="659" cy="876" r="3" fill="#625D6C"/>
+<text x="673.00" y="863.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">批准、退回或否决</text>
+<polyline points="916,409 1056,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="925.2,435.88 955.2,435.88" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="967.2,464.68 997.2,464.68" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="1056" cy="505" r="24" fill="#65517F"/>
+<text x="1047.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">5</text>
+<text x="856.00" y="160.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">P5  部署执行与成交对账</text>
+<text x="856.00" y="205.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">P-A3 执行对账</text>
+<circle cx="861" cy="264" r="3" fill="#625D6C"/>
+<text x="875.00" y="251.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">模拟或实盘环境与版本</text>
+<circle cx="861" cy="303" r="3" fill="#625D6C"/>
+<text x="875.00" y="290.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">授权计划及事前风控</text>
+<circle cx="861" cy="342" r="3" fill="#625D6C"/>
+<text x="875.00" y="329.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">订单状态、成交与重试</text>
+<circle cx="861" cy="381" r="3" fill="#625D6C"/>
+<text x="875.00" y="368.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">现金、持仓和差异对账</text>
+<polyline points="1118,622 1258,505" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="1127.2,589.24 1157.2,589.24" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<polyline points="1169.2,554.14 1199.2,554.14" fill="none" stroke="#B8AFCA" stroke-width="2"/>
+<circle cx="1258" cy="505" r="24" fill="#65517F"/>
+<text x="1249.50" y="489.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#FFFFFF">6</text>
+<text x="1058.00" y="655.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="29" font-weight="600" fill="#272332">P6  调仓退出与版本管理</text>
+<text x="1058.00" y="700.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#65517F">P-A1 / P-A2 / P-A3</text>
+<circle cx="1063" cy="759" r="3" fill="#625D6C"/>
+<text x="1077.00" y="746.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">例行再平衡与策略调资</text>
+<circle cx="1063" cy="798" r="3" fill="#625D6C"/>
+<text x="1077.00" y="785.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">策略替换、暂停和退出</text>
+<circle cx="1063" cy="837" r="3" fill="#625D6C"/>
+<text x="1077.00" y="824.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">授权差异与新版本申请</text>
+<circle cx="1063" cy="876" r="3" fill="#625D6C"/>
+<text x="1077.00" y="863.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="27" font-weight="400" fill="#272332">执行核验与变更归档</text>
+<polyline points="48,955 1632,955" fill="none" stroke="#B8AFCA" stroke-width="1"/>
+<text x="48.00" y="976.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#625D6C">执行门槛：批准版本＋独立风险放行＋确定性事前检查；Agent 不能代签或越权下单。</text>
+<text x="48.00" y="1015.00" dominant-baseline="text-before-edge" font-family="Microsoft YaHei, Noto Sans CJK SC, PingFang SC, sans-serif" font-size="24" font-weight="400" fill="#625D6C">持续回路：授权内调仓按规则执行；更换策略、超限或重大改动重新审查。</text>
+</svg>

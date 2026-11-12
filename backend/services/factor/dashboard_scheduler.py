@@ -28,6 +28,8 @@ from services.factor import dashboard_store as ds
 from services.factor.dashboard_store import PANEL_COMBOS
 
 STATE_PATH: Path = ds.OUTPUT_DIR / "panel_daily_state.json"
+# P1-F03：断点续跑/任务恢复——已完成的组合不重复跑
+PROGRESS_PATH: Path = ds.OUTPUT_DIR / "panel_daily_progress.json"
 
 DEFAULT_AT = "00:00"
 DEFAULT_GRACE_MIN = 120
@@ -80,13 +82,67 @@ def _save_state(**fields: object) -> None:
     tmp.replace(STATE_PATH)
 
 
+def _load_progress() -> dict:
+    if not PROGRESS_PATH.exists():
+        return {}
+    try:
+        data = json.loads(PROGRESS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_progress(**fields: object) -> None:
+    ds._ensure_dirs()
+    payload = {**_load_progress(), **fields}
+    tmp = PROGRESS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(PROGRESS_PATH)
+
+
+def _combo_key(universe: str, period: str, filt: bool) -> str:
+    return f"{universe}|{period}|{1 if filt else 0}"
+
+
+def _incremental_enabled() -> bool:
+    from services.core.env_config import env
+
+    return (env("SVQUANT_PANEL_INCREMENTAL", "0") or "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 def run_full_matrix(*, reason: str = "daily") -> dict:
-    """串行跑一遍面板全量组合。返回 {ok, failed, combos}。"""
+    """串行跑一遍面板全量组合（P1-F03：断点续跑 + 增量跳过）。"""
     run_date = datetime.now().strftime("%Y-%m-%d")
     started = time.time()
     total = len(PANEL_COMBOS)
+    progress = _load_progress()
+    resuming = progress.get("run_date") == run_date and not progress.get("finished")
+    completed = set(progress.get("completed") or []) if resuming else set()
+    skip_ok = _incremental_enabled()
+    if resuming and completed:
+        print(
+            f"[panel] ({reason}) 断点续跑：今日已完成 {len(completed)}/{total} 组",
+            flush=True,
+        )
+    if not resuming:
+        completed = set()
+    _save_progress(
+        run_date=run_date,
+        completed=sorted(completed),
+        finished=False,
+        started_at=progress.get("started_at") if resuming else datetime.now().isoformat(timespec="seconds"),
+    )
+
     ok = failed = 0
     for i, (universe, period, filt) in enumerate(PANEL_COMBOS, 1):
+        key = _combo_key(universe, period, filt)
+        if key in completed:
+            print(f"[panel] ({reason}) [{i}/{total}] {key} 已完成，跳过", flush=True)
+            continue
         print(f"[panel] ({reason}) [{i}/{total}] {universe}/{period} filter_up={filt}", flush=True)
         ds._run_batch(
             universe=universe,
@@ -94,7 +150,8 @@ def run_full_matrix(*, reason: str = "daily") -> dict:
             filter_limit_up=filt,
             filter_suspended=True,
             limit=None,
-            skip_ok=False,
+            # 增量模式：已有成功指标只补缺失/失败因子
+            skip_ok=skip_ok,
             analysis_level="core",
         )
         job = ds.read_job()
@@ -110,7 +167,15 @@ def run_full_matrix(*, reason: str = "daily") -> dict:
                 break
         else:
             ok += 1
+            completed.add(key)
+            _save_progress(completed=sorted(completed), finished=False)
     elapsed_min = round((time.time() - started) / 60, 1)
+    all_done = len(completed) >= total
+    _save_progress(
+        completed=sorted(completed),
+        finished=all_done,
+        finished_at=datetime.now().isoformat(timespec="seconds") if all_done else None,
+    )
     _save_state(
         last_run_date=run_date,
         last_reason=reason,
@@ -120,10 +185,19 @@ def run_full_matrix(*, reason: str = "daily") -> dict:
         last_finished_at=datetime.now().isoformat(timespec="seconds"),
     )
     print(
-        f"[panel] ({reason}) 完成 ok={ok} failed={failed} 用时≈{elapsed_min}min",
+        f"[panel] ({reason}) 完成 ok={ok} failed={failed} "
+        f"进度 {len(completed)}/{total} 用时≈{elapsed_min}min",
         flush=True,
     )
-    return {"reason": reason, "ok": ok, "failed": failed, "combos": total}
+    return {
+        "reason": reason,
+        "ok": ok,
+        "failed": failed,
+        "combos": total,
+        "completed": len(completed),
+        "resumed": resuming,
+        "incremental": skip_ok,
+    }
 
 
 def start_dashboard_daily_scheduler() -> None:
@@ -159,10 +233,14 @@ def start_dashboard_daily_scheduler() -> None:
 
     def _catch_up_due() -> bool:
         """进程启动时若刚过触发时刻且当天没跑过，补跑一轮（受 grace 限制）。"""
-        if grace_min <= 0:
-            return False
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
+        progress = _load_progress()
+        # P1-F03：上次进程中断留下的未完成批次，启动即续跑（不受 grace 限制）
+        if progress.get("run_date") == today and not progress.get("finished"):
+            return True
+        if grace_min <= 0:
+            return False
         if _load_state().get("last_run_date") == today:
             return False
         scheduled_today = now.replace(hour=hour, minute=minute, second=0, microsecond=0)

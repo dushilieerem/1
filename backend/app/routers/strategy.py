@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import csv
+import io
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 
 from app.deps import require_admin, require_db_user_id, require_user
 from services.strategy.builtin_strategies_store import (
@@ -37,7 +40,10 @@ from services.strategy.user_strategy_library_store import (
     delete_library_strategy,
     delete_user_strategy_library,
     get_library_strategy_archive,
+    get_library_strategy_version,
     list_library_strategies,
+    list_library_strategy_versions,
+    update_library_strategy,
     list_user_strategy_libraries,
     mark_library_strategy_detected,
 )
@@ -125,6 +131,34 @@ def strategy_save_run(
 def strategy_list_all_runs(uid: int = Depends(require_db_user_id)) -> dict:
     """当前用户全部回测报告（对标 GET /api/detect/runs）。"""
     return list_all_strategy_runs(uid)
+
+
+@router.get("/api/strategy/runs/{run_id}/export.csv")
+def strategy_export_run_csv(
+    run_id: str, uid: int = Depends(require_db_user_id)
+) -> Response:
+    """导出单次回测摘要 CSV（P1-S04 首版）。"""
+    try:
+        data = get_strategy_run(uid, run_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+    run = data.get("run") or {}
+    result = run.get("result") or {}
+    metrics = result.get("metrics") if isinstance(result, dict) else None
+    if not isinstance(metrics, dict):
+        metrics = {}
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["field", "value"])
+    for key in ("id", "name", "description", "finishedAt", "elapsedSec", "verified"):
+        writer.writerow([key, run.get(key)])
+    for key, value in sorted(metrics.items()):
+        writer.writerow([f"metrics.{key}", value])
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="strategy-{run_id}.csv"'},
+    )
 
 
 @router.patch("/api/strategy/runs/{run_id}")
@@ -291,6 +325,28 @@ def strategy_delete_library_strategy(
         raise HTTPException(status_code=404, detail="not found") from None
 
 
+@router.put("/api/strategy/library-strategies/{strategy_id}")
+def strategy_update_library_strategy(
+    strategy_id: int,
+    body: dict[str, Any],
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    try:
+        strat = update_library_strategy(
+            uid,
+            strategy_id,
+            name=body.get("name"),
+            body=body.get("body") or body.get("code"),
+            description=body.get("description"),
+            category_label=body.get("categoryLabel") or body.get("category_label"),
+        )
+        return {"ok": True, "strategy": strat}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/api/strategy/library-strategies/{strategy_id}/mark-detected")
 def strategy_library_mark_detected(
     strategy_id: int, uid: int = Depends(require_db_user_id)
@@ -299,6 +355,35 @@ def strategy_library_mark_detected(
     try:
         strat = mark_library_strategy_detected(uid, strategy_id)
         return {"ok": True, "strategy": strat}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+
+
+@router.get("/api/strategy/library-strategies/{strategy_id}/versions")
+def strategy_library_versions(
+    strategy_id: int,
+    limit: int = 50,
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    """FEAT-017：库内策略版本历史（元数据）。"""
+    try:
+        return {
+            "ok": True,
+            "items": list_library_strategy_versions(uid, strategy_id, limit=limit),
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail="not found") from None
+
+
+@router.get("/api/strategy/library-strategies/{strategy_id}/versions/{version_no}")
+def strategy_library_version(
+    strategy_id: int,
+    version_no: int,
+    uid: int = Depends(require_db_user_id),
+) -> dict:
+    """FEAT-017：读取指定版本的完整快照。"""
+    try:
+        return {"ok": True, "version": get_library_strategy_version(uid, strategy_id, version_no)}
     except KeyError:
         raise HTTPException(status_code=404, detail="not found") from None
 

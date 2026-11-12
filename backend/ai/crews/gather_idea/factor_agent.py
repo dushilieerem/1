@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 _TZ = timezone(timedelta(hours=8))
-_ALLOWED_FIELDS = {"close", "open", "high", "low", "volume"}
+_ALLOWED_FIELDS = {"close", "open", "high", "low", "volume", "amount", "turnover", "current_mv", "listed_status", "the_sw_industry_code", "up_and_down_status"}
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,47}$")
 
 
@@ -83,7 +83,7 @@ def _validate_factor_code(code: str, *, expect_name: str | None = None) -> tuple
             and node.value.id == "self"
             and node.attr not in _ALLOWED_FIELDS
         ):
-            errors.append(f"不允许的字段 self.{node.attr}，仅 close/open/high/low/volume")
+            errors.append(f"不允许的字段 self.{node.attr}")
 
     return name, src, list(dict.fromkeys(errors))
 
@@ -126,14 +126,15 @@ def run_factor(body: dict[str, Any], *, user_id: int) -> dict[str, Any]:
     draft: dict[str, Any] | None = None
 
     try:
-        from ai.gateway.llm_client import LlmError, chat_completions, llm_configured
+        from ai.errors import AiError
+        from ai.router import available_task, run_task
     except Exception as exc:  # noqa: BLE001
-        warnings.append(f"LLM 模块不可用: {exc}")
-        llm_configured = lambda: False  # type: ignore[assignment]
-        chat_completions = None  # type: ignore[assignment]
-        LlmError = Exception  # type: ignore[misc,assignment]
+        warnings.append(f"AI 路由层不可用: {exc}")
+        available_task = lambda _task: False  # type: ignore[assignment]
+        run_task = None  # type: ignore[assignment]
+        AiError = Exception  # type: ignore[misc,assignment]
 
-    if llm_configured() and chat_completions:
+    if available_task("gather_idea.factor") and run_task:
         system = (
             "你把研究假设转成 SVQuant 日频因子草稿。"
             "只输出 JSON："
@@ -155,13 +156,12 @@ def run_factor(body: dict[str, Any], *, user_id: int) -> dict[str, Any]:
             ensure_ascii=False,
         )
         try:
-            out = chat_completions(
+            out = run_task(
+                "gather_idea.factor",
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                temperature=0.2,
-                max_tokens=1200,
             )
             usage = {
                 "tokens_in": int(out.get("tokens_in") or 0),

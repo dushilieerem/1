@@ -1,3 +1,5 @@
+import { researchPagePath } from "./researchClient";
+import { researchFetch as fetch } from "./researchClient";
 import type { YgBacktestResponse, YgStrategyBacktestRequest } from "./ygApi";
 import {
   authHeaders,
@@ -5,7 +7,7 @@ import {
   getStoredUser,
   prepareAuthHandoff,
   subscribeAuth,
-} from "./auth";
+} from "./researchClient";
 import {
   DEFAULT_EXECUTION_TIMING,
   DETECT_BENCHMARK_OPTIONS,
@@ -425,7 +427,7 @@ export function clearStrategyCloneDraft() {
 export function openStrategyDraftInNewTab(draft: StrategyCloneDraft) {
   stashStrategyCloneDraft(draft);
   prepareAuthHandoff();
-  const path = `/strategy/research/${STRATEGY_DRAFT_ID}`;
+  const path = researchPagePath(`/strategy/research/${STRATEGY_DRAFT_ID}`);
   const narrow =
     typeof window !== "undefined" &&
     window.matchMedia("(max-width: 1023px)").matches;
@@ -546,7 +548,7 @@ export async function deleteStrategyRun(runId: string): Promise<void> {
 
 /** 打开策略研究：窄屏同页跳转；桌面优先新标签 */
 export function openStrategyInNewTab(projectId: string) {
-  const path = `/strategy/research/${encodeURIComponent(projectId)}`;
+  const path = researchPagePath(`/strategy/research/${encodeURIComponent(projectId)}`);
   prepareAuthHandoff();
   const narrow =
     typeof window !== "undefined" &&

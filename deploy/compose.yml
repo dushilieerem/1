@@ -1,0 +1,153 @@
+# SVQuant 生产/预发编排（PostgreSQL + 后端 + 前端/Nginx）
+#
+# 用法（在仓库根目录执行）：
+#   cp deploy/.env.example deploy/.env   # 填密码、JWT、YG_RE_BASE
+#   docker compose -f deploy/compose.yml --env-file deploy/.env up -d --build --wait
+#
+# 端口只绑 127.0.0.1：对外由宿主机 Nginx / 网关终止 TLS 并转发。
+# ResearchEngine 不在本编排内，由 deploy/re-template/ 部署，并通过 YG_RE_BASE 接入。
+
+name: svquant
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-svquant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?deploy/.env 缺 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-svquant}
+      TZ: Asia/Shanghai
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # WAL 归档目录：宿主机路径，刻意放在 /home（数据盘是 /data），机器级故障时能保住归档。
+      # 目录需对容器内 postgres（uid 70）可写；scripts/ops/pg_wal_setup.sh 会创建并放开权限。
+      - ${WAL_ARCHIVE_HOST_DIR:-/home/dev01/svquant-deploy/deploy/wal-archive}:/backup
+    # PITR：开启 WAL 归档，archive_timeout 把 RPO 控制在 5 分钟内。
+    # 注意：修改这里会重建 db 容器，约 10~30 秒不可用，随下一次发布生效。
+    command:
+      - postgres
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=300
+      - -c
+      - archive_command=cp %p /backup/%f
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-svquant} -d ${POSTGRES_DB:-svquant}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      # 沿用原开发库端口（dev02 的实例已停用）；监听所有网卡
+      - "${DB_PORT:-5432}:5432"
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:-svquant-backend:local}
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    env_file:
+      - .env
+    environment:
+      # 覆盖 .env 里的本机地址：容器内必须用服务名连库
+      DATABASE_URL: postgresql://${POSTGRES_USER:-svquant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-svquant}
+      YG_RE_BASE: ${YG_RE_BASE:?deploy/.env 缺 YG_RE_BASE（ResearchEngine 地址）}
+      # inline=进程内线程池（默认）；queue=写 background_jobs，由 worker 服务消费
+      QUANT_FACTOR_JOB_MODE: ${QUANT_FACTOR_JOB_MODE:-inline}
+      SVQUANT_SCHEDULER_MODE: ${SVQUANT_SCHEDULER_MODE:-inline}
+      # P1-D01/D02/D07/D08：本地 marketdata release 只读挂载
+      MARKETDATA_DIR: /marketdata
+      # 独立数据平台只读视图（物化 symlink 指向 /marketdata）
+      SVQUANT_DATA_ROOT: /data/svquant-data
+      # 始终跟随数据平台 current；不再接受 .env 里 pin 死某个 view
+      SVQUANT_DATA_VIEW: current
+      TZ: Asia/Shanghai
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # 命名卷首次创建时会从镜像内容初始化，保留仓库自带的因子目录
+      - backend-output:/app/backend/output
+      - backend-factor:/app/backend/factor
+      - kh-data:/app/KnowledgeHub/data
+      # 宿主机 marketdata release 只读挂载；容器内固定 /marketdata
+      - ${MARKETDATA_HOST_DIR:-/home/dev01/project/marketdata}:/marketdata:ro
+      - ${SVQUANT_DATA_HOST_DIR:-/home/dev01/project/svquant-data}:/data/svquant-data:ro
+    ports:
+      # 沿用原开发端口；监听所有网卡，容器内始终是 8766
+      - "${BACKEND_PORT:-8766}:8766"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8766/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 40s
+      retries: 12
+    restart: unless-stopped
+
+  worker:
+    # 量化长任务消费者；默认 API 仍是 inline，设 QUANT_FACTOR_JOB_MODE=queue 后启用。
+    image: ${BACKEND_IMAGE:-svquant-backend:local}
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-svquant}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-svquant}
+      YG_RE_BASE: ${YG_RE_BASE:?deploy/.env 缺 YG_RE_BASE（ResearchEngine 地址）}
+      QUANT_FACTOR_JOB_MODE: queue
+      SVQUANT_SCHEDULER_MODE: ${SVQUANT_SCHEDULER_MODE:-inline}
+      SVQUANT_WORKER_MODE: worker
+      # 数据同步队列（poll.sh 投递 data.sync 任务时由这里消费）；写生产库需显式放行
+      SVQUANT_DATA_SYNC_ALLOW_PRODUCTION: ${SVQUANT_DATA_SYNC_ALLOW_PRODUCTION:-1}
+      TZ: Asia/Shanghai
+    depends_on:
+      backend:
+        condition: service_healthy
+    # 旧镜像回滚时可能没有 worker.py；不要因缺文件导致整个 compose 启动失败。
+    command:
+      - sh
+      - -c
+      - |
+        if [ -f worker.py ]; then exec python -u worker.py; fi
+        echo "worker.py not present in this image; idle"
+        exec sleep infinity
+    healthcheck:
+      # 后端镜像继承的 /api/health 检查不适用于 worker，这里只确认 PID1 存活。
+      test: ["CMD-SHELL", "test -e /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    volumes:
+      - backend-output:/app/backend/output
+      - backend-factor:/app/backend/factor
+      - kh-data:/app/KnowledgeHub/data
+      - ${MARKETDATA_HOST_DIR:-/home/dev01/project/marketdata}:/marketdata:ro
+      - ${SVQUANT_DATA_HOST_DIR:-/home/dev01/project/svquant-data}:/data/svquant-data:ro
+    restart: unless-stopped
+
+  web:
+    image: ${WEB_IMAGE:-svquant-web:local}
+    build:
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        YG_RE_BASE: ${YG_RE_BASE:-http://127.0.0.1:9527}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      # 沿用原开发端口；监听所有网卡
+      - "${WEB_PORT:-9530}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  backend-output:
+  backend-factor:
+  kh-data:

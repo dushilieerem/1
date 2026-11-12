@@ -1,3 +1,17 @@
+import {QuantFactorLibraryPage} from "@/pages/institutional-workflow/QuantFactorLibraryPage";
+import {QuantFactorLedgerPage} from "@/pages/institutional-workflow/QuantFactorLedgerPage";
+import {QuantFactorHomePage} from "@/pages/institutional-workflow/QuantFactorHomePage";
+import {QuantFactorCapabilitiesPage} from "@/pages/institutional-workflow/QuantFactorCapabilitiesPage";
+import {QuantFactorManualPage} from "@/pages/institutional-workflow/QuantFactorManualPage";
+import {StrategyResearchPage} from "@/pages/institutional-workflow/StrategyResearchPage";
+import {QuantPrototypeModulePage} from "@/pages/institutional-workflow/QuantPrototypeModulePage";
+import {QuantDataResourcesPage} from "@/pages/institutional-workflow/QuantDataResourcesPage";
+import {QuantPortfolioPage} from "@/pages/institutional-workflow/QuantPortfolioPage";
+import {QuantMonitorPage} from "@/pages/institutional-workflow/QuantMonitorPage";
+import {QuantAgentsPage} from "@/pages/institutional-workflow/QuantAgentsPage";
+import {QuantOverviewPage,QuantResearchReviews,QuantFactorExperimentsPage} from "@/pages/institutional-workflow/QuantWorkspacePages";
+import "@/pages/institutional-workflow/quantWorkspace.css";
+import { QuantLayout } from "@/pages/institutional-workflow/QuantLayout";
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
@@ -28,6 +42,9 @@ const AiFactorGeneratePage = lazy(() =>
 );
 const AiStrategyGeneratePage = lazy(() =>
   import("./pages/AiStrategyGeneratePage").then((m) => ({ default: m.AiStrategyGeneratePage })),
+);
+const StrategyConvertPage = lazy(() =>
+  import("./pages/StrategyConvertPage").then((m) => ({ default: m.StrategyConvertPage })),
 );
 const StrategyResearchListPage = lazy(() =>
   import("./pages/StrategyResearchListPage").then((m) => ({
@@ -143,6 +160,48 @@ const AgentEvalPage = lazy(() =>
   import("./pages/AgentEvalPage").then((m) => ({ default: m.AgentEvalPage })),
 );
 const AiHubPage = lazy(() => import("./pages/AiHubPage").then((m) => ({ default: m.AiHubPage })));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
+const SupportPage = lazy(() => import("./pages/SupportPage"));
+const ResearchAssetsPage = lazy(() => import("./pages/ResearchAssetsPage"));
+const OrgPage = lazy(() => import("./pages/OrgPage"));
+const InstV3Layout = lazy(() =>
+  import("./components/institution/v3/InstV3Layout").then((m) => ({ default: m.InstV3Layout })),
+);
+const InstV3DashboardPage = lazy(() =>
+  import("./pages/institution/v3/InstV3DashboardPage").then((m) => ({ default: m.InstV3DashboardPage })),
+);
+const InstV3PipelinePage = lazy(() =>
+  import("./pages/institution/v3/InstV3PipelinePage").then((m) => ({ default: m.InstV3PipelinePage })),
+);
+const InstV3ProjectResultPage = lazy(() =>
+  import("./pages/institution/v3/InstV3ProjectResultPage").then((m) => ({ default: m.InstV3ProjectResultPage })),
+);
+const InstV3ResearchPage = lazy(() =>
+  import("./pages/institution/v3/InstV3ResearchPage").then((m) => ({ default: m.InstV3ResearchPage })),
+);
+const InstV3DebatePage = lazy(() =>
+  import("./pages/institution/v3/InstV3DebatePage").then((m) => ({ default: m.InstV3DebatePage })),
+);
+const InstV3ApprovalsPage = lazy(() =>
+  import("./pages/institution/v3/InstV3ApprovalsPage").then((m) => ({ default: m.InstV3ApprovalsPage })),
+);
+const InstV3ExecutePage = lazy(() =>
+  import("./pages/institution/v3/InstV3ExecutePage").then((m) => ({ default: m.InstV3ExecutePage })),
+);
+const InstV3ManagePage = lazy(() =>
+  import("./pages/institution/v3/InstV3ManagePage").then((m) => ({ default: m.InstV3ManagePage })),
+);
+const InstV3PlaybookPage = lazy(() =>
+  import("./pages/institution/v3/InstV3PlaybookPage").then((m) => ({ default: m.InstV3PlaybookPage })),
+);
+
+const FactorWorkflowRedirect = lazy(() => import("./pages/institutional-workflow/FactorWorkflowPage").then(m => ({ default: m.FactorWorkflowRedirect })));
+const FactorWorkflowPage = lazy(() => import("./pages/institutional-workflow/FactorWorkflowPage").then(m => ({ default: m.FactorWorkflowPage })));
+
+const QuantFactorReportsPage = lazy(() => import("./pages/institutional-workflow/QuantFactorReportsPage").then(m => ({ default: m.QuantFactorReportsPage })));
+
+const QuantFactorReportPage = lazy(() => import("./pages/institutional-workflow/QuantFactorReportPage").then(m => ({ default: m.QuantFactorReportPage })));
 
 function Authed({ children }: { children: ReactNode }) {
   return <RequireAuth>{children}</RequireAuth>;
@@ -173,10 +232,67 @@ export default function App() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
+        {/* 机构端：独立壳与会话，不复用个人版 Layout */}
+        {/* 主观机构端 v3：结果页 + 五个工作台；按登录角色裁剪，无前端角色切换 */}
+        <Route path="/inst" element={<InstV3Layout />}>
+          <Route index element={<InstV3DashboardPage />} />
+          <Route path="pipeline" element={<InstV3PipelinePage />} />
+          <Route path="pipeline/result" element={<InstV3ProjectResultPage />} />
+          <Route path="research" element={<InstV3ResearchPage />} />
+          <Route path="debate" element={<InstV3DebatePage />} />
+          <Route path="approvals" element={<InstV3ApprovalsPage />} />
+          <Route path="execute" element={<InstV3ExecutePage />} />
+          <Route path="manage" element={<InstV3ManagePage />} />
+          <Route path="playbook" element={<InstV3PlaybookPage />} />
+          {/* v2 旧入口重定向 */}
+          <Route path="overview" element={<Navigate to="/inst" replace />} />
+          <Route path="ideas" element={<Navigate to="/inst/pipeline" replace />} />
+          <Route path="portfolio" element={<Navigate to="/inst/manage" replace />} />
+          <Route path="portfolio/:symbol" element={<Navigate to="/inst/manage" replace />} />
+          <Route path="monitor" element={<Navigate to="/inst/manage" replace />} />
+          <Route path="execution" element={<Navigate to="/inst/execute" replace />} />
+          <Route path="audit" element={<Navigate to="/inst/playbook" replace />} />
+          <Route path="about" element={<Navigate to="/inst/playbook" replace />} />
+        </Route>
+        <Route path="/inst-v3/*" element={<Navigate to="/inst" replace />} />
+
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<QuantLayout />}>
+          <Route path="/quant/reviews" element={<QuantResearchReviews />} />
+          <Route path="/quant/reviews/factors" element={<QuantResearchReviews />} />
+          <Route path="/quant/agents" element={<QuantAgentsPage />} />
+          <Route path="/quant/data" element={<QuantDataResourcesPage />} />
+          <Route path="/quant/portfolio" element={<QuantPortfolioPage />} />
+          <Route path="/quant/monitor" element={<QuantMonitorPage />} />
+          <Route path="/quant/factor/experiments" element={<QuantFactorExperimentsPage />} />
+          <Route path="/quant" element={<QuantOverviewPage />} />
+          <Route path="/quant/strategy" element={<StrategyResearchPage />} />
+          <Route path="/quant/strategy/reports" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/:projectId/reports" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/report/:runId" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/:projectId" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/factor" element={<QuantFactorHomePage />} />
+          <Route path="/quant/factor/workflow/:projectId/:step" element={<FactorWorkflowPage />} />
+          <Route path="/quant/factor/reports" element={<QuantFactorReportsPage />} />
+          <Route path="/quant/factor/:projectId/reports" element={<QuantFactorReportsPage />} />
+          <Route path="/quant/factor/report/:runId" element={<QuantFactorReportPage />} />
+          <Route path="/quant/factor/:projectId" element={<FactorWorkflowRedirect />} />
+          <Route path="/quant/factor/library" element={<QuantFactorLibraryPage />} />
+          <Route path="/quant/factor/ledger" element={<QuantFactorLedgerPage />} />
+          <Route path="/quant/factor/capabilities" element={<QuantFactorCapabilitiesPage />} />
+          <Route path="/quant/factor/manual" element={<QuantFactorManualPage />} />
+          <Route path="/quant/strategy/library" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/strategy/library/archive/:archiveStrategyId" element={<QuantPrototypeModulePage />} />
+          <Route path="/quant/*" element={<Navigate to="/quant" replace />} />
+        </Route>
+
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/support" element={<Authed><SupportPage /></Authed>} />
+          <Route path="/research/assets" element={<Authed><ResearchAssetsPage /></Authed>} />
+          <Route path="/org" element={<Authed><OrgPage /></Authed>} />
 
           <Route path="/search" element={<GlobalSearchPage />} />
           <Route path="/ai" element={<Authed><AiHubPage /></Authed>} />
@@ -187,6 +303,7 @@ export default function App() {
           <Route path="/ai/factor-backtest" element={<Authed><AgentBacktestPage /></Authed>} />
           <Route path="/ai/factor-eval" element={<Authed><AgentEvalPage /></Authed>} />
           <Route path="/community" element={<CommunityFeedPage />} />
+          <Route path="/admin" element={<Authed><AdminPage /></Authed>} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/community/new" element={<Authed><CommunityNewPage /></Authed>} />
@@ -257,6 +374,10 @@ export default function App() {
           <Route
             path="/strategy/ai"
             element={<Authed><AiStrategyGeneratePage /></Authed>}
+          />
+          <Route
+            path="/strategy/convert"
+            element={<Authed><StrategyConvertPage /></Authed>}
           />
 
           <Route path="/factor" element={<Authed><Navigate to="/factor/library" replace /></Authed>} />

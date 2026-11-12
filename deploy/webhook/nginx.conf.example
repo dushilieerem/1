@@ -1,0 +1,37 @@
+# 宿主机 Nginx：把 Gitee WebHook 反代到本地接收器
+#
+# 用法：把下面的 location 合并进你现有的 443 server 块。
+# 前提：deploy/webhook/server.py 已在 127.0.0.1:8788 运行（systemd 服务 svquant-webhook）。
+#
+# 安全边界：
+# - 接收器只绑 127.0.0.1，公网只能通过本 location 进入；
+# - 校验交给接收器做（X-Gitee-Token 签名/密码），Nginx 只负责 TLS 与限流；
+# - 路径里可加一段随机串，减少扫描噪声（改了记得同步 Gitee 里的 WebHook URL）。
+
+upstream svquant_webhook {
+    server 127.0.0.1:8788;
+    keepalive 4;
+}
+
+# 放在 443 server 块内
+location /hooks/gitee {
+    # 只允许 POST；其它方法直接 405
+    limit_except POST { deny all; }
+
+    proxy_pass http://svquant_webhook;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Gitee 的签名与事件头必须原样透传
+    proxy_set_header X-Gitee-Token $http_x_gitee_token;
+    proxy_set_header X-Gitee-Timestamp $http_x_gitee_timestamp;
+    proxy_set_header X-Gitee-Event $http_x_gitee_event;
+
+    client_max_body_size 2m;
+    proxy_connect_timeout 5s;
+    # 接收器只做校验和派发，正常几十毫秒内返回
+    proxy_read_timeout 30s;
+}

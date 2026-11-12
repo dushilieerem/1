@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DraftRestoreBanner } from "@/components/DraftRestoreBanner";
+import { clearDraft, draftNewerThan, loadDraft, saveDraft } from "@/lib/autosave";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { BarChart3, Loader2, Play, Plus, Save, X } from "lucide-react";
 import { FactorCodeEditor } from "@/components/FactorCodeEditor";
@@ -75,7 +77,14 @@ import {
 } from "@/lib/factorLifecycle";
 import { ygBacktestFactor, type YgBacktestRequest } from "@/lib/ygApi";
 
-export function FactorDetectPage() {
+export type FactorDetectNavigation = {
+  listPath?: string;
+  reportPath?: (runId: string) => string;
+};
+
+export function FactorDetectPage({ navigation }: { navigation?: FactorDetectNavigation } = {}) {
+  const listPath = navigation?.listPath ?? "/factor/detect";
+  const reportPath = navigation?.reportPath ?? ((id: string) => `/factor/detect/report/${id}`);
   const { projectId = "" } = useParams();
   const [searchParams] = useSearchParams();
   const snapshotRunId = searchParams.get("runId")?.trim() || "";
@@ -105,6 +114,8 @@ export function FactorDetectPage() {
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [mobilePane, setMobilePane] = useState<"config" | "code">("config");
+  const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
+  const autosaveKey = `svquant.autosave.detect.${projectId || "new"}`;
   /** 本页最近一次检测 / URL 快照对应的报告 id，供顶栏「检测报告」直达 */
   const [reportRunId, setReportRunId] = useState<string>(snapshotRunId);
   const abortRef = useRef<AbortController | null>(null);
@@ -214,6 +225,38 @@ export function FactorDetectPage() {
     const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     setLogs((prev) => [...prev.slice(-80), `[${ts}] ${line}`]);
   }, []);
+
+  useEffect(() => {
+    if (!project?.config || snapshotRunId) return;
+    const draft = loadDraft<typeof project.config>(autosaveKey);
+    if (draft && draftNewerThan(draft, project.updatedAt)) {
+      setDraftBanner({ savedAt: draft.savedAt });
+    } else {
+      setDraftBanner(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, snapshotRunId]);
+
+  useEffect(() => {
+    if (!project?.config || snapshotRunId) return;
+    const timer = window.setTimeout(() => saveDraft(autosaveKey, project.config), 800);
+    return () => window.clearTimeout(timer);
+  }, [project?.config, snapshotRunId, autosaveKey]);
+
+  const restoreDraft = () => {
+    const draft = loadDraft<NonNullable<typeof project>["config"]>(autosaveKey);
+    if (draft?.data) {
+      setProject((prev) => (prev ? { ...prev, config: draft.data } : prev));
+      setSavedHint("已恢复本地草稿");
+      window.setTimeout(() => setSavedHint(""), 2000);
+    }
+    setDraftBanner(null);
+  };
+
+  const discardDraft = () => {
+    clearDraft(autosaveKey);
+    setDraftBanner(null);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1171,8 +1214,9 @@ export function FactorDetectPage() {
                     ? "全A"
                     : String(cfg.universe || "");
       pushLog(`回测区间 ${start} → ${end} · 股票池 ${poolLabel} · ${depthLabel}`);
+      let engineRunId = "";
       const res = await ygBacktestFactor(req, ac.signal, {
-        onQueued: () => pushLog("准备中，请稍候…"),
+        onQueued: ({ jobId }) => { engineRunId = jobId; pushLog("准备中，请稍候…"); },
         onStarted: () => pushLog("正在检测，请稍候…"),
       });
       const elapsedSec = Math.floor((Date.now() - t0) / 1000);
@@ -1186,6 +1230,7 @@ export function FactorDetectPage() {
       const primaryDraft = runDrafts[0] || null;
       const saveReq = {
         ...req,
+        ...(engineRunId ? { _re_run_id: engineRunId } : {}),
         _svquant_ui: buildDetectRunUiSnapshot(cfg, (code) => {
           const draft = runDrafts.find((d) => d.name === code);
           if (draft) return (draft.description || draft.name).trim() || code;
@@ -1260,9 +1305,9 @@ export function FactorDetectPage() {
       pushLog(`检测完成（用时 ${elapsedSec} 秒），正在打开报告…`);
       // 跑完回到「最新配置」路由，去掉历史 runId
       if (snapshotRunId) {
-        navigate(`/factor/detect/report/${rec.id}`, { replace: false });
+        navigate(reportPath(rec.id), { replace: false });
       } else {
-        navigate(`/factor/detect/report/${rec.id}`);
+        navigate(reportPath(rec.id));
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") {
@@ -1311,7 +1356,7 @@ export function FactorDetectPage() {
     return (
       <div className="p-10 text-center">
         <p className="text-slate-600">项目不存在</p>
-        <Link to="/factor/detect" className="mt-3 inline-block text-blue-600 underline">
+        <Link to={listPath} className="mt-3 inline-block text-blue-600 underline">
           返回检测报告
         </Link>
       </div>
@@ -1324,7 +1369,7 @@ export function FactorDetectPage() {
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <Link
-              to="/factor/detect"
+              to={listPath}
               className="shrink-0 text-slate-500 hover:text-slate-800"
             >
               检测报告
@@ -1360,14 +1405,14 @@ export function FactorDetectPage() {
               type="button"
               onClick={() => {
                 if (reportRunId) {
-                  navigate(`/factor/detect/report/${reportRunId}`);
+                  navigate(reportPath(reportRunId));
                   return;
                 }
                 void listRuns(projectId)
                   .then((runs) => {
                     if (runs[0]?.id) {
                       setReportRunId(runs[0].id);
-                      navigate(`/factor/detect/report/${runs[0].id}`);
+                      navigate(reportPath(runs[0].id));
                       return;
                     }
                     window.alert("暂无检测报告，请先点「进行检测」。");
@@ -1429,6 +1474,13 @@ export function FactorDetectPage() {
           }`}
         >
           <div className="flex-1 space-y-6 overflow-y-auto px-3 py-4 text-sm sm:px-5 sm:py-5">
+            {draftBanner && (
+              <DraftRestoreBanner
+                savedAt={draftBanner.savedAt}
+                onRestore={restoreDraft}
+                onDiscard={discardDraft}
+              />
+            )}
             {/* 1. 添加因子 / 当前内置因子 */}
             <section>
               <div className="mb-3 flex items-center justify-between gap-2">

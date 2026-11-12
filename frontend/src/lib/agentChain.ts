@@ -70,8 +70,43 @@ const ideaKey = () => `svquant.chain.idea.v1.u${uid()}`;
 const draftKey = () => `svquant.chain.draft.v1.u${uid()}`;
 const reportKey = () => `svquant.chain.report.v1.u${uid()}`;
 
+export async function syncChainState(patch: {
+  idea?: unknown;
+  draft?: unknown;
+  report?: unknown;
+}): Promise<void> {
+  try {
+    await fetch("/api/agent/chain-state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(patch),
+    });
+  } catch {
+    /* 离线/未登录时仅保留本地缓存 */
+  }
+}
+
+export async function fetchChainState(): Promise<{
+  idea?: IdeaItem;
+  draft?: FactorDraftBundle;
+  report?: BacktestReport;
+} | null> {
+  try {
+    const res = await fetch("/api/agent/chain-state", {
+      cache: "no-store",
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.state || null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveChainIdea(idea: IdeaItem, meta?: { pack_id?: string; bundle_id?: string }) {
   sessionStorage.setItem(ideaKey(), JSON.stringify({ idea, ...meta }));
+  void syncChainState({ idea: { idea, ...meta } });
 }
 
 export function loadChainIdea(): {
@@ -91,6 +126,7 @@ export function loadChainIdea(): {
 
 export function saveChainDraft(draft: FactorDraftBundle) {
   sessionStorage.setItem(draftKey(), JSON.stringify(draft));
+  void syncChainState({ draft });
 }
 
 export function loadChainDraft(): FactorDraftBundle | null {
@@ -105,6 +141,7 @@ export function loadChainDraft(): FactorDraftBundle | null {
 
 export function saveChainReport(report: BacktestReport) {
   sessionStorage.setItem(reportKey(), JSON.stringify(report));
+  void syncChainState({ report });
 }
 
 export function loadChainReport(): BacktestReport | null {

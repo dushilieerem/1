@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light"><title>因子工厂 · 自主研究与人工协作 · 设计预览</title>
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<aside class="sidebar">
+ <a class="brand" href="../prototype.html#overview"><span class="seal">旸</span><span><strong>旸谷资本</strong><small>SUNVALLEY CAPITAL</small></span></a>
+ <div class="workspace"><b>SVQuant · 机构量化平台</b><span>研究与运行工作区</span></div>
+ <nav aria-label="机构量化导航">
+ <div class="nav-label">工作空间</div><a class="nav-item" href="../prototype.html#overview"><span>◫</span>管理驾驶舱</a>
+ <div class="nav-label">业务模块</div><a class="nav-item" href="../prototype.html#data"><span>▤</span>数据资源</a><a class="nav-item selected" href="#workflow" aria-current="page"><span>ƒ</span>因子工厂</a><a class="nav-item" href="../prototype.html#strategy"><span>⌁</span>策略研究</a><a class="nav-item" href="../prototype.html#portfolio"><span>◈</span>组合与执行</a><a class="nav-item" href="../prototype.html#monitor"><span>◎</span>运行与风险</a>
+ <div class="nav-label">协作与管理</div><a class="nav-item" href="../prototype.html#review"><span>▣</span>审查中心</a><a class="nav-item" href="../prototype.html#agents"><span>✧</span>Agent 管理</a>
+ </nav>
+ <footer><a href="design.html" target="_blank">本版设计说明 ↗</a><a href="../prototype.html#factor">查看 V3 原型 ↗</a><span>设计预览 V4 · 待评审</span></footer>
+</aside>
+<div class="shell">
+ <header class="topbar"><span class="crumb">机构工作区 <i>/</i> 因子工厂</span><div class="identity"><span class="badge prototype">交互原型 · 场景数据</span><span class="avatar">研</span><span>量化研究员</span></div></header>
+ <main>
+ <div class="page-head"><div><span class="eyebrow">FACTOR RESEARCH</span><h1>因子工厂</h1><p>让每一个研究想法，形成可检验、可追溯的因子资产。</p></div><button class="btn" data-action="new-project">＋ 新建研究</button></div>
+ <div class="preview-bar"><span>本页只预览交互，不调用模型、计算服务或真实审批。</span><div><label>演示场景 <select id="scenario" aria-label="演示场景"><option value="revision">检验失败 → 自主返工</option><option value="data">数据不足 → 暂停补证</option><option value="scope">范围外变更 → 请求授权</option><option value="manual">人工研究与助手协作</option></select></label><button class="text-btn" data-action="advance">推进一步</button><button class="text-btn" data-action="reset">重置</button></div></div>
+ <nav class="tabs" aria-label="因子工厂视图"><button data-page="workflow">研究工作台</button><button data-page="library">因子资产</button><button data-page="experiments">任务与产物</button></nav>
+ <div id="content"></div>
+ </main>
+</div>
+<div id="overlay"></div><div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js?v=1"></script>
+</body></html>

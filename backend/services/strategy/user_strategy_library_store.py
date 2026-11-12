@@ -54,6 +54,27 @@ def ensure_user_strategy_libraries_schema() -> None:
             "ALTER TABLE user_library_strategies "
             "DROP CONSTRAINT IF EXISTS user_library_strategies_user_id_name_key"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_library_strategy_versions (
+              id BIGSERIAL PRIMARY KEY,
+              library_strategy_id BIGINT NOT NULL
+                REFERENCES user_library_strategies(id) ON DELETE CASCADE,
+              user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              version_no INTEGER NOT NULL,
+              name TEXT NOT NULL,
+              code_id TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              description TEXT NOT NULL DEFAULT '',
+              category_label TEXT NOT NULL DEFAULT '其他',
+              source_run_id TEXT NOT NULL DEFAULT '',
+              archive_request JSONB,
+              archive_result JSONB,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (library_strategy_id, version_no)
+            )
+            """
+        )
         # 入库快照：与研究侧 run 脱钩，不可变
         for stmt in (
             "ALTER TABLE user_library_strategies "
@@ -337,7 +358,136 @@ def add_library_strategy(
             "UPDATE user_strategy_libraries SET updated_at = NOW() WHERE id = %s",
             (int(library_id),),
         )
+    _insert_strategy_version(int(row["id"]), int(user_id), 1, dict(row))
     return _strategy_row(dict(row), dict(lib)["name"])
+
+
+def _insert_strategy_version(strategy_id: int, user_id: int, version_no: int, row: dict[str, Any]) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_library_strategy_versions
+              (library_strategy_id, user_id, version_no, name, code_id, body, description,
+               category_label, source_run_id, archive_request, archive_result)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)
+            ON CONFLICT (library_strategy_id, version_no) DO NOTHING
+            """,
+            (
+                strategy_id, user_id, version_no, row.get("name") or "", row.get("code_id") or "",
+                row.get("body") or "", row.get("description") or "", row.get("category_label") or "其他",
+                row.get("source_run_id") or "",
+                json.dumps(row.get("archive_request"), ensure_ascii=False) if row.get("archive_request") is not None else None,
+                json.dumps(row.get("archive_result"), ensure_ascii=False) if row.get("archive_result") is not None else None,
+            ),
+        )
+
+
+def update_library_strategy(
+    user_id: int,
+    strategy_id: int,
+    *,
+    name: str | None = None,
+    body: str | None = None,
+    description: str | None = None,
+    category_label: str | None = None,
+) -> dict[str, Any]:
+    """更新库内策略并保留版本快照（P1-S03）。"""
+    ensure_user_strategy_libraries_schema()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT s.*, l.name AS library_name FROM user_library_strategies s "
+            "JOIN user_strategy_libraries l ON l.id=s.library_id "
+            "WHERE s.id=%s AND s.user_id=%s",
+            (int(strategy_id), int(user_id)),
+        ).fetchone()
+        if not row:
+            raise KeyError(strategy_id)
+        cur = dict(row)
+        new_name = (name if name is not None else cur["name"] or "").strip()
+        if not new_name:
+            raise ValueError("请填写策略名称")
+        if len(new_name) > 80:
+            raise ValueError("策略名称过长（最多 80 字）")
+        if new_name != cur["name"]:
+            clash = conn.execute(
+                "SELECT 1 FROM user_library_strategies WHERE library_id=%s AND name=%s AND id<>%s",
+                (cur["library_id"], new_name, strategy_id),
+            ).fetchone()
+            if clash:
+                raise ValueError("该策略库中已有同名策略")
+        new_body = (body if body is not None else cur["body"] or "").strip()
+        if not new_body:
+            raise ValueError("策略代码不能为空")
+        new_desc = (description if description is not None else cur["description"] or "").strip() or new_name
+        if len(new_desc) > 40:
+            raise ValueError("策略说明过长（最多 40 字）")
+        new_cat = (category_label if category_label is not None else cur["category_label"] or "其他").strip() or "其他"
+        updated = conn.execute(
+            """
+            UPDATE user_library_strategies
+               SET name=%s, body=%s, description=%s, category_label=%s, updated_at=NOW()
+             WHERE id=%s AND user_id=%s RETURNING *
+            """,
+            (new_name, new_body, new_desc, new_cat, strategy_id, user_id),
+        ).fetchone()
+        version = conn.execute(
+            "SELECT COALESCE(MAX(version_no),0)+1 AS n FROM user_library_strategy_versions WHERE library_strategy_id=%s",
+            (strategy_id,),
+        ).fetchone()["n"]
+    _insert_strategy_version(int(strategy_id), int(user_id), int(version), dict(updated))
+    return _strategy_row(dict(updated), cur["library_name"])
+
+
+def list_library_strategy_versions(
+    user_id: int, strategy_id: int, *, limit: int = 50
+) -> list[dict[str, Any]]:
+    """策略版本历史（FEAT-017）：只返回元数据，不返回代码正文。"""
+    ensure_user_strategy_libraries_schema()
+    with get_conn() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM user_library_strategies WHERE id=%s AND user_id=%s",
+            (int(strategy_id), int(user_id)),
+        ).fetchone()
+        if not exists:
+            raise KeyError(strategy_id)
+        rows = conn.execute(
+            """
+            SELECT id, version_no, name, description, category_label, source_run_id,
+                   created_at, length(body) AS body_chars
+              FROM user_library_strategy_versions
+             WHERE library_strategy_id=%s AND user_id=%s
+             ORDER BY version_no DESC
+             LIMIT %s
+            """,
+            (int(strategy_id), int(user_id), max(1, min(int(limit), 200))),
+        ).fetchall()
+    return [_iso_row(dict(r)) for r in rows]
+
+
+def get_library_strategy_version(
+    user_id: int, strategy_id: int, version_no: int
+) -> dict[str, Any]:
+    """读取指定版本的完整快照（含代码正文）。"""
+    ensure_user_strategy_libraries_schema()
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT version_no, name, code_id, body, description, category_label,
+                   source_run_id, created_at
+              FROM user_library_strategy_versions
+             WHERE library_strategy_id=%s AND user_id=%s AND version_no=%s
+            """,
+            (int(strategy_id), int(user_id), int(version_no)),
+        ).fetchone()
+    if not row:
+        raise KeyError(version_no)
+    return _iso_row(dict(row))
+
+
+def _iso_row(row: dict[str, Any]) -> dict[str, Any]:
+    for key in ("created_at", "updated_at"):
+        row[key] = _iso(row.get(key))
+    return row
 
 
 def get_library_strategy_archive(user_id: int, strategy_id: int) -> dict[str, Any]:

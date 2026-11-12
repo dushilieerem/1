@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from services.core.db import get_conn
 
 _MAX_CURVE_POINTS = 360
+_SECRET_PATTERNS = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._-]{16,}\b"),
+    re.compile(r"(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*['\"][^'\"]+['\"]"),
+)
+
+
+def _scrub_secrets(text: str) -> str:
+    out = text or ""
+    for pattern in _SECRET_PATTERNS:
+        out = pattern.sub("***", out)
+    return out
 _MAX_TITLE = 120
 _MAX_BODY = 8000
 _MAX_CODE = 200_000
@@ -120,7 +133,7 @@ def build_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         excess_f = None
     code = payload.get("strategy_code")
-    code_s = str(code).strip() if code else ""
+    code_s = _scrub_secrets(str(code).strip()) if code else ""
     if len(code_s) > _MAX_CODE:
         code_s = code_s[:_MAX_CODE]
     return {
@@ -317,6 +330,15 @@ def create_plaza_item(
         body = body[:_MAX_BODY]
     snap = build_snapshot(snapshot if isinstance(snapshot, dict) else {})
     with get_conn() as conn:
+        rid = (source_run_id or "").strip()
+        if not rid:
+            raise ValueError("发布必须绑定一次已验证的回测运行")
+        run = conn.execute(
+            "SELECT verified FROM strategy_runs WHERE user_id = %s AND id = %s",
+            (author_id, rid),
+        ).fetchone()
+        if not run or not bool(run.get("verified")):
+            raise PermissionError("源回测运行未通过服务端验证，不能发布")
         row = conn.execute(
             """
             INSERT INTO strategy_plaza_items

@@ -8,6 +8,10 @@ import {
   type FactorMeta,
 } from "@/lib/factorCatalog";
 import {
+  listAllUserLibraryFactors,
+  userLibraryFactorToMeta,
+} from "@/lib/userFactorLibraries";
+import {
   expandQlibAlphaFactorSource,
   isQlibAlphaFactorName,
 } from "@/lib/qlibFactorExpand";
@@ -101,6 +105,20 @@ function splitTopLevelDefs(src: string): { name: string; block: string }[] {
 }
 
 async function resolveOneFactorSource(meta: FactorMeta): Promise<string> {
+  if (meta.userLibraryFactorId != null || (meta.library || "").startsWith("user_lib_")) {
+    let body = (meta.body || "").trim();
+    if (meta.formulaReady === false || !body) {
+      throw new Error(`个人因子「${meta.name}」尚未填写公式，请先在因子库补全源码。`);
+    }
+    const methodName = meta.methodName || meta.name;
+    if (methodName !== meta.name) {
+      body = body.replace(
+        new RegExp(`^def\\s+${escapeRe(methodName)}\\s*\\(`, "m"),
+        `def ${meta.name}(`,
+      );
+    }
+    return body;
+  }
   if (DYNAMIC_FACTOR_LIBS.has(meta.library) || isQlibAlphaFactorName(meta.name)) {
     const expanded = expandQlibAlphaFactorSource(meta.name);
     if (!expanded) {
@@ -128,6 +146,9 @@ export function isValidFactorMethodName(name: string): boolean {
 }
 
 /** 策略内一次性因子 stub（不在因子目录时新建用） */
+export const CUSTOM_FACTOR_STUB_MARKER =
+  "return self.close.pct_change(20) * 0  # TODO";
+
 export function buildCustomFactorStub(
   methodName: string,
   description?: string,
@@ -141,8 +162,22 @@ export function buildCustomFactorStub(
   return [
     `def ${methodName}(self):`,
     `    """${doc}"""`,
-    "    return self.close.pct_change(20) * 0  # TODO",
+    `    ${CUSTOM_FACTOR_STUB_MARKER}`,
   ].join("\n");
+}
+
+/** 找出代码里仍是未编辑占位实现的临时因子名；有则必须阻止回测。 */
+export function findUneditedFactorStub(code: string): string | null {
+  const lines = (code || "").replace(/\r\n/g, "\n").split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!lines[i].includes(CUSTOM_FACTOR_STUB_MARKER)) continue;
+    for (let j = i; j >= 0; j -= 1) {
+      const m = /^\s*def\s+([A-Za-z_]\w*)\s*\(/.exec(lines[j]);
+      if (m) return m[1];
+    }
+    return "临时因子";
+  }
+  return null;
 }
 
 export async function resolveStrategyFactorBodies(
@@ -153,23 +188,58 @@ export async function resolveStrategyFactorBodies(
     return "    # 请从左侧选择因子（可不选，也可在右侧手写 @factor）";
   }
   const catalog = await loadFactors();
+  let personal: FactorMeta[] = [];
+  let personalError = "";
+  try {
+    personal = (await listAllUserLibraryFactors()).map(userLibraryFactorToMeta);
+  } catch (e) {
+    personalError = e instanceof Error ? e.message : String(e);
+  }
   const byName = new Map(catalog.map((f) => [f.name, f]));
+  const ambiguous = new Set<string>();
+  for (const f of personal) {
+    if (byName.has(f.name)) ambiguous.add(f.name);
+    byName.set(f.name, f);
+  }
   const seen = new Set<string>();
   const pieces: string[] = [];
   const fallback = opts?.fallbackCode || "";
   const tempLabels = opts?.tempLabels || {};
 
   for (const id of factorIds) {
+    if (ambiguous.has(id)) {
+      throw new Error(
+        `因子「${id}」同时存在于内置库和个人因子库，名称冲突无法确定源码；请重命名个人因子后重试。`,
+      );
+    }
     const meta = byName.get(id);
     let raw: string;
     if (meta) {
       raw = await resolveOneFactorSource(meta);
     } else {
-      // 优先保留策略代码里已有实现；否则生成可编辑 stub
+      // 优先保留策略代码里已有实现；临时因子才允许生成可编辑 stub
       const fromCode = extractFactorDefFromCode(fallback, id);
-      raw = fromCode || buildCustomFactorStub(id, tempLabels[id]);
+      if (fromCode) {
+        raw = fromCode;
+      } else if (tempLabels[id]) {
+        raw = buildCustomFactorStub(id, tempLabels[id]);
+      } else if (personalError) {
+        throw new Error(
+          `无法加载个人因子库（${personalError}），且「${id}」不是内置因子或策略内已有实现，请重试。`,
+        );
+      } else {
+        throw new Error(
+          `因子「${id}」不在内置/个人因子目录中，策略代码里也没有实现；请重新选择，或先编辑临时因子。`,
+        );
+      }
     }
-    for (const { name, block } of splitTopLevelDefs(raw)) {
+    const defs = splitTopLevelDefs(raw);
+    if (!defs.some((d) => d.name === id)) {
+      throw new Error(
+        `因子「${id}」的源码中未解析出对应方法，已停止同步；请检查因子源码或重新选择。`,
+      );
+    }
+    for (const { name, block } of defs) {
       if (seen.has(name)) continue;
       seen.add(name);
       const isSelectedPublic =

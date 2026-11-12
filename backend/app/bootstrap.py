@@ -2,6 +2,7 @@
 """FastAPI 启动时 schema / seed（从旧 api_server.main 抽出）。"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -46,7 +47,46 @@ def bootstrap_schemas() -> None:
         )
 
         ensure_schema()
+        from services.auth.password_reset_store import ensure_password_reset_schema
+
+        ensure_password_reset_schema()
         seed_admin()
+        # 手机 H5 的演示账号：主站账号体系 + 主站登录/注册/找回密码。
+        try:
+            from services.auth.auth_store import get_user_by_username, register_user
+
+            if not get_user_by_username("demo"):
+                register_user(username="demo", password="demo1234", display_name="演示用户")
+                print("  手机 H5 演示账号 demo 就绪")
+        except Exception as exc:
+            print(f"  手机 H5 演示账号跳过: {exc}")
+        try:
+            from services.institution.inst_store import ensure_inst_schema, seed_inst_demo
+
+            ensure_inst_schema()
+            inst_seed = seed_inst_demo()
+            if inst_seed.get("created_users"):
+                print(f"  机构端就绪：新建演示账号 {inst_seed['created_users']} 个")
+            else:
+                print("  机构端就绪")
+            from services.marketdata.schema import ensure_marketdata_schema
+
+            # 只建表；索引由 ETL 在数据加载完成后创建，避免启动时锁大表。
+            ensure_marketdata_schema(include_indexes=False)
+            print("  市场数据服务层表就绪")
+            from services.institution.inst_service import ensure_and_seed as ensure_inst_business
+
+            from services.invest.schema import ensure_invest_schema
+
+            ensure_invest_schema()
+            print("  手机端 PG 读模型就绪")
+            business = ensure_inst_business()
+            if business.get("ok"):
+                print(f"  机构端业务表就绪（org={business.get('org_id')}）")
+            else:
+                print(f"  机构端业务表跳过: {business.get('reason')}")
+        except Exception as exc:
+            print(f"  机构端 schema 跳过: {exc}")
         from services.auth.profile_store import ensure_schema as ensure_profile_schema
 
         ensure_profile_schema()
@@ -68,6 +108,22 @@ def bootstrap_schemas() -> None:
             print(f"  app_audit_logs 清理跳过: {exc}")
         ensure_ai_usage_schema()
         ensure_posts_schema()
+        try:
+            from services.community.community_store import purge_old_notifications
+
+            purged = purge_old_notifications(int(os.environ.get("NOTIFICATION_RETENTION_DAYS", "90") or "90"))
+            if purged:
+                print(f"  notifications 清理 {purged} 条")
+        except Exception as exc:
+            print(f"  notifications 清理跳过: {exc}")
+        try:
+            from ai.runtime.conversation_store import purge_old_conversations
+
+            purged = purge_old_conversations()
+            if purged:
+                print(f"  ai_conversations 清理 {purged} 个")
+        except Exception as exc:
+            print(f"  ai_conversations 清理跳过: {exc}")
         n = seed_sample_posts()
         ensure_user_factors_schema()
         try:
@@ -126,9 +182,15 @@ def bootstrap_schemas() -> None:
             enforce_news_retention()
         except Exception as exc:
             print(f"  news retention 跳过: {exc}")
-        from knowledge_hub.store import ensure_kh_schema
+        from knowledge_hub.store import ensure_kh_schema, migrate_provider_keys
 
         ensure_kh_schema()
+        try:
+            n = migrate_provider_keys()
+            if n:
+                print(f"  KH provider 密钥已加密 {n} 条")
+        except Exception as exc:
+            print(f"  KH provider 密钥迁移跳过: {exc}")
         mig = migrate_legacy_custom_to_admin()
         ensure_detect_schema()
         ensure_strategy_schema()
@@ -161,25 +223,25 @@ def bootstrap_schemas() -> None:
         print(f"  schema 初始化失败（登录可能不可用）: {exc}")
 
     try:
-        from services.news.news_ingest import start_news_ingest_scheduler
+        from services.core.migrations import apply_migrations
 
-        start_news_ingest_scheduler()
+        migration = apply_migrations()
+        if migration.get("applied"):
+            print(f"  数据库迁移已执行: {', '.join(migration['applied'])}")
+        else:
+            print(f"  数据库迁移已是最新（{migration.get('current') or 'baseline'}）")
     except Exception as exc:
-        print(f"  news ingest scheduler 跳过: {exc}")
+        # P0-10：迁移失败必须 fail-fast，不能带着不确定 schema 启动。
+        raise RuntimeError(f"数据库迁移失败: {exc}") from exc
 
-    try:
-        from services.factor.dashboard_scheduler import start_dashboard_daily_scheduler
+    from services.core.env_config import env as _env
 
-        start_dashboard_daily_scheduler()
-    except Exception as exc:
-        print(f"  panel daily scheduler 跳过: {exc}")
+    if (_env("SVQUANT_SCHEDULER_MODE", "inline") or "inline").strip().lower() == "inline":
+        from services.core.schedulers import start_all
 
-    try:
-        from services.paper.scheduler import start_paper_settlement_scheduler
-
-        start_paper_settlement_scheduler()
-    except Exception as exc:
-        print(f"  paper trading scheduler 跳过: {exc}")
+        start_all()
+    else:
+        print("  后台调度器交由 worker 进程（SVQUANT_SCHEDULER_MODE=worker）")
 
     try:
         from services.factor.dashboard_store import read_job
@@ -193,9 +255,14 @@ def bootstrap_schemas() -> None:
         pass
 
     try:
-        from services.factor.re_factor_catalog import warm_re_catalog_async
+        from services.core.env_config import env
 
-        warm_re_catalog_async()
-        print("  re-catalog 后台预热已启动")
+        if (env("RE_CATALOG_WARM_ENABLED", "1") or "1").strip().lower() in {"0", "false", "no"}:
+            print("  re-catalog 预热已关闭（RE_CATALOG_WARM_ENABLED=0）")
+        else:
+            from services.factor.re_factor_catalog import warm_re_catalog_async
+
+            warm_re_catalog_async()
+            print("  re-catalog 后台预热已启动")
     except Exception as exc:
         print(f"  re-catalog 预热跳过: {exc}")

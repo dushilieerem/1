@@ -6,6 +6,7 @@ import hashlib
 import html as html_lib
 import json
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -15,7 +16,12 @@ from typing import Any
 from psycopg.types.json import Json
 
 from services.core.db import get_conn
-from services.news.news_store import SOURCE_LABELS, ensure_news_schema, enforce_news_retention
+from services.news.news_store import (
+    SOURCE_LABELS,
+    ensure_news_schema,
+    enforce_news_retention,
+    record_ingest_run,
+)
 
 TZ8 = timezone(timedelta(hours=8))
 UA = {
@@ -927,7 +933,36 @@ def backfill_eastmoney_research_dates(*, max_pages: int = 40) -> dict[str, int]:
     }
 
 
+def _retry_config() -> tuple[int, float]:
+    """P1-C06：每源失败重试次数与线性退避基数。"""
+    from services.core.env_config import env
+
+    try:
+        retries = max(0, min(5, int(env("NEWS_FETCH_RETRIES", "2") or "2")))
+    except (TypeError, ValueError):
+        retries = 2
+    try:
+        backoff = max(0.0, min(60.0, float(env("NEWS_FETCH_BACKOFF_SEC", "2") or "2")))
+    except (TypeError, ValueError):
+        backoff = 2.0
+    return retries, backoff
+
+
 def ingest_news(
+    *,
+    sources: list[str] | None = None,
+    limit_per_source: int = 15,
+) -> dict[str, Any]:
+    """P1-O06：多实例下同一时刻只允许一轮抓取。"""
+    from services.core.distributed_lock import advisory_lock
+
+    with advisory_lock("svquant:news:ingest") as acquired:
+        if not acquired:
+            return {"ok": False, "skipped": True, "reason": "another instance is ingesting"}
+        return _ingest_news_impl(sources=sources, limit_per_source=limit_per_source)
+
+
+def _ingest_news_impl(
     *,
     sources: list[str] | None = None,
     limit_per_source: int = 15,
@@ -952,21 +987,36 @@ def ingest_news(
         if not fn:
             errors[sid] = "unsupported source"
             continue
-        try:
-            items = fn(limit=limit_per_source)
+        attempts = 0
+        last_exc: Exception | None = None
+        items: list[dict[str, Any]] = []
+        retries, backoff = _retry_config()
+        for attempt in range(retries + 1):
+            attempts = attempt + 1
+            try:
+                items = fn(limit=limit_per_source)
+                last_exc = None
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if attempt < retries:
+                    time.sleep(backoff * (attempt + 1))
+        if last_exc is None:
             per_source[sid] = {
                 "ok": True,
                 "count": len(items),
                 "label": SOURCE_LABELS.get(sid, sid),
+                "attempts": attempts,
             }
             all_items.extend(items)
-        except Exception as exc:
-            errors[sid] = str(exc)[:240]
+        else:
+            errors[sid] = str(last_exc)[:240]
             per_source[sid] = {
                 "ok": False,
                 "count": 0,
                 "label": SOURCE_LABELS.get(sid, sid),
-                "error": str(exc)[:240],
+                "error": str(last_exc)[:240],
+                "attempts": attempts,
             }
 
     uniq: dict[str, dict[str, Any]] = {}
@@ -1003,7 +1053,7 @@ def ingest_news(
         retagged = backfill_news_tags(limit=max(80, limit_per_source * 8))
     except Exception:
         retagged = 0
-    return {
+    result = {
         "ok": True,
         "fetched": len(batch),
         "upserted": stats["upserted"],
@@ -1018,6 +1068,11 @@ def ingest_news(
             "财联社/见闻电报本身即全文短讯；同花顺多为摘要；巨潮为公告标题+PDF；彭博暂不可用。"
         ),
     }
+    try:
+        record_ingest_run(result)  # P1-C07：抓取健康留痕
+    except Exception:
+        pass
+    return result
 
 
 def start_news_ingest_scheduler() -> None:
@@ -1044,18 +1099,24 @@ def start_news_ingest_scheduler() -> None:
     except Exception:
         pass
 
+    # P1-O06：调度只负责入队；任意实例的 worker 领取执行
+    from services.core.job_queue import enqueue, start_worker
+
+    def _run(payload: dict[str, Any]) -> dict[str, Any]:
+        n = int(payload.get("limit") or limit)
+        return ingest_news(limit_per_source=n)
+
+    start_worker("news.ingest", _run, poll_sec=max(5, min(30, interval // 10)))
+
     def _loop() -> None:
         # 启动后稍等再首拉，避免拖慢 API 就绪
         time.sleep(min(45, max(5, interval // 20)))
         while True:
             try:
-                r = ingest_news(limit_per_source=limit)
-                print(
-                    f"[news] scheduled ingest ok upserted={r.get('upserted')} "
-                    f"fetched={r.get('fetched')}"
-                )
+                enqueue("news.ingest", {"limit": limit})
+                print("[news] scheduled ingest enqueued")
             except Exception as exc:
-                print(f"[news] scheduled ingest fail: {exc}")
+                print(f"[news] enqueue fail: {exc}")
             time.sleep(interval)
 
     threading.Thread(target=_loop, name="news-ingest", daemon=True).start()

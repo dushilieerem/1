@@ -1,0 +1,37 @@
+# -*- coding: utf-8 -*-
+"""独立数据平台（svquant-data）只读视图解析。
+
+业务只认 SVQUANT_DATA_VIEW；路径由数据平台物化，不在业务里拼接 release。
+未配置时返回 None，兼容旧 MARKETDATA_DIR 部署。
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from services.core.env_config import env
+
+
+def materialized_view_root() -> Path | None:
+    """视图物化根目录（含 ifind / free / derived）。"""
+    root = (env("SVQUANT_DATA_ROOT", "") or "").strip()
+    view = (env("SVQUANT_DATA_VIEW", "") or "").strip()
+    if not root or not view:
+        return None
+    base = Path(root) / "views" / view
+    # views/current 通常直接指向某个 view 的 materialized 目录。
+    if (base / "manifest.json").exists():
+        return base.resolve()
+    # 容器内优先用指向 /marketdata 的物化；宿主机用普通物化
+    for name in ("materialized-container", "materialized"):
+        candidate = base / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def materialized_ifind_root() -> Path | None:
+    view_root = materialized_view_root()
+    if view_root is None:
+        return None
+    candidate = view_root / "ifind"
+    return candidate if candidate.exists() else None

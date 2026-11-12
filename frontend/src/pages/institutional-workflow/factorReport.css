@@ -1,0 +1,52 @@
+.quant-shell .quant-factor-report{--qr-purple:#7651a1;--qr-muted:#798399;min-width:0}
+.quant-shell .qr-hero{padding:26px 30px;display:flex;align-items:flex-start;justify-content:space-between;gap:24px;border-top:3px solid #b9a1ce;background:linear-gradient(115deg,#fff 50%,#f7f4fa)}
+.quant-shell .qr-eyebrow{display:flex;align-items:center;gap:10px;color:#91809f;font-size:10px;letter-spacing:.13em;margin-bottom:14px}
+.quant-shell .qr-eyebrow span{letter-spacing:0;padding:4px 8px;border-radius:5px;background:#f1ebf6;color:#7651a1}
+.quant-shell .qr-hero h2{font-size:22px;letter-spacing:-.02em;line-height:1.5;margin:0;font-weight:650;color:#273246}
+.quant-shell .qr-factor-name{color:#8b8594;font:12px ui-monospace,monospace;margin:6px 0 20px;overflow-wrap:anywhere}
+.quant-shell .qr-facts{display:flex;flex-wrap:wrap;gap:22px;font-size:12px;color:#566176}
+.quant-shell .qr-facts small{display:block;color:#8b93a3;font-size:10px;margin-bottom:5px}
+.quant-shell .qr-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;margin:18px 0;background:#e8e4ed;border:1px solid #e8e4ed;border-radius:12px;overflow:hidden}
+.quant-shell .qr-metrics.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.quant-shell .qr-metric{padding:19px 20px;background:#fff;min-width:0}
+.quant-shell .qr-metric>span{font-size:11px;color:#768095;display:block;margin-bottom:8px}
+.quant-shell .qr-metric strong{font-size:23px;letter-spacing:-.025em;font-weight:620;font-variant-numeric:tabular-nums;color:#344057;display:block}
+.quant-shell .qr-metric small{font-size:10px;color:#a1a7b4;margin-top:8px;display:block}
+.quant-shell .qr-tabs{margin-top:22px;margin-bottom:20px;border-bottom:1px solid #e5e1eb;gap:24px;overflow:auto;flex-wrap:nowrap}
+.quant-shell .qr-tabs .tab{padding:12px 3px;white-space:nowrap;border-radius:0;border:0;border-bottom:2px solid transparent;background:transparent;color:#7d8494;font-size:13px}
+.quant-shell .qr-tabs .tab[aria-selected=true]{color:#7651a1;border-bottom-color:#7651a1;font-weight:600}
+.quant-shell .qr-chart,.quant-shell .qr-section{margin-bottom:18px;min-width:0;padding:22px 24px;box-shadow:0 2px 12px #30214204}
+.quant-shell .qr-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+.quant-shell .qr-chart h3,.quant-shell .qr-section h3{font-size:14px;font-weight:650;color:#344057;margin:0 0 8px}
+.quant-shell .qr-chart-head p,.quant-shell .qr-section>p{font-size:11px;line-height:1.8;color:#9198a6;margin:0 0 12px}
+.quant-shell .qr-chart-hint{font-size:10px;color:#abb0bc;white-space:nowrap}
+.quant-shell .qr-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+.quant-shell .qr-two .qr-chart-head{display:block}
+.quant-shell .qr-two .qr-chart-hint{display:none}
+.quant-shell .qr-data{border-top:1px solid #eeeaf2;padding-top:10px;margin-top:8px;color:#8b91a0;font-size:11px}
+.quant-shell .qr-data summary{cursor:pointer;padding:3px 0}
+.quant-shell .qr-table-scroll{overflow:auto;max-height:370px;margin-top:10px}
+.quant-shell .quant-factor-report table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.quant-shell .quant-factor-report th{text-align:right;background:#f8f7fa;color:#7c8595;font-size:11px;font-weight:500;position:sticky;top:0;padding:12px 16px}
+.quant-shell .quant-factor-report td{text-align:right;padding:12px 16px;border-bottom:1px solid #f0edf4;color:#4a566c}
+.quant-shell .quant-factor-report th:first-child,.quant-shell .quant-factor-report td:first-child{text-align:left}
+.quant-shell .quant-factor-report tr:hover td{background:#faf8fc}
+.quant-shell .quant-factor-report .report-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 24px}
+.quant-shell .quant-factor-report .report-metrics>div{padding:15px 0;border-bottom:1px solid #eeeaf3;display:flex;flex-direction:column;gap:6px}
+.quant-shell .quant-factor-report .report-metrics dt{font-size:11px;color:#8a92a1}
+.quant-shell .quant-factor-report .report-metrics dd{font-size:15px;color:#445067;font-variant-numeric:tabular-nums;margin:0}
+.quant-shell .qr-empty{padding:35px 8px;text-align:center;color:#9ba2b0;font-size:12px;line-height:2}
+.quant-shell .qr-note{padding:13px 18px;margin-bottom:18px;background:#f4f1f8;border-radius:8px;color:#847195;font-size:11px;line-height:1.9}
+.quant-shell .qr-warning{padding:11px 16px;background:#fff9ed;border:1px solid #f2e5c9;border-radius:8px;color:#927640;font-size:11px;line-height:1.8}
+.quant-shell .qr-warning summary{cursor:pointer}
+.quant-shell .qr-warning ul{margin:8px 0;padding-left:18px}
+.quant-shell .qr-footer{text-align:center;color:#9ba2af;font-size:10px;line-height:1.8;padding:14px 8px 22px}
+.quant-shell .qr-industry{max-width:320px;margin:18px 0}
+@media(max-width:1250px){.quant-shell .qr-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.quant-shell .qr-chart-hint{display:none}.quant-shell .qr-hero{padding:22px}}
+@media(max-width:850px){.quant-shell .qr-two{grid-template-columns:1fr}.quant-shell .qr-metrics,.quant-shell .qr-metrics.four{grid-template-columns:repeat(2,minmax(0,1fr))}.quant-shell .qr-hero{display:block}.quant-shell .qr-hero>.btn{margin-top:18px}.quant-shell .qr-chart,.quant-shell .qr-section{padding:18px 12px}.quant-shell .quant-factor-report .report-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.quant-shell .iteration-panel{margin:18px 0;border-top:3px solid #b9a1ce}.quant-shell .iteration-panel h2{font-size:16px}.quant-shell .iteration-panel .form-actions{align-items:flex-end}.quant-shell .iteration-panel input{max-width:180px}.quant-shell .iteration-round{padding:16px;border:1px solid #e8e2ee;border-radius:8px;margin:12px 0;background:#fdfcfe}.quant-shell .iteration-checks{display:flex;flex-wrap:wrap;gap:14px;list-style:none;padding:0;font-size:11px}.quant-shell .iteration-checks .passed{color:#508374}.quant-shell .iteration-checks .failed{color:#a16e78}.quant-shell fieldset{border:0;margin:0;padding:0;min-width:0}.quant-shell fieldset:disabled{opacity:.7}
+
+.quant-shell .qr-gate{display:flex;flex-wrap:wrap;gap:10px 20px;padding:12px 16px;margin:12px 0;border-radius:8px;font-size:11px;line-height:1.8}.quant-shell .qr-gate.passed{background:#eff6f3;color:#4d7c69}.quant-shell .qr-gate.failed{background:#faf1f3;color:#9e6576}.quant-shell .qr-gate strong{font-size:12px}
+
+.quant-shell .qr-range{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0 0 8px;color:#7c8595;font-size:11px}.quant-shell .qr-range .btn{padding:4px 10px;font-size:11px;border-color:#e8e3ed}

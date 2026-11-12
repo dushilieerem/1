@@ -1,3 +1,6 @@
+import { quantLoginUrl } from "@/lib/quantAuth";
+import { inQuantWorkspace } from "@/lib/researchClient";
+import { researchPagePath } from "@/lib/researchClient";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -18,7 +21,7 @@ import {
   getStoredUser,
   prepareAuthHandoff,
   subscribeAuth,
-} from "@/lib/auth";
+} from "@/lib/researchClient";
 import {
   STRATEGY_ARCHIVE_CATEGORIES,
   createEmptyUserStrategy,
@@ -237,7 +240,7 @@ export function StrategyLibraryPage() {
 
   const openCreate = () => {
     if (!user) {
-      window.location.href = "/login?next=/strategy/library";
+      window.location.href = inQuantWorkspace() ? quantLoginUrl("/quant/strategy/library") : "/login?next=/strategy/library";
       return;
     }
     setCreateName("");
@@ -273,7 +276,7 @@ export function StrategyLibraryPage() {
 
   const openStrategyCreate = () => {
     if (!user) {
-      window.location.href = "/login?next=/strategy/library";
+      window.location.href = inQuantWorkspace() ? quantLoginUrl("/quant/strategy/library") : "/login?next=/strategy/library";
       return;
     }
     if (!userLibs.length) {
@@ -481,7 +484,7 @@ export function StrategyLibraryPage() {
                 新建策略
               </button>
               <Link
-                to="/strategy/research"
+                to={researchPagePath("/strategy/research")}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => prepareAuthHandoff()}

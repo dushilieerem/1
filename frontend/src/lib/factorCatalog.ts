@@ -1,5 +1,6 @@
+import { researchFetch as fetch } from "./researchClient";
 import { load as yamlLoad } from "js-yaml";
-import { authHeaders } from "@/lib/auth";
+import { authHeaders } from "@/lib/researchClient";
 
 export type FactorMeta = {
   name: string;

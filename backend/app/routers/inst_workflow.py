@@ -1091,6 +1091,16 @@ def portfolio(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any
     return {"ok": True, **svc.portfolio(org_id)}
 
 
+@router.get("/portfolio/nav-history")
+def portfolio_nav_history(
+    days: int = 180, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    """组合净值曲线：只在当日收盘盯市，不写库。"""
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "portfolio")
+    return {"ok": True, **svc.nav_history(org_id, days=max(7, min(int(days), 730)))}
+
+
 @router.get("/monitor")
 def monitor(ctx: dict[str, Any] = Depends(require_inst_user)) -> dict[str, Any]:
     org_id, _, _ = _ctx(ctx)
@@ -1290,6 +1300,16 @@ def holding_detail(symbol: str, ctx: dict[str, Any] = Depends(require_inst_user)
         return {"ok": True, **svc.holding_detail(org_id, symbol)}
     except Exception as exc:
         raise _handle(exc) from exc
+
+
+@router.get("/holdings/{symbol}/nav-history")
+def holding_nav_history(
+    symbol: str, days: int = 180, ctx: dict[str, Any] = Depends(require_inst_user)
+) -> dict[str, Any]:
+    """单票净值曲线：成交日起的收盘、持仓市值与相对成本盈亏。"""
+    org_id, _, _ = _ctx(ctx)
+    _require_ws(ctx, "portfolio")
+    return {"ok": True, **svc.holding_nav_history(org_id, symbol, days=max(7, min(int(days), 730)))}
 
 
 @router.get("/playbook")

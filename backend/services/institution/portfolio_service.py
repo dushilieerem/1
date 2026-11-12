@@ -104,6 +104,167 @@ def portfolio(org_id: int) -> dict[str, Any]:
     }
 
 
+def _portfolios_and_fills(org_id: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    with get_conn() as conn:
+        pf = conn.execute(
+            "SELECT * FROM inst_portfolio WHERE org_id=%s ORDER BY id LIMIT 1", (org_id,)
+        ).fetchone()
+        fills = conn.execute(
+            """
+            SELECT o.symbol, o.side, f.qty, f.price, COALESCE(f.fee, 0) AS fee, f.filled_at
+              FROM inst_fill f JOIN inst_order o ON o.id = f.order_id
+             WHERE f.qty IS NOT NULL AND f.price IS NOT NULL
+             ORDER BY f.filled_at, f.id
+            """
+        ).fetchall()
+    return (_row_dict(pf) if pf else None), [dict(r) for r in fills]
+
+
+def _daily_bars(symbol: str, start: str) -> list[dict[str, Any]]:
+    try:
+        rows = md.bar_history(symbol, start=start, adjust="none", limit=2000)
+    except Exception:  # noqa: BLE001 - 行情缺失不影响曲线其余部分
+        return []
+    return [r for r in rows if r.get("close") is not None]
+
+
+def _close_on(bars: list[dict[str, Any]], day: str) -> float | None:
+    """当日或之前最近一个收盘价（停牌/无行情时向前填充）。"""
+    last = None
+    for row in bars:
+        if str(row.get("trade_date") or "")[:10] > day:
+            break
+        last = float(row["close"])
+    return last
+
+
+def nav_history(org_id: int, *, days: int = 180) -> dict[str, Any]:
+    """组合净值曲线：初始资金 + 成交流水 + 每日收盘盯市。
+
+    nav = 现金 + Σ(持仓数量 × 当日收盘)，初始资金取组合建立时的 nav。
+    只用于展示与盈亏跟踪，不写入仓位快照。
+    """
+    pf, fills = _portfolios_and_fills(org_id)
+    if not pf:
+        return {"base": 0.0, "series": []}
+    base = float(pf.get("nav") or DEFAULT_NAV)
+    if not fills:
+        return {"base": base, "series": [], "note": "组合尚无成交记录"}
+    first_day = min(str(f["filled_at"])[:10] for f in fills)
+    cutoff = (date.today() - timedelta(days=max(1, days))).isoformat()
+    start = max(first_day, cutoff)
+    symbols = sorted({str(f["symbol"]) for f in fills})
+    bars = {s: _daily_bars(s, start) for s in symbols}
+    dates = sorted({str(r["trade_date"])[:10] for rows in bars.values() for r in rows if str(r.get("trade_date") or "")[:10] >= start})
+    if not dates:
+        return {"base": base, "series": [], "note": "持仓标的暂无行情"}
+
+    series: list[dict[str, Any]] = []
+    for day in dates:
+        cash = base
+        qty: dict[str, float] = {}
+        for f in fills:
+            fday = str(f["filled_at"])[:10]
+            if fday > day:
+                continue
+            symbol = str(f["symbol"])
+            q = float(f["qty"])
+            amount = q * float(f["price"])
+            fee = float(f.get("fee") or 0)
+            if str(f["side"]) == "sell":
+                cash += amount - fee
+                qty[symbol] = qty.get(symbol, 0.0) - q
+            else:
+                cash -= amount + fee
+                qty[symbol] = qty.get(symbol, 0.0) + q
+        invested = 0.0
+        for symbol, q in qty.items():
+            if abs(q) < 1e-9:
+                continue
+            close = _close_on(bars.get(symbol) or [], day)
+            if close is not None:
+                invested += q * close
+        nav = cash + invested
+        series.append(
+            {
+                "date": day,
+                "nav": round(nav, 2),
+                "cash": round(cash, 2),
+                "invested": round(invested, 2),
+                "pnl": round(nav - base, 2),
+                "pnl_pct": round((nav / base - 1) * 100, 4) if base else 0.0,
+            }
+        )
+    latest = series[-1] if series else None
+    return {
+        "base": base,
+        "series": series,
+        "latest": latest,
+        "max_drawdown": _max_drawdown([s["nav"] for s in series]),
+    }
+
+
+def _max_drawdown(values: list[float]) -> float:
+    peak = None
+    worst = 0.0
+    for v in values:
+        if v is None:
+            continue
+        peak = v if peak is None else max(peak, v)
+        if peak:
+            worst = min(worst, v / peak - 1)
+    return round(worst * 100, 4)
+
+
+def holding_nav_history(org_id: int, symbol: str, *, days: int = 180) -> dict[str, Any]:
+    """单票净值曲线：成交日起的收盘价、持仓市值与相对成本盈亏。"""
+    _, fills = _portfolios_and_fills(org_id)
+    mine = [f for f in fills if str(f["symbol"]) == symbol]
+    if not mine:
+        return {"symbol": symbol, "series": [], "note": "无该标的成交记录"}
+    first_day = min(str(f["filled_at"])[:10] for f in mine)
+    cutoff = (date.today() - timedelta(days=max(1, days))).isoformat()
+    start = max(first_day, cutoff)
+    bars = _daily_bars(symbol, start)
+    if not bars:
+        return {"symbol": symbol, "series": [], "note": "暂无行情"}
+    total_qty = sum(float(f["qty"]) if str(f["side"]) == "buy" else -float(f["qty"]) for f in mine)
+    cost_amount = sum(
+        (float(f["qty"]) * float(f["price"]) + float(f.get("fee") or 0))
+        if str(f["side"]) == "buy"
+        else -(float(f["qty"]) * float(f["price"]) - float(f.get("fee") or 0))
+        for f in mine
+    )
+    avg_cost = (cost_amount / total_qty) if total_qty else 0.0
+    series: list[dict[str, Any]] = []
+    for row in bars:
+        day = str(row["trade_date"])[:10]
+        if day < start:
+            continue
+        close = float(row["close"])
+        pnl_pct = ((close / avg_cost - 1) * 100) if avg_cost else 0.0
+        series.append(
+            {
+                "date": day,
+                "close": round(close, 4),
+                "cost": round(avg_cost, 4),
+                "qty": total_qty,
+                "market_value": round(total_qty * close, 2),
+                "pnl": round(total_qty * (close - avg_cost), 2),
+                "pnl_pct": round(pnl_pct, 4),
+            }
+        )
+    latest = series[-1] if series else None
+    return {
+        "symbol": symbol,
+        "cost": round(avg_cost, 4),
+        "qty": total_qty,
+        "series": series,
+        "latest": latest,
+        "max_drawdown": _max_drawdown([s["close"] for s in series]),
+    }
+
+
 def monitor(org_id: int) -> dict[str, Any]:
     return {"portfolio": portfolio(org_id), **repo.monitor(OrgScope(org_id))}
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import ReactECharts from "echarts-for-react";
 import { ArrowRight, Activity, AlertTriangle, RefreshCw } from "lucide-react";
 import { dedupeBy } from "@/lib/instDedupe";
 import { instApi, fmtMoney, fmtPct } from "@/lib/instApi";
@@ -66,6 +67,43 @@ type Holding = {
   exits: ExitCase[];
 };
 
+type NavPoint = {
+  date: string;
+  nav: number;
+  cash: number;
+  invested: number;
+  pnl: number;
+  pnl_pct: number;
+};
+
+type NavHistory = {
+  base: number;
+  series: NavPoint[];
+  latest?: NavPoint | null;
+  max_drawdown?: number;
+  note?: string;
+};
+
+type StockNavPoint = {
+  date: string;
+  close: number;
+  cost: number;
+  qty: number;
+  market_value: number;
+  pnl: number;
+  pnl_pct: number;
+};
+
+type StockNav = {
+  symbol: string;
+  cost?: number;
+  qty?: number;
+  series: StockNavPoint[];
+  latest?: StockNavPoint | null;
+  max_drawdown?: number;
+  note?: string;
+};
+
 const STEPS = [
   { name: "组合总览", sub: "净值 / 现金 / 敞口" },
   { name: "单票盘中", sub: "论点台账 · 事件" },
@@ -118,6 +156,8 @@ export function InstV3ManagePage() {
   const [reason, setReason] = useState("thesis_invalid");
   const [exitMemo, setExitMemo] = useState("");
   const [exitAdvice, setExitAdvice] = useState<ExitAdvice | null>(null);
+  const [navHistory, setNavHistory] = useState<NavHistory | null>(null);
+  const [stockNav, setStockNav] = useState<StockNav | null>(null);
 
   const detailSeq = useRef(0);
   const selectedSymbol = parseHolding(params.get("key"));
@@ -236,6 +276,84 @@ export function InstV3ManagePage() {
     setAgentId(step === 1 ? "monitor" : "pm");
   }, [step]);
 
+  useEffect(() => {
+    let alive = true;
+    instApi<NavHistory>("/portfolio/nav-history?days=180")
+      .then((data) => { if (alive) setNavHistory(data); })
+      .catch(() => { if (alive) setNavHistory(null); });
+    return () => { alive = false; };
+  }, [portfolio?.nav]);
+
+  useEffect(() => {
+    const symbol = activePosition?.symbol;
+    if (!symbol) { setStockNav(null); return; }
+    let alive = true;
+    instApi<StockNav>(`/holdings/${encodeURIComponent(symbol)}/nav-history?days=180`)
+      .then((data) => { if (alive) setStockNav(data); })
+      .catch(() => { if (alive) setStockNav(null); });
+    return () => { alive = false; };
+  }, [activePosition?.symbol]);
+
+  const navOption = useMemo(() => {
+    const series = navHistory?.series || [];
+    const base = navHistory?.base || 0;
+    return {
+      grid: { left: 48, right: 16, top: 24, bottom: 28 },
+      tooltip: {
+        trigger: "axis",
+        formatter: (items: Array<{ dataIndex: number }>) => {
+          const point = series[items[0]?.dataIndex ?? 0];
+          if (!point) return "";
+          return `${point.date}<br/>净值 ${fmtMoney(point.nav)}<br/>盈亏 ${fmtMoney(point.pnl)}（${point.pnl_pct.toFixed(2)}%）<br/>现金 ${fmtMoney(point.cash)} · 持仓 ${fmtMoney(point.invested)}`;
+        },
+      },
+      xAxis: { type: "category", data: series.map((p) => p.date.slice(5)), axisLabel: { fontSize: 10, color: "#8a8290" }, axisLine: { lineStyle: { color: "#e4dde8" } } },
+      yAxis: { type: "value", name: "收益率%", nameTextStyle: { fontSize: 10, color: "#8a8290" }, axisLabel: { fontSize: 10, color: "#8a8290", formatter: "{value}%" }, splitLine: { lineStyle: { color: "#f2ecf4" } } },
+      series: [
+        {
+          type: "line",
+          name: "组合收益率",
+          data: series.map((p) => Number(p.pnl_pct.toFixed(2))),
+          smooth: true,
+          symbol: "none",
+          lineStyle: { width: 2, color: base ? "#a03a5c" : "#999" },
+          areaStyle: {
+            color: {
+              type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: "rgba(160,58,92,0.22)" },
+                { offset: 1, color: "rgba(160,58,92,0.02)" },
+              ],
+            },
+          },
+          markLine: { silent: true, symbol: "none", data: [{ yAxis: 0 }], lineStyle: { color: "#c9c0cc", type: "dashed" }, label: { show: false } },
+        },
+      ],
+    };
+  }, [navHistory]);
+
+  const stockNavOption = useMemo(() => {
+    const series = stockNav?.series || [];
+    const cost = stockNav?.cost || 0;
+    return {
+      grid: { left: 48, right: 16, top: 24, bottom: 28 },
+      tooltip: {
+        trigger: "axis",
+        formatter: (items: Array<{ dataIndex: number }>) => {
+          const point = series[items[0]?.dataIndex ?? 0];
+          if (!point) return "";
+          return `${point.date}<br/>收盘 ${point.close.toFixed(2)} · 成本 ${point.cost.toFixed(2)}<br/>盈亏 ${fmtMoney(point.pnl)}（${point.pnl_pct.toFixed(2)}%）`;
+        },
+      },
+      xAxis: { type: "category", data: series.map((p) => p.date.slice(5)), axisLabel: { fontSize: 10, color: "#8a8290" }, axisLine: { lineStyle: { color: "#e4dde8" } } },
+      yAxis: { type: "value", scale: true, axisLabel: { fontSize: 10, color: "#8a8290" }, splitLine: { lineStyle: { color: "#f2ecf4" } } },
+      series: [
+        { type: "line", name: "收盘价", data: series.map((p) => Number(p.close.toFixed(2))), smooth: true, symbol: "none", lineStyle: { width: 2, color: "#a03a5c" }, areaStyle: { color: "rgba(160,58,92,0.08)" } },
+        { type: "line", name: "持仓成本", data: series.map(() => Number(cost.toFixed(2))), symbol: "none", lineStyle: { width: 1, type: "dashed", color: "#8a8290" } },
+      ],
+    };
+  }, [stockNav]);
+
   const agentDefs = useMemo<AgentPanelDef[]>(() => {
     if (step === 1) {
       return [{ id: "monitor", name: "监控 Agent", code: "MONITOR", model: "监控 Agent", tools: "公告 / 行情 / KPI", output: "论点台账 + 事件提醒", role: "扫描事件、核对论点，不替人做卖出决定。" }];
@@ -298,6 +416,30 @@ export function InstV3ManagePage() {
                 <div className="v3-kpi"><div className="k">在途退出</div><div className="v">{holding?.exits?.length ?? 0}<small> 个</small></div><div className="d">退出重走审批</div></div>
               </section>
               <section className="v3-card">
+                <div className="v3-card-head">
+                  <div>
+                    <h2>组合净值曲线</h2>
+                    <p>从建立组合日起按每日收盘盯市；收益率为相对初始资金 {fmtMoney(navHistory?.base ?? portfolio?.nav)} 的累计盈亏。</p>
+                  </div>
+                  <span className="v3-chip">
+                    {navHistory?.latest ? `累计 ${navHistory.latest.pnl >= 0 ? "+" : ""}${navHistory.latest.pnl_pct.toFixed(2)}%` : "—"}
+                  </span>
+                </div>
+                {navHistory?.series?.length ? (
+                  <>
+                    <ReactECharts option={navOption} style={{ height: 260 }} notMerge lazyUpdate opts={{ renderer: "canvas" }} />
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-[#6b6370]">
+                      <span>当前净值 {fmtMoney(navHistory.latest?.nav)}</span>
+                      <span>累计盈亏 {fmtMoney(navHistory.latest?.pnl)}</span>
+                      <span>区间最大回撤 {navHistory.max_drawdown?.toFixed(2) ?? "—"}%</span>
+                      <span>现金 {fmtMoney(navHistory.latest?.cash)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="v3-empty">{navHistory?.note || "成交记录不足，净值曲线需要至少两个交易日的行情。"}</div>
+                )}
+              </section>
+              <section className="v3-card">
                 <div className="v3-card-head"><div><h2>持仓明细</h2><p>点任意持仓进入单票盘中；权重按市值/净值。</p></div><span className="v3-chip">{positions.length} 只</span></div>
                 <div className="table-wrap" style={{ overflowX: "auto" }}>
                   <table className="v3-table">
@@ -333,6 +475,31 @@ export function InstV3ManagePage() {
               <section className="v3-card">
                 <div className="v3-card-head"><div><h2>{activePosition.name || activePosition.symbol} · 盘中</h2><p>{activePosition.symbol} · {fmtPct(activePosition.weight)} · 成本 {activePosition.cost?.toFixed(2) || "—"} · 现价 {activePosition.last_close?.toFixed(2) || "—"}</p></div><button className="v3-btn ghost" disabled={!!busy} onClick={scan}><Activity className="h-3.5 w-3.5" />{busy === "scan" ? "扫描中…" : "扫描事件"}</button></div>
                 <p style={{ lineHeight: 1.7, color: "#5f5766" }}>买入不是结束，而是论点开始接受检验；监控 Agent 只提示，不替你做卖出决定。</p>
+              </section>
+
+              <section className="v3-card">
+                <div className="v3-card-head">
+                  <div>
+                    <h2>单票净值曲线</h2>
+                    <p>从首次成交日起的收盘价与持仓成本；盈亏按当前持仓数量相对成本计算。</p>
+                  </div>
+                  <span className="v3-chip">
+                    {stockNav?.latest ? `浮盈 ${stockNav.latest.pnl >= 0 ? "+" : ""}${stockNav.latest.pnl_pct.toFixed(2)}%` : "—"}
+                  </span>
+                </div>
+                {stockNav?.series?.length ? (
+                  <>
+                    <ReactECharts option={stockNavOption} style={{ height: 240 }} notMerge lazyUpdate opts={{ renderer: "canvas" }} />
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-[#6b6370]">
+                      <span>成本 {stockNav.cost?.toFixed(2) ?? "—"} · 数量 {stockNav.qty ?? "—"}</span>
+                      <span>持仓市值 {fmtMoney(stockNav.latest?.market_value)}</span>
+                      <span>浮动盈亏 {fmtMoney(stockNav.latest?.pnl)}</span>
+                      <span>区间最大回撤 {stockNav.max_drawdown?.toFixed(2) ?? "—"}%</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="v3-empty">{stockNav?.note || "成交记录不足，单票曲线需要至少两个交易日的行情。"}</div>
+                )}
               </section>
 
               <section className="v3-card">

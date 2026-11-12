@@ -111,13 +111,22 @@ def test_persist_is_off_by_default(monkeypatch):
     assert doc_llm.persist_result({"facts": [{"symbol": "TEST.SZ"}]}) == 0
 
 
-def test_persist_requires_explicit_enable(monkeypatch):
-    monkeypatch.setenv("SVQUANT_DOC_LLM_PERSIST", "1")
-    calls: list[tuple] = []
+def _fake_conn(existing):
+    calls: list[tuple[str, tuple | None]] = []
+
+    class _Result:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
 
     class _Conn:
         def execute(self, sql, params=None):
             calls.append((sql, params))
+            if sql.strip().startswith("SELECT value_text"):
+                return _Result(existing)
+            return _Result({"doc_id": "D1"})
 
         def __enter__(self):
             return self
@@ -125,9 +134,54 @@ def test_persist_requires_explicit_enable(monkeypatch):
         def __exit__(self, *exc):
             return False
 
-    monkeypatch.setattr(doc_llm, "get_conn", lambda: _Conn())
+    return _Conn(), calls
+
+
+def test_persist_inserts_when_no_platform_row(monkeypatch):
+    monkeypatch.setenv("SVQUANT_DOC_LLM_PERSIST", "1")
+    conn, calls = _fake_conn(None)
+    monkeypatch.setattr(doc_llm, "get_conn", lambda: conn)
     written = doc_llm.persist_result(
-        {"facts": [{"symbol": "TEST.SZ", "field_key": "pledge_freeze", "value": {"a": 1}, "page_no": 11}]}
+        {
+            "facts": [
+                {"symbol": "TEST.SZ", "doc_id": "D1", "field_key": "pledge_freeze", "value": {"a": 1}, "page_no": 11},
+                {"symbol": "TEST.SZ", "doc_id": "D1", "field_key": "pledge_freeze", "value": {"a": 2}, "page_no": 12},
+            ]
+        }
     )
     assert written == 1
-    assert "review_status" in calls[0][0]
+    insert_sql = calls[-1][0]
+    assert "INSERT INTO svquant.doc_extract" in insert_sql
+    assert calls[-1][1][3] == '[{"a": 1}, {"a": 2}]'
+
+
+def test_persist_replaces_low_quality_verified_row(monkeypatch):
+    monkeypatch.setenv("SVQUANT_DOC_LLM_PERSIST", "1")
+    conn, calls = _fake_conn(
+        {"value_text": "股东名称 股东性质 持股比例 " + "…" * 150, "review_status": "auto_verified"}
+    )
+    monkeypatch.setattr(doc_llm, "get_conn", lambda: conn)
+    written = doc_llm.persist_result(
+        {"facts": [{"symbol": "TEST.SZ", "doc_id": "D1", "field_key": "pledge_freeze", "value": {"a": 1}, "page_no": 11}]}
+    )
+    assert written == 1
+    update_sql = calls[-1][0]
+    assert "UPDATE svquant.doc_extract" in update_sql
+    assert "superseded_value_text=value_text" in update_sql
+
+
+def test_persist_keeps_structured_platform_row(monkeypatch):
+    monkeypatch.setenv("SVQUANT_DOC_LLM_PERSIST", "1")
+    conn, calls = _fake_conn({"value_text": "每10股派息1元", "review_status": "verified"})
+    monkeypatch.setattr(doc_llm, "get_conn", lambda: conn)
+    written = doc_llm.persist_result(
+        {"facts": [{"symbol": "TEST.SZ", "doc_id": "D1", "field_key": "pledge_freeze", "value": {"a": 1}, "page_no": 11}]}
+    )
+    assert written == 0
+    assert all("UPDATE svquant.doc_extract" not in sql for sql, _ in calls)
+
+
+def test_low_quality_scope_limited_to_governance():
+    assert doc_llm.is_low_quality("pledge_freeze", "x" * 300) is True
+    assert doc_llm.is_low_quality("dividend_financing", "x" * 300) is False
+    assert doc_llm.is_low_quality("pledge_freeze", '[{"shareholder":"A"}]') is False

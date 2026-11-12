@@ -295,43 +295,109 @@ def field_items(
     return grouped
 
 
+GOVERNANCE_FIELDS = frozenset(
+    {"pledge_freeze", "board_structure", "commitment_history", "related_party", "guarantee", "mgmt_change"}
+)
+LOW_QUALITY_MIN_CHARS = 120
+
+
+def is_low_quality(field_key: str, value_text: Any) -> bool:
+    """平台治理行是否只是整页片段：非 JSON 且长度过长。
+
+    结构化值（如"每10股派息1元"）很短，保留；页面片段（"股东名称 性质 持股比例…"）
+    替换成原文抽取的 JSON 值。范围只限治理字段，财务/审计等不动。
+    """
+    if field_key not in GOVERNANCE_FIELDS:
+        return False
+    text = str(value_text or "").strip()
+    if not text:
+        return True
+    if text.startswith("{") or text.startswith("["):
+        return False
+    return len(text) >= LOW_QUALITY_MIN_CHARS
+
+
 def persist_result(result: dict[str, Any], *, org_id: int = ORGANIZATION_ID) -> int:
-    """把抽取结果写回 svquant.doc_extract（默认 pending）；需显式开启生产写入。"""
+    """把抽取结果写回 svquant.doc_extract（默认 pending）；需显式开启生产写入。
+
+    主键是 (doc_id, field_key)，同一字段的多条事实合并成一行（value 存 JSON）：
+    - 没有平台行 → 新增 pending；
+    - 平台行是低质量治理片段 → 原地替换成原文抽取值，旧值写入 superseded_*，不物理删除；
+    - 平台行已是结构化值 → 保留不动。
+    """
     if not (os.getenv("SVQUANT_DOC_LLM_PERSIST", "0").strip() in {"1", "true", "yes"}):
         return 0
     facts = result.get("facts") or []
     if not facts:
         return 0
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in facts:
+        grouped.setdefault((str(item.get("doc_id")), str(item.get("field_key"))), []).append(item)
     written = 0
     with get_conn() as conn:
-        for item in facts:
-            conn.execute(
+        for (doc_id, field_key), items in grouped.items():
+            values = [item.get("value") for item in items]
+            value = values[0] if len(values) == 1 else values
+            first = items[0]
+            params = (
+                first.get("symbol"),
+                FIELD_LABELS.get(field_key, ""),
+                json.dumps(value, ensure_ascii=False),
+                first.get("report_period"),
+                first.get("page_no"),
+                first.get("quote"),
+                first.get("available_time"),
+                EXTRACTOR_VERSION,
+                first.get("confidence"),
+            )
+            existing = conn.execute(
+                "SELECT value_text, review_status FROM svquant.doc_extract WHERE doc_id=%s AND field_key=%s",
+                (doc_id, field_key),
+            ).fetchone()
+            if existing is None:
+                row = conn.execute(
+                    """
+                    INSERT INTO svquant.doc_extract
+                      (symbol, field_key, field_label, value_text, value_num, unit, report_period,
+                       page_no, quote, doc_id, pdf_sha256, source_url, available_time,
+                       extractor_version, confidence, review_status)
+                    VALUES (%s,%s,%s,%s,NULL,NULL,%s,%s,%s,%s,NULL,NULL,%s,%s,%s,'pending')
+                    ON CONFLICT (doc_id, field_key) DO NOTHING
+                    RETURNING doc_id
+                    """,
+                    (
+                        params[0], field_key, params[1], params[2], params[3], params[4],
+                        params[5], doc_id, params[6], params[7], params[8],
+                    ),
+                ).fetchone()
+                if row:
+                    written += 1
+                continue
+            old_text = existing.get("value_text") if isinstance(existing, dict) else existing[0]
+            old_status = existing.get("review_status") if isinstance(existing, dict) else existing[1]
+            if not is_low_quality(field_key, old_text):
+                continue
+            row = conn.execute(
                 """
-                INSERT INTO svquant.doc_extract
-                  (symbol, field_key, field_label, value_text, value_num, unit, report_period,
-                   page_no, quote, doc_id, pdf_sha256, source_url, available_time,
-                   extractor_version, confidence, review_status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending')
+                UPDATE svquant.doc_extract
+                   SET superseded_at=NOW(),
+                       superseded_value_text=value_text,
+                       superseded_quote=quote,
+                       superseded_page_no=page_no,
+                       superseded_review_status=review_status,
+                       superseded_extractor_version=extractor_version,
+                       field_label=%s, value_text=%s, report_period=%s, page_no=%s, quote=%s,
+                       available_time=%s, extractor_version=%s, confidence=%s, review_status='pending'
+                 WHERE doc_id=%s AND field_key=%s
+                 RETURNING doc_id
                 """,
                 (
-                    item.get("symbol"),
-                    item.get("field_key"),
-                    FIELD_LABELS.get(str(item.get("field_key")), ""),
-                    json.dumps(item.get("value"), ensure_ascii=False),
-                    None,
-                    None,
-                    item.get("report_period"),
-                    item.get("page_no"),
-                    item.get("quote"),
-                    item.get("doc_id"),
-                    None,
-                    None,
-                    item.get("available_time"),
-                    EXTRACTOR_VERSION,
-                    item.get("confidence"),
+                    params[1], params[2], params[3], params[4], params[5],
+                    params[6], params[7], params[8], doc_id, field_key,
                 ),
-            )
-            written += 1
+            ).fetchone()
+            if row:
+                written += 1
     return written
 
 

@@ -98,7 +98,18 @@ def _value(row: dict[str, Any]) -> Any:
     for key in ("value_num", "value_text", "value"):
         value = row.get(key)
         if value is not None and value != "":
-            return float(value) if isinstance(value, Decimal) else value
+            if isinstance(value, Decimal):
+                return float(value)
+            if isinstance(value, str) and str(row.get("extractor_version") or "").startswith("inst-llm"):
+                # 原文抽取行把结构化值存成 JSON 文本
+                try:
+                    import json
+
+                    parsed = json.loads(value)
+                    return parsed if isinstance(parsed, (dict, list)) else value
+                except (ValueError, TypeError):
+                    return value
+            return value
     return None
 
 

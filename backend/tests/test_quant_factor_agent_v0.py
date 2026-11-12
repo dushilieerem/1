@@ -148,3 +148,43 @@ class AgentFailureBreakerTests(unittest.TestCase):
         self.assertTrue(agent_v0._technical_stop({'stop_reason': 'x', 'technical_wait': 'execution_dependency'}))
         self.assertFalse(agent_v0._technical_stop({'stop_reason': 'max_trials=5 已全部使用，remaining=0'}))
         self.assertFalse(agent_v0._technical_stop(None))
+
+
+class AgentFailureAndReviewGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        guard = patch.object(agent_v0, '_STATE_PATH', Path(self.tmp.name) / 'state.json')
+        guard.start(); self.addCleanup(guard.stop)
+        control = patch.object(agent_v0.service, 'control_status', return_value={'paused': False})
+        control.start(); self.addCleanup(control.stop)
+
+    def _conn(self, rows):
+        c = MagicMock()
+        c.execute.return_value = c
+        c.fetchone.side_effect = rows
+        conn = MagicMock(); conn.__enter__.return_value = c
+        return conn, c
+
+    def test_third_consecutive_technical_failure_pauses_agent(self):
+        from datetime import date
+        Path(self.tmp.name, 'state.json').write_text(json.dumps({'enabled': True, 'user_id': 1, 'org_id': 2, 'failure_streak': 2, 'last_counted_run_id': 'old-run'}))
+        project = {'id': 'p1', 'name': 'Agent 自主研究：短周期反转基线', 'config': {'agentV0': {}}}
+        topic = {'id': 't1', 'status': 'active', 'project_id': 'p1'}
+        run = {'id': 'new-run', 'status': 'stopped', 'stop_reason': '研发计算异常，未产生可检验报告', 'technical_wait': None}
+        conn, _ = self._conn([None, topic, run, None])
+        with patch.object(agent_v0, 'get_conn', return_value=conn), patch.object(agent_v0, '_pending_project', return_value=project), patch.object(agent_v0, '_create_baseline_project') as create:
+            result = agent_v0.tick(1, 2)
+        self.assertEqual(result['state'], 'waiting_failures')
+        create.assert_not_called()
+
+    def test_open_review_blocks_new_agent_task(self):
+        Path(self.tmp.name, 'state.json').write_text(json.dumps({'enabled': True, 'user_id': 1, 'org_id': 2, 'failure_streak': 0}))
+        project = {'id': 'p1', 'name': 'Agent 自主研究：短周期反转基线', 'config': {'agentV0': {}}}
+        topic = {'id': 't1', 'status': 'active', 'project_id': 'p1'}
+        run = {'id': 'run', 'status': 'stopped', 'stop_reason': 'max_trials=5 已全部使用', 'technical_wait': None}
+        conn, _ = self._conn([None, topic, run, {'id': 'candidate'}])
+        with patch.object(agent_v0, 'get_conn', return_value=conn), patch.object(agent_v0, '_pending_project', return_value=project), patch.object(agent_v0, '_create_baseline_project') as create:
+            result = agent_v0.tick(1, 2)
+        self.assertEqual(result['state'], 'waiting_review')
+        create.assert_not_called()

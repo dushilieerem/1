@@ -26,3 +26,11 @@ class QueueBoundaryTests(unittest.TestCase):
  def test_control_rejection_before_dispatch_creates_no_unknown_external_intent(self):
   with patch.dict(os.environ,{'QUANT_RESEARCH_DURABLE_QUEUE':'1'}),patch.object(q,'require_context',side_effect=WorkflowError('paused')),patch.object(q,'get_conn',side_effect=AssertionError('no dispatch intent on rejected control')):
    with self.assertRaises(q.SubmissionNotDispatched):q.external_begin('factor',{'base':'http://fixture.invalid'},'hash')
+
+
+def test_task_planner_is_allowed_as_lightweight_only_inside_advice_context():
+    from services.quant_factor import research_queue as q
+    assert q.permits_lightweight('quant.factor.task_planner') is False
+    with q.lightweight_advice():
+        assert q.permits_lightweight('quant.factor.task_planner') is True
+        assert q.permits_lightweight('quant.factor.research_planner_v2') is False

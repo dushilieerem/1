@@ -84,6 +84,15 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
   q.recover_owned()
   self.assertEqual(self.queue_row(first)['status'],'waiting')
   self.assertEqual(q.claim()['id'],second['id'])
+ def test_child_finish_resumes_a_yielded_f0_root(self):
+  first=self.add('yielded-run');second=self.add('second');parent=q.claim()
+  with self.connection() as c:
+   c.execute("INSERT INTO quant_factor_f0_runs(id,user_id,org_id,project_id,topic_id,branch_id,idempotency_key,status,decision,rounds,stop_reason,view_id) VALUES('yielded-run',%s,%s,'project','topic','branch','yielded','queued','{\"scheduler_yield\":true}',3,'','view')",(self.uid,self.org))
+  with self.connection() as c:q.enqueue(c,'agent','child',self.uid,self.org,parent=parent['id'])
+  q.run_job(parent,lambda j:None)
+  self.assertEqual(self.queue_row(parent)['status'],'completed')
+  child=q.claim();self.assertEqual(child['object_id'],'child');q.run_job(child,lambda j:None)
+  self.assertEqual(q.claim()['id'],first['id'])
  def test_old_usage_gaps_without_queue_identity_do_not_occupy_slot(self):
   with patch.dict(os.environ,{'QUANT_RESEARCH_DURABLE_QUEUE':'0'}):
    historic=b.reserve(self.uid,self.org,'project','old-gap','quant.factor.research_assistant','old',100,3000);b.claim(self.uid,self.org,historic['id']);b.unresolved(self.uid,self.org,historic['id'],'historic receipt gap')

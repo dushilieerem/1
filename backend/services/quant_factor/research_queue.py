@@ -69,7 +69,7 @@ def _release_if_finished(c,root):
  if not active and not unknown_calls(c,root) and not compute_pending(c,root):c.execute('UPDATE quant_research_queue_slots SET root_id=NULL,updated_at=NOW() WHERE deployment_id=%s AND root_id=%s',(DEPLOYMENT_ID,root))
 
 def _resume_yielded_root(c,root):
- root_job=c.execute("SELECT id,kind,status FROM quant_research_queue_jobs WHERE deployment_id=%s AND root_id=%s AND id=root_id",(DEPLOYMENT_ID,root)).fetchone()
+ root_job=c.execute("SELECT id,kind,status,object_id FROM quant_research_queue_jobs WHERE deployment_id=%s AND root_id=%s AND id=root_id",(DEPLOYMENT_ID,root)).fetchone()
  if not root_job or root_job['kind']!='f0' or root_job['status']!='completed':return
  state=c.execute('SELECT status,decision FROM quant_factor_f0_runs WHERE id=%s',(root_job['object_id'],)).fetchone()
  if not state or state['status']!='queued' or not (state.get('decision') or {}).get('scheduler_yield'):return

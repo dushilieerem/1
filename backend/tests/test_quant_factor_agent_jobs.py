@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch,MagicMock
+import uuid
 from services.quant_factor import agent_jobs as jobs
 from services.quant_factor.policy import WorkflowError
 
@@ -80,5 +81,5 @@ class WindowFeedbackTests(unittest.TestCase):
   self.assertEqual(gen.call_count,2)
   self.assertEqual(gen.call_args_list[0].args[3],'j')
   self.assertTrue(gen.call_args_list[1].args[3].endswith('-window2'))
-  self.assertIn('5 日反转',gen.call_args_list[1].args[4]['prompt'])
+  self.assertIn('5 日反转',gen.call_args_list[1].args[4]['prompt']);self.assertIsInstance(uuid.UUID(gen.call_args_list[1].args[4]['idempotency_key']),uuid.UUID)
   self.assertEqual([c.args[4]['action'] for c in update.call_args_list].count('implementation_window_feedback'),1)

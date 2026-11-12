@@ -204,7 +204,7 @@ def run(uid,org,jid):
                     retry_id=jid+'-window2'
                     feedback=('上一版实现没有遵守冻结研究假设的窗口：'+window_error+
                               ' 请严格按研究假设重写实现，保持假设、方向和预测目标不变；不要用另一个窗口替代。')
-                    body2={**body,'prompt':instruction+'\n'+feedback+'\n'+prompt,'idempotency_key':retry_id}
+                    body2={**body,'prompt':instruction+'\n'+feedback+'\n'+prompt,'idempotency_key':str(uuid.uuid4())}
                     out=generate(uid,org,row['project_id'],retry_id,body2,research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
                     if out.get('status')=='ready':
                         factor=out.get('factor') or {}

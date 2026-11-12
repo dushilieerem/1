@@ -76,6 +76,7 @@ class IsolatedQueueTests(IsolatedBudgetPostgresTests):
   q.run_job(parent,handler)
   self.assertEqual(self.queue_row(parent)['status'],'waiting');self.assertIsNone(q.claim())
   b.abandon_unconfirmed(self.uid,self.org,saved[0]['id'],'BFF process restarted before receipt','test-operator')
+  q.recover_owned()
   self.assertEqual(q.claim()['id'],second['id'])
  def test_foreign_host_owner_is_not_left_pinned_forever(self):
   first=self.add('first');second=self.add('second');running=q.claim()

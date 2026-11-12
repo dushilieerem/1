@@ -145,9 +145,9 @@ def _mark_checkpoint(row,reason):
    c.execute("UPDATE quant_factor_sealed_validations SET status='error',result=result||%s::jsonb,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running')",(store.encode({'message':reason}),row['object_id'],row['user_id'],row['org_id']))
   elif row['kind']=='iteration':
    c.execute("UPDATE quant_factor_iterations SET status='stopped',stop_reason=%s,updated_at=NOW() WHERE id=%s AND user_id=%s AND org_id=%s AND status IN ('queued','running')",(reason,row['object_id'],row['user_id'],row['org_id']))
- # A pure checkpoint has no unresolved physical request. Keeping the slot
- # attached to it would starve every newer root forever after a restart.
- _release_if_finished(c,row['root_id'])
+  # A pure checkpoint has no unresolved physical request. Keeping the slot
+  # attached to it would starve every newer root forever after a restart.
+  _release_if_finished(c,row['root_id'])
 
 
 def run_job(job,handler):

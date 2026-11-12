@@ -29,6 +29,8 @@ def main() -> int:
     args = parser.parse_args()
     result = abandon_unconfirmed(args.uid, args.org, args.call_id, args.reason, args.actor)
     print(result)
+    from services.quant_factor import research_queue
+    print(research_queue.recover_owned())
     return 0
 
 

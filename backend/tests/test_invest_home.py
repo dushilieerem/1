@@ -157,3 +157,36 @@ def test_build_topics_returns_risk_tags_and_spark(monkeypatch):
     assert out["items"][1]["riskTags"][0]["label"] == "估值分位 42%"
     assert out["items"][0]["spark"] == [11, 10]
     assert out["items"][0]["detailAvailable"] is False
+
+
+def test_industry_history_builds_close_valuation_turnover_series(monkeypatch):
+    def fake_rows(conn, sql, args=()):
+        if "md_daily_bar" not in sql:
+            return []
+        out = []
+        for i in range(80):
+            day = date.fromordinal(date(2026, 1, 1).toordinal() + i).isoformat()
+            for symbol, base in (("600036.SH", 30.0), ("601318.SH", 50.0)):
+                out.append({
+                    "date": day, "symbol": symbol,
+                    "close": base * (1 + i * 0.001),
+                    "turnover": 1.0 + i * 0.01,
+                    "amount": 1e9, "float_mv": 1e11,
+                    "pe_ttm": 10.0 + i * 0.1,
+                })
+        return out
+
+    monkeypatch.setattr(rules, "rows", fake_rows)
+    history = rules._industry_history(object(), [{"code": "600036"}, {"code": "601318"}])
+    assert len(history) == 80
+    assert history[-1]["close"] > history[0]["close"]
+    assert history[-1]["valuation"] == 17.9
+    assert abs(history[-1]["turnover"] - 1.79) < 1e-9
+    assert rules.percentile(
+        [b["valuation"] for b in history], history[-1]["valuation"]
+    ) == 100.0
+
+
+def test_industry_history_without_bars_is_empty(monkeypatch):
+    monkeypatch.setattr(rules, "rows", lambda *a, **k: [])
+    assert rules._industry_history(object(), [{"code": "600036"}]) == []

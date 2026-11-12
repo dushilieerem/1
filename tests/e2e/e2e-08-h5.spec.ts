@@ -1425,3 +1425,39 @@ test("AI 管家术语未命中：给 3 个真实候选，可反馈补充", async
   await page.getByRole("button", { name: "夏普比率" }).click();
   await expect(page).toHaveURL(/\/learn\?term=sharpe/);
 });
+
+test("行业热度深读：估值/拥挤度与历史分布有数据时正常展示", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/topic/**", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "industry:电子", name: "电子", summary: "电子行业等权活动度较高。",
+        heat: 86.4, valuationPercentile: 88, turnoverPercentile: 92,
+        updatedAt: "2026-11-12", isDemo: false, isIndustry: true, detailAvailable: true,
+        facts: [
+          { title: "行业涨跌", detail: "电子全市场个股等权平均涨跌 +1.20%。", source: "个股收盘", date: "2026-11-12" },
+          { title: "估值与拥挤度", detail: "行业 PE 中位数处于近 3 年 88% 分位，换手率处于 92% 分位。", source: "估值 + 行情", date: "2026-11-12" },
+        ],
+        keyPoints: ["行业热度 86.4，平均涨跌 +1.20%。"],
+        risks: [{ title: "行业口径", detail: "行业分类来自证券主数据。" }],
+        baseRate: {
+          medianReturn: 6.4, maxDrawdown: -9.2, winRate: 62, sample: 24,
+          period: "近 3 年 · 估值/换手 ≥ 80% 分位", note: "历史分布不是预测。",
+        },
+        stocks: [{ code: "600036", name: "招商银行", changePct: 1.2 }],
+        news: [], spark: [], disclaimer: "收盘数据 · 非实时 · 非投资建议",
+        dataSource: "全市场个股等权：行业成分股收盘数据",
+      }),
+    }),
+  );
+  await page.goto(`${H5}/topic/industry:%E7%94%B5%E5%AD%90`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("热点深读")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("你现在正在追高吗？")).toBeVisible();
+  await expect(page.getByText("估值 88% 分位", { exact: true })).toBeVisible();
+  await expect(page.getByText(/热度 86 · 估值 88% 分位 · 拥挤度 92% 分位。/)).toBeVisible();
+  await expect(page.getByText("+6.4%")).toBeVisible();
+  await expect(page.getByText("62%")).toBeVisible();
+  await expect(page.getByText("24 次")).toBeVisible();
+  await noHorizontalOverflow(page);
+});

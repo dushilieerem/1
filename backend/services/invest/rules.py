@@ -930,6 +930,73 @@ def build_stock(conn: Any, code: str, period: str = "daily") -> dict[str, Any] |
 
 
 
+def _industry_history(conn: Any, industry_stocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """行业等权指数 + 估值/换手序列，供分位与 base rate 使用。
+
+    估值取成分股 PE 中位数（仅正 PE），换手优先用日行情字段，缺失时用
+    成交额/流通市值折算；所有序列按交易日对齐。数据不足时返回空列表，
+    调用方保留“未提供”状态，不用 0 冒充。
+    """
+    codes = [str(s.get("code") or "") for s in industry_stocks if s.get("code")]
+    if not codes:
+        return []
+    symbols = [_with_suffix(c) for c in codes]
+    since = (date.today() - timedelta(days=365 * 3)).isoformat()
+    try:
+        rows_out = rows(
+            conn,
+            "SELECT d.trade_date::text AS date, d.symbol, d.close, d.turnover, d.amount, "
+            "       v.pe_ttm, v.float_mv "
+            "  FROM md_daily_bar d "
+            "  LEFT JOIN md_valuation_daily v ON v.symbol=d.symbol AND v.trade_date=d.trade_date "
+            " WHERE d.symbol = ANY(?) AND d.adjust='none' AND d.close IS NOT NULL "
+            "   AND d.trade_date >= ?::date "
+            " ORDER BY d.trade_date",
+            (symbols, since),
+        )
+    except Exception:
+        return []
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for row in rows_out:
+        by_date.setdefault(str(row.get("date")), []).append(row)
+    base_close: dict[str, float] = {}
+    for day in sorted(by_date):
+        for row in by_date[day]:
+            close = _num(row.get("close"))
+            if close and close > 0:
+                base_close.setdefault(str(row.get("symbol")), close)
+    bars: list[dict[str, Any]] = []
+    for day in sorted(by_date):
+        points = by_date[day]
+        closes = [
+            _num(r.get("close")) / base_close[str(r.get("symbol"))] * 100
+            for r in points
+            if _num(r.get("close")) and str(r.get("symbol")) in base_close
+        ]
+        if not closes:
+            continue
+        pes = [
+            _num(r.get("pe_ttm")) for r in points
+            if _num(r.get("pe_ttm")) is not None and 0 < float(_num(r.get("pe_ttm")) or 0) < 300
+        ]
+        turnovers = []
+        for r in points:
+            turnover = _num(r.get("turnover"))
+            if turnover is None:
+                amount, float_mv = _num(r.get("amount")), _num(r.get("float_mv"))
+                if amount is not None and float_mv:
+                    turnover = amount / float_mv * 100
+            if turnover is not None and turnover >= 0:
+                turnovers.append(turnover)
+        bars.append({
+            "date": day,
+            "close": sum(closes) / len(closes),
+            "valuation": median(pes) if pes else None,
+            "turnover": median(turnovers) if turnovers else None,
+        })
+    return bars
+
+
 def build_industry_topic(conn: Any, name: str) -> dict[str, Any] | None:
     """行业热度深读：用现有行情、资金流、资讯计算，不依赖主题成分映射。"""
     all_stocks = rows(conn, "SELECT * FROM stocks WHERE COALESCE(market,'CN')='CN'")
@@ -986,38 +1053,52 @@ def build_industry_topic(conn: Any, name: str) -> dict[str, Any] | None:
         "ORDER BY published_at::timestamptz DESC LIMIT 6",
         (name,),
     )
-    # 行业等权走势：用成分股归一化后逐日平均，缺失日跳过。
-    series: dict[str, list[float]] = {}
-    for code in codes[:12]:
-        bars = stock_bars(conn, code, 90)
-        base = next((float(b["close"]) for b in bars if b.get("close")), None)
-        if not base:
-            continue
-        for b in bars:
-            if b.get("close") is None:
-                continue
-            series.setdefault(str(b["date"]), []).append(float(b["close"]) / base * 100)
-    spark = [{"time": day, "value": round(sum(vals) / len(vals), 2)} for day, vals in sorted(series.items()) if vals]
+    # 行业等权走势 + 估值/换手序列；同一份序列同时用于分位、base rate 与迷你走势。
+    history = _industry_history(conn, industry_stocks)
+    spark = [{"time": b["date"], "value": round(float(b["close"]), 2)} for b in history[-60:]]
+    pe_series = [float(b["valuation"]) for b in history if b.get("valuation") is not None]
+    turnover_series = [float(b["turnover"]) for b in history if b.get("turnover") is not None]
+    covered = len(history) >= 60 and len(pe_series) >= len(history) * 0.6 and len(turnover_series) >= len(history) * 0.6
+    valuation_percentile = (
+        percentile(pe_series, pe_series[-1]) if covered and pe_series else None
+    )
+    turnover_percentile = (
+        percentile(turnover_series, turnover_series[-1]) if covered and turnover_series else None
+    )
+    base_rate = compute_base_rate(history) if covered else {"sample": 0}
+    if not covered or valuation_percentile is None or turnover_percentile is None or int(base_rate.get("sample") or 0) < 8:
+        base_rate = {
+            "medianReturn": None, "maxDrawdown": None, "winRate": None, "sample": 0,
+            "period": "行业历史估值/换手样本不足", "note": "样本不足时不计算历史分布。",
+        }
     as_of = data_date
     facts = [
         {"title": "行业涨跌", "detail": f"{name} 全市场个股等权平均涨跌 {item['change']:+.2f}%。", "source": "个股收盘", "date": as_of},
         {"title": "成交与资金", "detail": f"成交额 {item['amount']:.0f} 亿元" + (f"，主力净流入 {item['fundFlow']:+.2f} 亿元。" if item.get("fundFlow") is not None else "；主力资金未提供。"), "source": "行情 + 资金流", "date": as_of},
         {"title": "资讯热度", "detail": f"近 7 日相关资讯 {item['newsCount']} 条，热度综合分 {item['heat']:.1f}。", "source": "公开资讯", "date": as_of},
     ]
+    if valuation_percentile is not None:
+        facts.append({
+            "title": "估值与拥挤度",
+            "detail": f"行业 PE 中位数处于近 3 年 {valuation_percentile:.0f}% 分位，换手率处于 {turnover_percentile or 0:.0f}% 分位。",
+            "source": "估值 + 行情", "date": as_of,
+        })
     key_points = [
         f"行业热度 {item['heat']:.1f}，平均涨跌 {item['change']:+.2f}%。",
         f"成交额 {item['amount']:.0f} 亿元，近 7 日资讯 {item['newsCount']} 条。",
         "热度是活动度描述，不是涨跌预测。",
     ]
+    if valuation_percentile is not None:
+        key_points.append(f"估值分位 {valuation_percentile:.0f}%，换手分位 {turnover_percentile or 0:.0f}%；分位高不代表马上回落，也不代表便宜。")
     risks = [
         {"title": "行业口径", "detail": "行业分类来自证券主数据；不同分类标准下成分可能不同。"},
         {"title": "资金口径", "detail": "主力资金来自逐日汇总，未提供逐笔成交明细。"},
         {"title": "样本与时效", "detail": f"数据截至 {as_of}，行业等权平均不代表指数收益。"},
     ]
-    base_rate = {"medianReturn": None, "maxDrawdown": None, "winRate": None, "sample": 0, "period": "行业历史分布未提供", "note": "当前没有行业级 base rate。"}
     return {
         "id": f"industry:{name}", "name": name, "summary": item["summary"],
-        "heat": item["heat"], "valuationPercentile": None, "turnoverPercentile": None,
+        "heat": item["heat"], "valuationPercentile": valuation_percentile,
+        "turnoverPercentile": turnover_percentile,
         "updatedAt": as_of, "facts": facts, "keyPoints": key_points, "risks": risks,
         "baseRate": base_rate, "stocks": stock_cards, "news": news,
         "spark": spark[-60:], "disclaimer": DISCLAIMER, "isDemo": False,

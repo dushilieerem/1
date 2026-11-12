@@ -125,7 +125,7 @@ export default function Topic() {
             <b className={hasBase ? "down" : ""}>{hasBase ? fmtPct(base.maxDrawdown, 1) : "—"}</b>
           </div>
           <div className="base-cell">
-            <span>{t("跑赢概率", "Outperformance probability")}</span>
+            <span>{t("上涨概率", "Positive-return probability")}</span>
             <b>{hasBase ? `${Number(base.winRate || 0).toFixed(0)}%` : "—"}</b>
           </div>
           <div className="base-cell">

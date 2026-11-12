@@ -173,7 +173,7 @@ class AgentFailureAndReviewGuardTests(unittest.TestCase):
         topic = {'id': 't1', 'status': 'active', 'project_id': 'p1'}
         run = {'id': 'new-run', 'status': 'stopped', 'stop_reason': '研发计算异常，未产生可检验报告', 'technical_wait': None}
         conn, _ = self._conn([None, topic, run, None])
-        with patch.object(agent_v0, 'get_conn', return_value=conn), patch.object(agent_v0, '_pending_project', return_value=project), patch.object(agent_v0, '_create_baseline_project') as create:
+        with patch.object(agent_v0, 'MAX_CONSECUTIVE_FAILURES', 3), patch.object(agent_v0, 'get_conn', return_value=conn), patch.object(agent_v0, '_pending_project', return_value=project), patch.object(agent_v0, '_create_baseline_project') as create:
             result = agent_v0.tick(1, 2)
         self.assertEqual(result['state'], 'waiting_failures')
         create.assert_not_called()

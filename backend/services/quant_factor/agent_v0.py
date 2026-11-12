@@ -54,7 +54,7 @@ _AUDIT_PATH = Path(env('QUANT_AGENT_V0_AUDIT')) if env('QUANT_AGENT_V0_AUDIT') e
 _STATE_LOCK = threading.RLock()
 _TICK_LOCK = threading.Lock()
 MAX_TASKS_PER_DAY = int(env('QUANT_AGENT_V0_MAX_TASKS_PER_DAY', '20') or 20)
-MAX_CONSECUTIVE_FAILURES = int(env('QUANT_AGENT_V0_MAX_CONSECUTIVE_FAILURES', '3') or 3)
+MAX_CONSECUTIVE_FAILURES = int(env('QUANT_AGENT_V0_MAX_CONSECUTIVE_FAILURES', '0') or 0)
 _FAILURE_MARKERS = (
     '研发计算异常', 'F3 未生成', '模型调用', '研究模型', '数据执行', '执行依赖',
     '窗口', '研究提案', '诊断父版本', '超时', 'timeout', 'connection',
@@ -595,7 +595,7 @@ def tick(uid: int, org: int) -> dict:
                         streak = int(state.get('failure_streak') or 0) + 1
                         _update_state(failure_streak=streak, last_counted_run_id=last_run['id'], last_failure_at=_now())
                         state = _read_state()
-                    if int(state.get('failure_streak') or 0) >= MAX_CONSECUTIVE_FAILURES:
+                    if MAX_CONSECUTIVE_FAILURES > 0 and int(state.get('failure_streak') or 0) >= MAX_CONSECUTIVE_FAILURES:
                         reason = f'连续 {state.get("failure_streak")} 次技术失败，已暂停自动选题；请人工核对后重新开启'
                         _update_state(last_state='waiting_failures', last_error=reason, last_tick_at=_now())
                         return {'state': 'waiting_failures', 'reason': reason}

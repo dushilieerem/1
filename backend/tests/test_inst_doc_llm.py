@@ -167,7 +167,7 @@ def test_persist_replaces_low_quality_verified_row(monkeypatch):
     assert written == 1
     update_sql = calls[-1][0]
     assert "UPDATE svquant.doc_extract" in update_sql
-    assert "superseded_value_text=value_text" in update_sql
+    assert "superseded_value_text = CASE WHEN" in update_sql
 
 
 def test_persist_keeps_structured_platform_row(monkeypatch):
@@ -185,3 +185,17 @@ def test_low_quality_scope_limited_to_governance():
     assert doc_llm.is_low_quality("pledge_freeze", "x" * 300) is True
     assert doc_llm.is_low_quality("dividend_financing", "x" * 300) is False
     assert doc_llm.is_low_quality("pledge_freeze", '[{"shareholder":"A"}]') is False
+
+
+def test_doc_llm_extract_enabled_by_default(monkeypatch):
+    from services.institution.research_service import _doc_llm_extract_enabled
+
+    monkeypatch.delenv("SVQUANT_DOC_LLM_EXTRACT", raising=False)
+    assert _doc_llm_extract_enabled() is True
+
+
+def test_doc_llm_extract_can_be_disabled(monkeypatch):
+    from services.institution.research_service import _doc_llm_extract_enabled
+
+    monkeypatch.setenv("SVQUANT_DOC_LLM_EXTRACT", "0")
+    assert _doc_llm_extract_enabled() is False

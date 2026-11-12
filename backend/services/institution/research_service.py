@@ -1062,6 +1062,11 @@ def _data_completeness(
     }
 
 
+def _doc_llm_extract_enabled() -> bool:
+    """年报原文抽取默认开启；显式设 0/false/no 关闭。"""
+    return os.getenv("SVQUANT_DOC_LLM_EXTRACT", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _build_research(company: dict[str, Any], mode: str = "full", targets: list[str] | None = None) -> dict[str, Any]:
     symbol = company["symbol"]
     bar = md.latest_bar(symbol, adjust="none")
@@ -1087,14 +1092,23 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             doc_summary = doc_layer.load_doc_extracts(conn, symbol, data_as_of)
         except Exception:
             doc_summary = doc_layer.empty_doc_extracts("doc_extract 读取失败")
-    if os.getenv("SVQUANT_DOC_LLM_EXTRACT", "0").strip() in {"1", "true", "yes"}:
+    if _doc_llm_extract_enabled():
         try:
             from services.institution import doc_llm
 
             if doc_llm.enabled():
-                doc_summary = doc_layer.merge_pending(
-                    doc_summary, doc_llm.field_items(symbol, as_of=data_as_of)
-                )
+                # 已有正式证据（have/na）的章节不再读原文，控制耗时与 token
+                coverage = doc_summary.get("coverage") or {}
+                need_sections = [
+                    section
+                    for section, fields in doc_llm.SECTION_FIELDS.items()
+                    if not all(coverage.get(f) in {"have", "na"} for f in fields)
+                ]
+                if need_sections:
+                    doc_summary = doc_layer.merge_pending(
+                        doc_summary,
+                        doc_llm.field_items(symbol, as_of=data_as_of, sections=need_sections),
+                    )
         except Exception:
             # 原文抽取失败不能阻断研究生成
             pass

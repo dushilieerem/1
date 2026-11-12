@@ -292,13 +292,19 @@ def field_items(
     symbol: str,
     *,
     as_of: str | None = None,
+    sections: list[str] | None = None,
     refresh: bool = False,
     org_id: int = ORGANIZATION_ID,
     actor_member_id: int | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """按 doc_layer 的 items 结构返回字段，供 FactPack 合并（review_status=pending）。"""
     result = extract_company(
-        symbol, as_of=as_of, refresh=refresh, org_id=org_id, actor_member_id=actor_member_id
+        symbol,
+        as_of=as_of,
+        sections=sections,
+        refresh=refresh,
+        org_id=org_id,
+        actor_member_id=actor_member_id,
     )
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in result.get("facts") or []:

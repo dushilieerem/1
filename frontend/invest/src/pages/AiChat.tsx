@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronUp, ImagePlus, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Bell, ChevronDown, ChevronUp, ImagePlus, Mic, MicOff, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { api } from "../api";
 import AiCharts, { AiPriceTrend } from "../components/AiChart";
 
@@ -10,6 +10,7 @@ import { SUB_INDICATORS, aggregateBars, formatCompact, kdj, latestValue, macd, m
 import CompareView, { type ComparePayload } from "../components/CompareView";
 import { ErrorState, PageHeader, Tag } from "../components";
 import { ConditionPicker, ConditionScreener, looksLikeCondition, type ConditionResponse, type RelaxAction } from "../components/ConditionScreener";
+import ReminderCard, { ReminderListCard, ReminderPicker, type ReminderCreateResult, type ReminderParse } from "../components/ReminderCard";
 import { useLocale } from "../i18n";
 
 type Block = {
@@ -64,6 +65,13 @@ type Msg = {
   blocked?: boolean;
   steps?: Step[];
   evidence?: Array<{ title?: string; detail?: string }>;
+  glossary?: {
+    matched: boolean;
+    id?: string;
+    term?: string;
+    query?: string;
+    candidates?: Array<{ id: string; term: string; category?: string }>;
+  };
 };
 
 type Template = { id: string; label: { zh: string; en: string }; text: { zh: string; en: string } };
@@ -74,6 +82,7 @@ const TEMPLATES: Template[] = [
   { id: "compare", label: { zh: "多标的对比", en: "Compare stocks" }, text: { zh: "对比 [标的A] 和 [标的B] 的估值与财务", en: "Compare the valuation and financials of [ticker A] and [ticker B]" } },
   { id: "portfolio", label: { zh: "组合诊断", en: "Portfolio checkup" }, text: { zh: "我的组合风险主要在哪里", en: "Where is the main risk in my portfolio?" } },
   { id: "condition", label: { zh: "条件选股", en: "Screen stocks" }, text: { zh: "帮我找 [条件] 的股票", en: "Find me stocks matching [criteria]" } },
+  { id: "reminder", label: { zh: "创建提醒", en: "Create reminder" }, text: { zh: "提醒我：[标的] 跌破 [价格] 元", en: "Remind me when [ticker] falls below [price]" } },
   { id: "announcement", label: { zh: "公告解读", en: "Filing analysis" }, text: { zh: "解读公告：[标题]", en: "Explain this filing: [title]" } },
   { id: "review", label: { zh: "每日复盘", en: "Daily review" }, text: { zh: "今天复盘", en: "Review today's market" } },
   { id: "allocation", label: { zh: "配置/定投", en: "Allocation / DCA" }, text: { zh: "我计划 [期限]、风险偏好 [风险偏好]，如何理解当前配置和定投节奏", en: "My horizon is [horizon] and my risk appetite is [risk appetite]; how should I think about my allocation and DCA pace?" } },
@@ -89,6 +98,16 @@ const QUICK: Array<{ zh: string; en: string }> = [
   { zh: "宁德时代和比亚迪对比", en: "CATL vs BYD comparison" },
   { zh: "我计划 3 年以上、稳健型，每月定投多少合适", en: "I have a 3+ year horizon and a conservative profile; how much should I invest monthly?" },
 ];
+
+export function looksLikeReminder(text: string): boolean {
+  const q = (text || "").trim();
+  if (!q) return false;
+  // 选股句里的“跌破/PE 分位”是筛选条件，不是提醒。
+  if (/(选股|筛选|帮我找|的股票|找.*股票)/.test(q) && !/(提醒我|叫我|通知我|盯着|说一声)/.test(q)) return false;
+  if (/(帮我买|帮我卖|代我下单|帮我加仓|帮我减仓)/.test(q)) return true;
+  if (/(提醒我|提醒一下|叫我|通知我|盯着|盯一下|说一声)/.test(q)) return true;
+  return /(跌破|涨破|跌停|涨停)/.test(q);
+}
 
 function loadOrder(): string[] {
   try {
@@ -390,6 +409,15 @@ export default function AiChat() {
   const [condition, setCondition] = useState<ConditionResponse | null>(null);
   const [conditionBusy, setConditionBusy] = useState(false);
   const [addedCodes, setAddedCodes] = useState<Set<string>>(new Set());
+  const [reminderPickerOpen, setReminderPickerOpen] = useState(false);
+  const [reminderMode, setReminderMode] = useState(false);
+  const [reminderQuery, setReminderQuery] = useState("");
+  const [reminder, setReminder] = useState<ReminderParse | null>(null);
+  const [reminderResult, setReminderResult] = useState<ReminderCreateResult | null>(null);
+  const [reminderBusy, setReminderBusy] = useState(false);
+  const [reminderAdded, setReminderAdded] = useState<Set<string>>(new Set());
+  const [reminderList, setReminderList] = useState<any[] | null>(null);
+  const [glossarySent, setGlossarySent] = useState<Set<string>>(new Set());
   const [visionPreview, setVisionPreview] = useState<string | null>(null);
   const [visionMime, setVisionMime] = useState("image/jpeg");
   const [visionBusy, setVisionBusy] = useState(false);
@@ -513,6 +541,86 @@ export default function AiChat() {
     return { added: Number(res?.added || 0) };
   };
 
+  const runReminder = async (query: string, currentStock?: { code: string; name?: string } | null) => {
+    setError(null);
+    try {
+      const data = await api<ReminderParse>("/api/invest/reminders/parse", {
+        method: "POST",
+        body: JSON.stringify({ query, current_stock: currentStock || memory.lastStock || null }),
+      });
+      setReminder(data);
+      setReminderResult(null);
+      setReminderQuery(query);
+      const first = data.reminders?.[0];
+      if (first?.symbol) {
+        const next = { lastStock: { code: first.symbol, name: first.name } };
+        setMemory(next);
+        saveMemory(next);
+      }
+      return data;
+    } catch (e: any) {
+      setError(e?.message || t("提醒解析失败", "Could not parse the reminder"));
+      return null;
+    }
+  };
+
+  const loadReminderList = async () => {
+    setError(null);
+    setReminder(null);
+    setReminderResult(null);
+    try {
+      const data = await api<{ items?: any[] }>("/api/invest/reminders");
+      setReminderList(data.items || []);
+    } catch (e: any) {
+      setError(e?.message || t("读取提醒失败", "Could not load reminders"));
+    }
+  };
+
+  const confirmReminder = async () => {
+    if (!reminder?.reminders?.length || reminderBusy) return;
+    setReminderBusy(true);
+    setError(null);
+    try {
+      const data = await api<ReminderCreateResult>("/api/invest/reminders", {
+        method: "POST",
+        body: JSON.stringify({ reminders: reminder.reminders, source: "ai" }),
+      });
+      setReminderResult(data);
+    } catch (e: any) {
+      setError(e?.message || t("创建提醒失败", "Failed to create the reminder"));
+    } finally {
+      setReminderBusy(false);
+    }
+  };
+
+  const addReminderWatch = async (code: string) => {
+    try {
+      await api("/api/invest/watchlist", { method: "POST", body: JSON.stringify({ code }) });
+      setReminderAdded((prev) => new Set(prev).add(code));
+    } catch (e: any) {
+      setError(e?.message || t("加入自选失败", "Failed to add to watchlist"));
+    }
+  };
+
+  const sendGlossaryFeedback = async (query: string) => {
+    try {
+      await api("/api/invest/glossary/feedback", { method: "POST", body: JSON.stringify({ query }) });
+      setGlossarySent((prev) => new Set(prev).add(query));
+    } catch (e: any) {
+      setError(e?.message || t("反馈提交失败", "Could not send feedback"));
+    }
+  };
+
+  const chooseReminderPreset = (text: string) => {
+    setInput(text);
+    setReminderPickerOpen(false);
+    setPanel(false);
+    setReminderMode(true);
+    setReminder(null);
+    setReminderResult(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   const templates = useMemo(() => order.map((id) => TEMPLATES.find((x) => x.id === id)).filter(Boolean) as Template[], [order]);
 
   const persistOrder = (next: string[]) => {
@@ -613,11 +721,37 @@ export default function AiChat() {
     if (/(它|这只|那只|这个票|那个票)/.test(q) && memory.lastStock && !q.includes(memory.lastStock.code)) {
       q = `上一标的：${memory.lastStock.name || ""}(${memory.lastStock.code})。问题：${q}`;
     }
-    const conditionTurn = conditionMode || looksLikeCondition(q);
+    const reminderListTurn = /(我的提醒|查看提醒|有哪些提醒|提醒列表)/.test(q) && !/提醒我/.test(q);
+    const reminderTurn = !reminderListTurn && (reminderMode || looksLikeReminder(q));
+    const conditionTurn = !reminderTurn && !reminderListTurn && (conditionMode || looksLikeCondition(q));
     setInput("");
     setError(null);
     setConditionMode(false);
+    setReminderMode(false);
     setMessages((prev) => [...prev, { role: "user", text: q }]);
+    if (reminderListTurn) {
+      setCondition(null);
+      setReminderBusy(true);
+      try {
+        await loadReminderList();
+      } finally {
+        setReminderBusy(false);
+      }
+      return;
+    }
+    setReminderList(null);
+    if (reminderTurn) {
+      setCondition(null);
+      setReminderBusy(true);
+      try {
+        await runReminder(q);
+      } finally {
+        setReminderBusy(false);
+      }
+      return;
+    }
+    setReminder(null);
+    setReminderResult(null);
     if (conditionTurn) {
       setConditionBusy(true);
       try {
@@ -649,6 +783,7 @@ export default function AiChat() {
           blocked: data.blocked,
           steps: data.steps,
           evidence: data.evidence,
+          glossary: data.glossary,
         },
       ]);
       if (data.chart?.code || data.debate?.code || data.compare?.items?.length) {
@@ -843,6 +978,33 @@ export default function AiChat() {
                     <ul>{m.evidence.slice(0, 4).map((ev, k) => <li key={k}>{ev.title}{t("：", ": ")}{ev.detail}</li>)}</ul>
                   </div>
                 ) : null}
+                {m.glossary && !m.glossary.matched ? (
+                  <div className="glossary-fallback">
+                    {m.glossary.candidates?.length ? (
+                      <div className="term-suggest-list">
+                        {m.glossary.candidates.map((item) => (
+                          <button key={item.id} type="button" className="chip" onClick={() => nav(`/learn?term=${encodeURIComponent(item.id)}`)}>
+                            {item.term}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="link-btn"
+                      disabled={glossarySent.has(m.text || m.glossary.query || "")}
+                      onClick={() => void sendGlossaryFeedback(m.text || m.glossary?.query || "")}
+                    >
+                      {glossarySent.has(m.text || m.glossary.query || "")
+                        ? t("已反馈", "Feedback sent")
+                        : t("反馈补充", "Send feedback")}
+                    </button>
+                  </div>
+                ) : m.glossary?.matched && m.glossary.id ? (
+                  <button type="button" className="link-btn glossary-more" onClick={() => nav(`/learn?term=${encodeURIComponent(m.glossary?.id || "")}`)}>
+                    {t("查看完整词条", "Open the full entry")}
+                  </button>
+                ) : null}
                 {!m.debate && !m.compare && m.card?.disclaimer ? <p className="hint">{m.card.disclaimer}</p> : null}
               </>
             ) : null}
@@ -861,6 +1023,26 @@ export default function AiChat() {
             onOpenStock={(code) => nav(`/stock/${code}`)}
           />
         ) : null}
+        {reminderList ? (
+          <ReminderListCard items={reminderList} onOpenWatch={() => nav("/watch")} />
+        ) : null}
+        {reminder ? (
+          <ReminderCard
+            data={reminder}
+            result={reminderResult}
+            busy={reminderBusy}
+            addedWatch={reminderAdded}
+            onConfirm={() => void confirmReminder()}
+            onSuggestion={(text) => void runReminder(`${reminderQuery} ${text}`)}
+            onEdit={() => {
+              setInput(reminderQuery);
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            onOpenWatch={(id) => nav(`/watch${id != null ? `?highlight=${id}` : ""}`)}
+            onAddWatch={(code) => void addReminderWatch(code)}
+          />
+        ) : null}
+        {reminderBusy && !reminder ? <div className="ai-msg ai"><p className="hint">{t("正在解析提醒条件…", "Parsing the reminder…")}</p></div> : null}
         {conditionBusy ? <div className="ai-msg ai"><p className="hint">{t("正在解析条件并筛选…", "Parsing conditions and screening…")}</p></div> : null}
         {busy ? <div className="ai-msg ai"><p className="hint">{deep ? t("深度模式：取数 → 分析 → 护栏 → 汇总…", "Deep mode: fetch data → analyze → guardrails → summarize…") : t("正在基于收盘数据生成…", "Generating from closing data…")}</p></div> : null}
       </div>
@@ -871,13 +1053,20 @@ export default function AiChat() {
         <button
           className={`chip condition-trigger ${pickerOpen ? "on" : ""}`}
           aria-label={t("打开条件选股", "Open stock screener")}
-          onClick={() => { setPickerOpen((v) => !v); setPanel(false); }}
+          onClick={() => { setPickerOpen((v) => !v); setPanel(false); setReminderPickerOpen(false); }}
         >
           <SlidersHorizontal size={12} /> {t("条件选股", "Screen")}
         </button>
+        <button
+          className={`chip condition-trigger ${reminderPickerOpen ? "on" : ""}`}
+          aria-label={t("创建提醒", "Create reminder")}
+          onClick={() => { setReminderPickerOpen((v) => !v); setPickerOpen(false); setPanel(false); }}
+        >
+          <Bell size={12} /> {t("创建提醒", "Remind")}
+        </button>
         <div className="ai-template-scroll">
           {templates.slice(0, 4).map((tpl) => (
-            <button key={tpl.id} className="chip" onClick={() => (tpl.id === "condition" ? setPickerOpen(true) : fill(t(tpl.text.zh, tpl.text.en)))}>{t(tpl.label.zh, tpl.label.en)}</button>
+            <button key={tpl.id} className="chip" onClick={() => (tpl.id === "condition" ? setPickerOpen(true) : tpl.id === "reminder" ? setReminderPickerOpen(true) : fill(t(tpl.text.zh, tpl.text.en)))}>{t(tpl.label.zh, tpl.label.en)}</button>
           ))}
         </div>
         <button className="chip chip-more" onClick={() => setPanel((v) => !v)}>
@@ -889,7 +1078,7 @@ export default function AiChat() {
           <div className="card-title-row"><h2>{t("快捷功能", "Quick actions")}</h2><span className="hint">{t("顺序会保存到本机", "Order is saved on this device")}</span></div>
           {templates.map((tpl, i) => (
             <div key={tpl.id} className="template-row">
-              <button className="template-fill" onClick={() => (tpl.id === "condition" ? (setPickerOpen(true), setPanel(false)) : fill(t(tpl.text.zh, tpl.text.en)))}>{t(tpl.label.zh, tpl.label.en)}</button>
+              <button className="template-fill" onClick={() => (tpl.id === "condition" ? (setPickerOpen(true), setPanel(false)) : tpl.id === "reminder" ? (setReminderPickerOpen(true), setPanel(false)) : fill(t(tpl.text.zh, tpl.text.en)))}>{t(tpl.label.zh, tpl.label.en)}</button>
               <div className="template-actions">
                 <button aria-label={t("上移", "Move up")} disabled={i === 0} onClick={() => move(i, -1)}><ChevronUp size={14} /></button>
                 <button aria-label={t("下移", "Move down")} disabled={i === templates.length - 1} onClick={() => move(i, 1)}><ChevronDown size={14} /></button>
@@ -900,6 +1089,7 @@ export default function AiChat() {
       ) : null}
 
       {pickerOpen ? <ConditionPicker onSelect={choosePreset} onClose={() => setPickerOpen(false)} /> : null}
+      {reminderPickerOpen ? <ReminderPicker onSelect={chooseReminderPreset} onClose={() => setReminderPickerOpen(false)} /> : null}
 
       <div className="ai-composer">
         <input

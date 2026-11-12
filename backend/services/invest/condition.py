@@ -525,6 +525,76 @@ def _load_fund_flow(conn: Any, codes: list[str]) -> dict[str, dict[str, float | 
     return out
 
 
+def _result_insights(
+    matched: list[dict[str, Any]],
+    conditions: list[dict[str, Any]],
+    industry_distribution: list[dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+    """按规范生成 3–4 条共同特征和 1–3 条针对性风险。"""
+    count = len(matched)
+    caps = [x["market_cap"] for x in matched if x.get("market_cap") is not None]
+    features: list[str] = []
+    risks: list[str] = []
+    cap_med = median(caps) if caps else None
+    cap_min, cap_max = (min(caps), max(caps)) if caps else (None, None)
+    small_pct = (sum(1 for x in caps if x < 100) / len(caps) * 100) if caps else None
+    top = industry_distribution[0] if industry_distribution else None
+    top2 = sum(x["pct"] for x in industry_distribution[:2]) if industry_distribution else None
+    keys = {str(c.get("key")) for c in conditions}
+    ops = {str(c.get("key")): str(c.get("op")) for c in conditions}
+    if caps:
+        features.append(f"总市值中位数 {cap_med:.0f} 亿，区间 {cap_min:.0f}–{cap_max:.0f} 亿，100 亿以下占 {small_pct:.0f}%。")
+    returns = [x.get("return_20d") for x in matched if x.get("return_20d") is not None]
+    pe_pcts = [x.get("pe_percentile") for x in matched if x.get("pe_percentile") is not None]
+    roes = [x.get("roe") for x in matched if x.get("roe") is not None]
+    flows = [x.get("main_net_inflow_5d") for x in matched if x.get("main_net_inflow_5d") is not None]
+    if returns:
+        best = max((x for x in matched if x.get("return_20d") is not None), key=lambda x: x["return_20d"])
+        features.append(f"近 20 日涨幅 {min(returns):.1f}%–{max(returns):.1f}%，{best.get('name')} 最高 {best['return_20d']:.1f}%。")
+    elif pe_pcts:
+        low = sum(1 for x in pe_pcts if x < 30) / len(pe_pcts) * 100
+        features.append(f"PE 分位中位数 {median(pe_pcts):.0f}%，{low:.0f}% 低于 30% 分位。")
+    elif flows:
+        pos = sum(1 for x in flows if x > 0) / len(flows) * 100
+        features.append(f"5 日主力净流入中位数 {median(flows):.0f} 万，{pos:.0f}% 为正流入。")
+    elif roes:
+        high = sum(1 for x in roes if x > 15) / len(roes) * 100
+        features.append(f"ROE 中位数 {median(roes):.1f}%，{high:.0f}% 高于 15%。")
+    if top:
+        if top["pct"] >= 30:
+            features.append(f"行业集中在{top['name']}（{top['count']} 只，占 {top['pct']:.0f}%），前两行业合计 {top2:.0f}%。")
+            risks.append(f"{top['name']}占 {top['pct']:.0f}%，行业集中，单一行业回调会整体拖累。")
+        elif cap_min and cap_max and cap_min > 0 and cap_max / cap_min >= 5:
+            features.append(f"总市值极差 {cap_max / cap_min:.0f} 倍，规模分化较大。")
+        else:
+            features.append(f"首行业{top['name']}占 {top['pct']:.0f}%，行业分布较分散。")
+    # 极值个股：有数据才出
+    extremes = []
+    if returns:
+        best = max((x for x in matched if x.get("return_20d") is not None), key=lambda x: x["return_20d"])
+        extremes.append(f"涨幅最高 {best.get('name')} {best['return_20d']:+.1f}%")
+    if caps:
+        big = max((x for x in matched if x.get("market_cap") is not None), key=lambda x: x["market_cap"])
+        extremes.append(f"市值最大 {big.get('name')} {big['market_cap']:.0f} 亿")
+    if flows:
+        inflow = max((x for x in matched if x.get("main_net_inflow_5d") is not None), key=lambda x: x["main_net_inflow_5d"])
+        extremes.append(f"资金流入最多 {inflow.get('name')} {inflow['main_net_inflow_5d']:.0f} 万")
+    if extremes:
+        features.append("；".join(extremes))
+    # 风险：条件直接导致优先
+    if "return_20d" in keys and ops.get("return_20d") == "min":
+        risks.append("短期涨幅较大的个股存在回调风险，涨幅本身不是买入理由。")
+    if ("pe_percentile" in keys and ops.get("pe_percentile") == "max") or ("pe" in keys and ops.get("pe") == "max"):
+        risks.append("便宜可能是盈利下修的结果，低估值不等于安全边际。")
+    if small_pct is not None and small_pct >= 50:
+        risks.append(f"结果中 {small_pct:.0f}% 为 100 亿以下小盘股，极端行情下流动性可能不足。")
+    if count <= 10:
+        risks.append("结果样本不足 10 只，统计意义有限，建议放宽条件。")
+    if not risks:
+        risks.append("筛选基于历史收盘数据，不含实时行情与盘中资金流。")
+    return features[:4], risks[:3]
+
+
 def screen_conditions(conn: Any, conditions: list[dict[str, Any]], *, limit: int = 200) -> dict[str, Any]:
     data_date = rules.latest_date(conn)
     base = _base_candidates(conn)
@@ -629,21 +699,7 @@ def screen_conditions(conn: Any, conditions: list[dict[str, Any]], *, limit: int
         {"name": k, "count": v, "pct": round(v / len(matched) * 100, 1)}
         for k, v in sorted(industries.items(), key=lambda kv: kv[1], reverse=True)
     ]
-    caps = [item["market_cap"] for item in matched if item.get("market_cap") is not None]
-    pe_pcts = [item["pe_percentile"] for item in matched if item.get("pe_percentile") is not None]
-    roes = [item["roe"] for item in matched if item.get("roe") is not None]
-    summary = [f"共筛出 {len(matched)} 只，按条件逐项过滤。"]
-    if caps:
-        extra = []
-        if pe_pcts:
-            extra.append(f"PE 分位中位数 {median(pe_pcts):.0f}%")
-        if roes:
-            extra.append(f"ROE 中位数 {median(roes):.1f}%")
-        suffix = f"；{'，'.join(extra)}" if extra else ""
-        summary.append(f"总市值中位数 {median(caps):.0f} 亿，区间 {min(caps):.0f}–{max(caps):.0f} 亿{suffix}。")
-    if industry_distribution:
-        top = industry_distribution[0]
-        summary.append(f"行业集中在{top['name']}（{top['count']} 只，占 {top['pct']:.0f}%）。")
+    features, risks = _result_insights(matched, conditions, industry_distribution)
     items = [
         {
             **item,
@@ -655,7 +711,8 @@ def screen_conditions(conn: Any, conditions: list[dict[str, Any]], *, limit: int
     ]
     return {
         "ok": True, "status": "ok", "count": len(matched), "conditions": conditions,
-        "items": items, "summary": summary,
+        "items": items, "summary": features, "features": features, "risks": risks,
+        "data_date": data_date,
         "risk": "筛选基于历史 EOD 数据，不含实时与资金流；结果非投资建议。",
         "industry_distribution": industry_distribution,
         "followups": ["这批股票属于哪些行业", "按 ROE 从高到低看", "把条件放宽一点"],

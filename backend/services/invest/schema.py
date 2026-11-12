@@ -64,7 +64,9 @@ DDL: tuple[str, ...] = (
       code TEXT NOT NULL, type TEXT NOT NULL DEFAULT '价格',
       condition TEXT NOT NULL DEFAULT '收盘后检查',
       status TEXT NOT NULL DEFAULT 'active',
-      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
+      condition_op TEXT, threshold DOUBLE PRECISION, unit TEXT,
+      note TEXT, end_date TEXT, source TEXT NOT NULL DEFAULT 'manual', updated_at TEXT
     )
     """,
     """
@@ -73,7 +75,16 @@ DDL: tuple[str, ...] = (
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       code TEXT NOT NULL, title TEXT, detail TEXT,
       triggered_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS'),
-      read BOOLEAN NOT NULL DEFAULT FALSE
+      read BOOLEAN NOT NULL DEFAULT FALSE,
+      source TEXT NOT NULL DEFAULT 'scan'
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS invest_glossary_feedback (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      query TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD HH24:MI:SS')
     )
     """,
     """
@@ -282,8 +293,9 @@ VIEWS: tuple[str, ...] = (
     "CREATE VIEW topic_bars AS SELECT * FROM invest_topic_bars",
     "CREATE VIEW topic_stocks AS SELECT * FROM invest_topic_stocks",
     "CREATE VIEW watchlist AS SELECT user_id, code, group_name, created_at FROM invest_watchlist",
-    "CREATE VIEW events AS SELECT id, user_id, code, type, condition, status, created_at FROM invest_event",
-    "CREATE VIEW event_logs AS SELECT id, user_id, code, title, detail, triggered_at, read FROM invest_event_log",
+    "CREATE VIEW events AS SELECT id, user_id, code, type, condition, status, created_at, "
+    "condition_op, threshold, unit, note, end_date, source, updated_at FROM invest_event",
+    "CREATE VIEW event_logs AS SELECT id, user_id, code, title, detail, triggered_at, read, source FROM invest_event_log",
     "CREATE VIEW portfolio AS SELECT user_id, code, shares, cost, weight, target_weight, industry FROM invest_portfolio",
     "CREATE VIEW portfolio_meta AS SELECT user_id, trade_cost_pct, annual_turnover, impact_cost_pct, updated_at FROM invest_portfolio_meta",
     "CREATE VIEW risk_profiles AS SELECT user_id, level, score, answers::text AS answers, updated_at FROM invest_risk_profile",
@@ -407,6 +419,14 @@ def ensure_invest_schema() -> None:
         conn.execute("ALTER TABLE invest_quant_draft ALTER COLUMN last_backtest_id TYPE TEXT USING last_backtest_id::text")
         conn.execute("ALTER TABLE invest_quant_strategy ADD COLUMN IF NOT EXISTS project_id TEXT")
         conn.execute("ALTER TABLE invest_quant_strategy ALTER COLUMN backtest_id TYPE TEXT USING backtest_id::text")
+        conn.execute("ALTER TABLE invest_event ADD COLUMN IF NOT EXISTS condition_op TEXT")
+        conn.execute("ALTER TABLE invest_event ADD COLUMN IF NOT EXISTS threshold DOUBLE PRECISION")
+        conn.execute("ALTER TABLE invest_event ADD COLUMN IF NOT EXISTS unit TEXT")
+        conn.execute("ALTER TABLE invest_event ADD COLUMN IF NOT EXISTS note TEXT")
+        conn.execute("ALTER TABLE invest_event ADD COLUMN IF NOT EXISTS end_date TEXT")
+        conn.execute("ALTER TABLE invest_event ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual'")
+        conn.execute("ALTER TABLE invest_event ADD COLUMN IF NOT EXISTS updated_at TEXT")
+        conn.execute("ALTER TABLE invest_event_log ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scan'")
         for ddl in VIEWS:
             conn.execute(ddl)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invest_stocks_market ON invest_stocks (market)")

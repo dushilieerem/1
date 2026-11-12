@@ -780,7 +780,14 @@ test("AI 管家选股：面板填句 → 条件卡 → 结果卡与行业分布"
           { code: "600519", name: "贵州茅台", industry: "食品饮料", price: 1439.1, change_pct: 1.2, roe: 30.1 },
           { code: "000001", name: "平安银行", industry: "银行", price: 11.2, change_pct: -0.4, roe: 11.5 },
         ],
-        summary: ["共筛出 2 只，按条件逐项过滤。", "总市值中位数 461 亿。"],
+        summary: ["总市值中位数 461 亿，区间 100–800 亿，100 亿以下占 50%。"],
+        features: [
+          "总市值中位数 461 亿，区间 100–800 亿，100 亿以下占 50%。",
+          "PE 分位中位数 20%，100% 低于 30% 分位。",
+          "行业分布较分散，首行业占 50%。",
+        ],
+        risks: ["结果中 50% 为 100 亿以下小盘股，极端行情下流动性可能不足。", "结果样本不足 10 只，统计意义有限。"],
+        data_date: "2026-11-04",
         risk: "筛选基于历史 EOD 数据，不含实时与资金流；结果非投资建议。",
         industry_distribution: [
           { name: "食品饮料", count: 1, pct: 50 },
@@ -801,6 +808,11 @@ test("AI 管家选股：面板填句 → 条件卡 → 结果卡与行业分布"
   await expect(page.getByText("按你设定的 3 个条件，共筛出 2 只。")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".condition-tag")).toHaveCount(3);
   await expect(page.getByText("贵州茅台")).toBeVisible();
+  await expect(page.getByText("从这批股票看，有几个共同点：")).toBeVisible();
+  await expect(page.locator(".condition-insights li")).toHaveCount(3);
+  await expect(page.getByText("⚠️ 注意：")).toBeVisible();
+  await expect(page.locator(".condition-alert li")).toHaveCount(2);
+  await expect(page.locator(".condition-source")).toContainText("截至 2026-11-04 收盘");
   await page.getByRole("button", { name: /这批股票属于哪些行业/ }).click();
   await expect(page.getByText("行业分布 · 申万一级")).toBeVisible();
   await noHorizontalOverflow(page);
@@ -1066,12 +1078,48 @@ test("无美股数据时英文模式给出明确空态", async ({ page }) => {
   await noHorizontalOverflow(page);
 });
 
-test("学习中心术语详情有人话正文、例子与常见误用", async ({ page }) => {
+test("学习中心术语详情：首屏四块 + 展开更多", async ({ page }) => {
   await loginByToken(page);
+  await page.route("**/api/invest/glossary", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [{
+          id: "pe_ttm", term: "市盈率", term_en: "P/E (TTM)", category: "估值",
+          definition: "股价相对过去 12 个月每股收益的倍数。",
+          how_to: "和自身历史分位、同行业公司对比。",
+          range: "没有统一合理区间；消费/稳定行业常见 15–30 倍。",
+          example: "PE 20 倍表示约 20 年回本（不计增长与分红）。",
+          plain: "PE 是股价相当于过去一年每股收益的多少倍。",
+          misuse: "把低 PE 直接当成便宜。",
+          formula: "PE(TTM) = 总市值 ÷ 过去 12 个月归母净利润",
+          formula_vars: "TTM 为滚动 12 个月；亏损时不可用。",
+          calc_example: "市值 200 亿、TTM 净利 10 亿 → PE = 20 倍",
+          misreads: [
+            { myth: "低 PE 就是便宜", why: "周期行业盈利顶点时 PE 反而很低。" },
+            { myth: "亏损公司的 PE 是 0", why: "亏损时 PE 为负或不可计算。" },
+          ],
+          compare: [
+            { term: "市盈率", denominator: "净利润", when: "盈利稳定" },
+            { term: "市净率", denominator: "净资产", when: "重资产行业" },
+          ],
+          where: "个股透视 · 估值",
+        }],
+        categories: ["指标", "估值", "财务", "风险", "交易"],
+      }),
+    }),
+  );
   await page.goto(`${H5}/learn?term=pe_ttm`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("一句话理解")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("例子", { exact: true })).toBeVisible();
-  await expect(page.getByText("常见误用")).toBeVisible();
+  await expect(page.getByText("参考区间")).toBeVisible();
+  await page.getByRole("button", { name: "展开更多" }).click();
+  await expect(page.getByText("怎么算")).toBeVisible();
+  await expect(page.getByText(/PE\(TTM\) = 总市值/)).toBeVisible();
+  await expect(page.getByText("常见误读")).toBeVisible();
+  await expect(page.getByText("相近概念")).toBeVisible();
+  await expect(page.getByText("在哪看")).toBeVisible();
+  await expect(page.locator(".term-compare")).toBeVisible();
   await noHorizontalOverflow(page);
 });
 
@@ -1126,4 +1174,254 @@ test("轻量因子选股页渲染规则打分", async ({ page }) => {
   await expect(page.getByText("中国建筑")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("低估值 90")).toBeVisible({ timeout: 20_000 });
   await noHorizontalOverflow(page);
+});
+
+const REMINDER_PARSE_READY = {
+  ok: true,
+  status: "ready",
+  reminders: [{
+    symbol: "300750", name: "宁德时代", type: "price", type_label: "价格提醒",
+    condition: "below", threshold: 220, unit: "元",
+    note: "跌破 220 元时提醒", end_date: null, term: "长期有效",
+  }],
+  missing: [],
+  confirm_text: "帮你盯着 宁德时代（300750）\n跌破 220 元时提醒 · 长期有效",
+  notice: "价格提醒按收盘价判断，盘中不推送。",
+  compliance: null,
+  warnings: [],
+  type_availability: {},
+};
+
+test("AI 管家创建提醒：回显确认 → 创建成功 → 查看提醒", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/reminders/parse", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(REMINDER_PARSE_READY) }),
+  );
+  await page.route("**/api/invest/reminders", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        created: [{ id: 101, symbol: "300750", name: "宁德时代", note: "跌破 220 元时提醒", term: "长期有效" }],
+        skipped: [], errors: [], count: 4, watchlist_count: 4,
+      }),
+    });
+  });
+  await page.route("**/api/invest/watchlist*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ groups: [], events: [], reminder_count: 4, logs: [], market: "CN", available: true }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "创建提醒" }).click();
+  await expect(page.getByRole("button", { name: /宁德时代跌破 220 元提醒我/ })).toBeVisible();
+  await page.getByRole("button", { name: /宁德时代跌破 220 元提醒我/ }).click();
+  const input = page.locator(".ai-composer textarea");
+  await expect(input).toHaveValue("宁德时代跌破 220 元提醒我");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("帮你盯着 宁德时代（300750）")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("跌破 220 元时提醒 · 长期有效")).toBeVisible();
+  await expect(page.getByText("价格提醒按收盘价判断，盘中不推送。")).toBeVisible();
+  await page.getByRole("button", { name: "确认创建" }).click();
+  await expect(page.getByText("已创建")).toBeVisible();
+  await expect(page.getByText(/已同步到「自选与提醒」— 共 4 条提醒/)).toBeVisible();
+  await expect(page.getByText("跌破 220 元时提醒 · 长期有效")).toBeVisible();
+  await page.getByRole("button", { name: /查看提醒/ }).click();
+  await expect(page).toHaveURL(/\/watch\?highlight=101/);
+  await noHorizontalOverflow(page);
+});
+
+test("AI 管家创建提醒：缺阈值先追问，点选项后回显", async ({ page }) => {
+  await loginByToken(page);
+  let calls = 0;
+  await page.route("**/api/invest/reminders/parse", (route) => {
+    calls += 1;
+    const body = route.request().postDataJSON();
+    const query = String(body.query || "");
+    const ready = query.includes("220");
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(ready ? REMINDER_PARSE_READY : {
+        ok: true,
+        status: "needs_input",
+        reminders: [{
+          symbol: "300750", name: "宁德时代", type: "price", type_label: "价格提醒",
+          condition: "below", threshold: null, unit: "元", note: "跌破 0 元时提醒", term: "长期有效",
+        }],
+        missing: ["threshold"],
+        suggestions: [
+          { label: "跌破 220 元", text: "跌破 220 元", index: 0 },
+          { label: "跌 5%", text: "跌 5%", index: 0 },
+        ],
+        question: "想提醒你的时候更准，补一个数：宁德时代跌到多少提醒？",
+        notice: "价格提醒按收盘价判断，盘中不推送。",
+        warnings: [],
+      }),
+    });
+  });
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.locator(".ai-composer textarea").fill("宁德时代跌多了提醒我");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("想提醒你的时候更准")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "跌破 220 元" })).toBeVisible();
+  await page.getByRole("button", { name: "跌破 220 元" }).click();
+  await expect(page.getByText("帮你盯着 宁德时代（300750）")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "确认创建" })).toBeVisible();
+  expect(calls).toBeGreaterThanOrEqual(2);
+});
+
+test("自选与提醒：条目含类型/当前值/距触发，可暂停与修改", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/watchlist*", (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        groups: [{ name: "默认", items: [{ code: "300750", name: "宁德时代", industry: "电池", price: 246.66, changePct: -2.1 }] }],
+        events: [{
+          id: 101, code: "300750", name: "宁德时代", type: "price", type_label: "价格提醒",
+          condition: "below", threshold: 220, unit: "元", note: "跌破 220 元时提醒",
+          term: "长期有效", status: "active", status_label: "生效中",
+          source: "ai", source_label: "AI 创建",
+          detail: "跌破 220 元 · 现价 246.66 元 · 距触发 +12.1% · 今日 -2.1%",
+          watchlisted: true, created_at: "2026-11-12 10:00:00",
+        }],
+        reminder_count: 1,
+        logs: [{
+          id: 1, title: "价格提醒 宁德时代 跌破 250 元",
+          detail: "现价 246.66 元。已跌破你设置的价格，可查看当日资金与公告。",
+          triggered_at: "2026-11-12 15:00:00", read: false, source: "ai", source_label: "AI 创建",
+        }],
+        market: "CN", available: true, disclaimer: "提醒在收盘后检查；不提供盘中实时推送。",
+      }),
+    });
+  });
+  await page.route("**/api/invest/reminders/101/toggle", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, status: "paused", status_label: "已暂停" }) }),
+  );
+  await page.goto(`${H5}/watch?highlight=101`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("1 只 · 1 条提醒")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("宁德时代 · 价格提醒")).toBeVisible();
+  await expect(page.getByText(/现价 246.66 元 · 距触发 \+12.1%/)).toBeVisible();
+  await expect(page.locator(".reminder-highlight")).toHaveCount(1);
+  await expect(page.getByText("AI 创建").first()).toBeVisible();
+  await expect(page.getByText("收盘后检查 · 不提供盘中实时推送 · 1 条")).toBeVisible();
+  await page.getByRole("button", { name: "暂停 宁德时代 的提醒" }).click();
+  await expect(page.getByText("已暂停该提醒")).toBeVisible({ timeout: 20_000 });
+  await page.getByText("宁德时代 · 价格提醒").click();
+  await expect(page.getByText("修改提醒")).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存修改" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "删除" })).toBeVisible();
+  await noHorizontalOverflow(page);
+});
+
+test("AI 管家查询我的提醒：状态与条件来自自选页同一份数据", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/reminders", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        count: 2,
+        active: 1,
+        items: [
+          { id: 101, code: "300750", name: "宁德时代", type_label: "价格提醒", detail: "跌破 220 元 · 现价 246.66 元 · 距触发 +12.1%", status_label: "生效中", note: "跌破 220 元时提醒" },
+          { id: 102, code: "600519", name: "贵州茅台", type_label: "估值提醒", detail: "PE 分位 ≤20% · 当前 6%", status_label: "已暂停", note: "PE 分位 ≤20% 时提醒" },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/invest/watchlist*", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ groups: [], events: [], reminder_count: 2, logs: [], market: "CN", available: true }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.locator(".ai-composer textarea").fill("我的提醒");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.locator(".reminder-card .reminder-head b")).toHaveText("我的提醒", { timeout: 20_000 });
+  await expect(page.getByText("宁德时代 · 价格提醒")).toBeVisible();
+  await expect(page.getByText(/现价 246.66 元 · 距触发 \+12.1%/)).toBeVisible();
+  await expect(page.getByText("贵州茅台 · 估值提醒")).toBeVisible();
+  await expect(page.getByText(/已暂停/)).toBeVisible();
+  await page.getByRole("button", { name: /去管理/ }).click();
+  await expect(page).toHaveURL(/\/watch$/);
+});
+
+test("AI 管家术语解释：简称命中词库并直达完整词条", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/chat", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        intent: "glossary",
+        card: {
+          summary: "超额收益 ÷ 收益波动，衡量单位风险获得的回报。",
+          sections: [
+            { title: "怎么看", body: "看统计区间、无风险利率与样本长度；高夏普可能来自低波动或短样本。" },
+            { title: "参考区间", body: ">1 通常较好；>2 需核查是否过拟合或样本太短。" },
+            { title: "例子", body: "夏普 1 表示承担的波动与获得的超额收益大致匹配。" },
+          ],
+          disclaimer: "术语库口径 · 非投资建议",
+          meta: { dataSource: "术语库" },
+        },
+        glossary: { matched: true, id: "sharpe", term: "夏普比率", layer: 2 },
+      }),
+    }),
+  );
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.locator(".ai-composer textarea").fill("什么是夏普");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("超额收益 ÷ 收益波动，衡量单位风险获得的回报。")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("怎么看")).toBeVisible();
+  await expect(page.getByText("术语库口径 · 非投资建议")).toBeVisible();
+  await page.getByRole("button", { name: /查看完整词条/ }).click();
+  await expect(page).toHaveURL(/\/learn\?term=sharpe/);
+});
+
+test("AI 管家术语未命中：给 3 个真实候选，可反馈补充", async ({ page }) => {
+  await loginByToken(page);
+  await page.route("**/api/invest/ai/chat", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        intent: "glossary",
+        card: {
+          summary: "没找到「阿巴阿巴」的独立词条，你要找的是不是：",
+          sections: [],
+          disclaimer: "术语库口径 · 非投资建议",
+          meta: { dataSource: "术语库" },
+        },
+        glossary: {
+          matched: false,
+          query: "阿巴阿巴",
+          candidates: [
+            { id: "sharpe", term: "夏普比率", category: "指标" },
+            { id: "sortino", term: "索提诺比率", category: "指标" },
+            { id: "information_ratio", term: "信息比率", category: "指标" },
+          ],
+        },
+      }),
+    }),
+  );
+  let feedback = 0;
+  await page.route("**/api/invest/glossary/feedback", (route) => {
+    feedback += 1;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto(`${H5}/ai`, { waitUntil: "domcontentloaded" });
+  await page.locator(".ai-composer textarea").fill("什么是阿巴阿巴");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("没找到「阿巴阿巴」的独立词条，你要找的是不是：")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".glossary-fallback .chip")).toHaveCount(3);
+  await page.getByRole("button", { name: "反馈补充" }).click();
+  await expect(page.getByRole("button", { name: "已反馈" })).toBeVisible();
+  expect(feedback).toBe(1);
+  await page.getByRole("button", { name: "夏普比率" }).click();
+  await expect(page).toHaveURL(/\/learn\?term=sharpe/);
 });

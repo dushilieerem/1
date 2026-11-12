@@ -2506,12 +2506,23 @@ def build_watchlist(conn: Any, user_id: int, market: str = "CN") -> dict[str, An
             "industry": _display_industry(s, market), "price": s["price"],
             "changePct": pct(float(s["price"] or 0), float(s.get("prev_close") or s["price"] or 0)),
         })
-    events = rows(conn, "SELECT * FROM events WHERE user_id=? ORDER BY id DESC", (user_id,))
-    for e in events:
-        t = one(conn, "SELECT name FROM topics WHERE id=?", (e["code"],))
-        s = one(conn, "SELECT name FROM stocks WHERE code=?", (e["code"],))
-        e["name"] = (t or s or {}).get("name") or e["code"]
-    logs = rows(conn, "SELECT * FROM event_logs WHERE user_id=? ORDER BY triggered_at DESC", (user_id,))
+    reminders: list[dict[str, Any]] = []
+    if market != "US":
+        try:
+            from services.invest import reminders as reminder_service
+
+            reminders = reminder_service.list_reminders(conn, user_id, market)
+        except Exception:
+            reminders = []
+    logs = rows(
+        conn,
+        "SELECT id, code, title, detail, triggered_at, read, source FROM event_logs "
+        "WHERE user_id=? ORDER BY triggered_at DESC",
+        (user_id,),
+    )
+    for log in logs:
+        log["source_label"] = "AI 创建" if log.get("source") == "ai" else ""
+    watch_codes = [str(w["code"]) for w in watch]
     available = True
     if market == "US":
         try:
@@ -2519,11 +2530,16 @@ def build_watchlist(conn: Any, user_id: int, market: str = "CN") -> dict[str, An
         except Exception:
             available = False
     return {
-        "groups": [{"name": k, "items": v} for k, v in groups.items()], "events": events, "logs": logs,
+        "groups": [{"name": k, "items": v} for k, v in groups.items()],
+        "events": reminders,
+        "reminders": reminders,
+        "reminder_count": len(reminders),
+        "watchlist_codes": watch_codes,
+        "logs": logs,
         "market": market, "available": available,
         "disclaimer": (
-            "Watch events refresh after the close; no real-time push."
-            if market == "US" else "关注事件在收盘后更新；不提供实时推送。"
+            "Watch reminders refresh after the close; no real-time push."
+            if market == "US" else "提醒在收盘后检查；不提供盘中实时推送。"
         ),
     }
 

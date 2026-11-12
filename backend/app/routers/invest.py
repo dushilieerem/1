@@ -25,6 +25,7 @@ from services.invest import debate as debate_service
 from services.invest import etf as etf_service
 from services.invest import glossary as glossary_service
 from services.invest import quant
+from services.invest import reminders as reminder_service
 from services.invest import rules
 from services.invest.db import PGConn, invest_conn
 
@@ -89,6 +90,42 @@ def glossary(
     q: str = Query(""),
 ) -> dict[str, Any]:
     return glossary_service.list_terms(category=category, q=q)
+
+
+@router.get("/glossary/lookup")
+def glossary_lookup(
+    q: str = Query(""),
+    category: str = Query(""),
+) -> dict[str, Any]:
+    """分层模糊匹配：精确 / 别名 / 包含 / 编辑距离；未命中给 3 个候选。"""
+    hit = glossary_service.lookup(q, category=category)
+    return {
+        "ok": True,
+        "query": hit.get("query"),
+        "display": hit.get("display"),
+        "matched": hit.get("matched"),
+        "layer": hit.get("layer"),
+        "candidates": hit.get("candidates") or [],
+        "message": hit.get("message") or "",
+    }
+
+
+@router.post("/glossary/feedback")
+def glossary_feedback(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """记录未命中的词，供词库补充；不返回任何投资建议。"""
+    query = str(body.get("query") or "").strip()[:120]
+    if not query:
+        raise HTTPException(status_code=400, detail="缺少要反馈的术语")
+    conn.execute(
+        "INSERT INTO invest_glossary_feedback (user_id, query, created_at) VALUES (?,?,?)",
+        (_uid(user), query, _now()),
+    )
+    conn.commit()
+    return {"ok": True}
 
 
 @router.get("/home", dependencies=[Depends(_guard("home"))])
@@ -222,6 +259,96 @@ def events_scan(
     return agent_tools.watch_scan(conn, _uid(user))
 
 
+@router.post("/reminders/parse")
+def parse_reminder(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """一句话 → 结构化提醒回显；缺阈值只追问，不猜测。"""
+    current = body.get("current_stock")
+    if not isinstance(current, dict):
+        current = None
+    return reminder_service.parse_query(
+        conn, str(body.get("query") or ""), current, user_id=_uid(user)
+    )
+
+
+@router.get("/reminders")
+def list_reminders(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    summary = reminder_service.reminder_summary(conn, _uid(user))
+    return {"ok": True, **summary, "disclaimer": reminder_service.DISCLAIMER}
+
+
+@router.post("/reminders")
+def create_reminders(
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """确认创建；自动出现在自选页「提醒」，不静默加入自选。"""
+    reminders = body.get("reminders")
+    if not isinstance(reminders, list) or not reminders:
+        raise HTTPException(status_code=400, detail="缺少提醒内容")
+    add = body.get("add_watchlist")
+    add_codes = [str(c) for c in add] if isinstance(add, list) else []
+    return reminder_service.create_reminders(
+        conn, _uid(user), reminders, add_watchlist=add_codes,
+        source=str(body.get("source") or "ai"),
+    )
+
+
+@router.patch("/reminders/{reminder_id}")
+def update_reminder(
+    reminder_id: int,
+    body: dict[str, Any] = Body(...),
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    try:
+        item = reminder_service.update_reminder(conn, _uid(user), reminder_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not item:
+        raise HTTPException(status_code=404, detail="提醒不存在")
+    return {"ok": True, "item": item}
+
+
+@router.post("/reminders/{reminder_id}/toggle")
+def toggle_reminder(
+    reminder_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    result = reminder_service.toggle_reminder(conn, _uid(user), reminder_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="提醒不存在")
+    return result
+
+
+@router.delete("/reminders/{reminder_id}")
+def delete_reminder(
+    reminder_id: int,
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    if not reminder_service.delete_reminder(conn, _uid(user), reminder_id):
+        raise HTTPException(status_code=404, detail="提醒不存在")
+    return {"ok": True, "deleted": reminder_id}
+
+
+@router.post("/reminders/scan")
+def scan_reminders(
+    user: dict[str, Any] = Depends(require_user),
+    conn: PGConn = Depends(invest_conn),
+) -> dict[str, Any]:
+    """收盘后检查提醒条件，命中写入触发日志。"""
+    return reminder_service.evaluate(conn, _uid(user))
+
+
 @router.get("/event-logs")
 def event_logs(
     limit: int = Query(50, ge=1, le=200),
@@ -230,10 +357,12 @@ def event_logs(
 ) -> dict[str, Any]:
     items = rules.rows(
         conn,
-        "SELECT id, code, title, detail, triggered_at, read FROM invest_event_log "
+        "SELECT id, code, title, detail, triggered_at, read, source FROM invest_event_log "
         "WHERE user_id=? ORDER BY triggered_at DESC LIMIT ?",
         (_uid(user), limit),
     )
+    for item in items:
+        item["source_label"] = "AI 创建" if item.get("source") == "ai" else ""
     return {"items": items, "unread": sum(1 for x in items if not x.get("read"))}
 
 
@@ -726,8 +855,16 @@ def add_event(
     if not code:
         raise HTTPException(status_code=400, detail="缺少标的")
     conn.execute(
-        "INSERT INTO invest_event (user_id, code, type, condition, status, created_at) VALUES (?,?,?,?,?,?)",
-        (_uid(user), code, str(body.get("type") or "价格"), str(body.get("condition") or "收盘后检查"), "active", _now()),
+        "INSERT INTO invest_event (user_id, code, type, condition, status, created_at, "
+        "condition_op, threshold, unit, note, end_date, source, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            _uid(user), code, str(body.get("type") or "价格"),
+            str(body.get("condition") or "收盘后检查"), "active", _now(),
+            body.get("condition_op"), body.get("threshold"), body.get("unit"),
+            body.get("note") or body.get("condition"), body.get("end_date"),
+            str(body.get("source") or "manual"), _now(),
+        ),
     )
     conn.commit()
     return rules.build_watchlist(conn, _uid(user))

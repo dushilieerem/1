@@ -51,6 +51,9 @@ export type ConditionResponse = {
   items?: ConditionItem[];
   count?: number;
   summary?: string[];
+  features?: string[];
+  risks?: string[];
+  data_date?: string;
   risk?: string;
   disclaimer?: string;
   industry_distribution?: Array<{ name: string; count: number; pct: number }>;
@@ -379,12 +382,22 @@ export function ConditionScreener({
         </button>
       ) : null}
 
-      {data.summary?.length ? (
-        <ul className="condition-summary">
-          {data.summary.slice(0, 3).map((s) => <li key={s}>{s}</li>)}
-        </ul>
+      {(data.features?.length || data.summary?.length) ? (
+        <div className="condition-insights">
+          <b>{t("从这批股票看，有几个共同点：", "A few common traits in this list:")}</b>
+          <ul>
+            {(data.features || data.summary || []).slice(0, 4).map((s) => <li key={s}>{s}</li>)}
+          </ul>
+        </div>
       ) : null}
-      <p className="condition-risk">⚠ {data.risk || t("筛选基于历史 EOD 数据；结果非投资建议。", "Based on historical EOD data; not investment advice.")}</p>
+      {data.risks?.length ? (
+        <div className="condition-alert">
+          <b>{t("⚠️ 注意：", "⚠️ Note:")}</b>
+          <ul>{data.risks.slice(0, 3).map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      ) : data.risk ? (
+        <p className="condition-risk">⚠ {data.risk}</p>
+      ) : null}
 
       <div className="condition-actions">
         {sortRoe ? <Tag tone="blue">{t("ROE 从高到低", "ROE high to low")}</Tag> : null}
@@ -433,6 +446,9 @@ export function ConditionScreener({
         </div>
       </div>
       {showIndustry && data.industry_distribution?.length ? <IndustryBars rows={data.industry_distribution} /> : null}
+      <p className="condition-source">
+        {t(`筛选基于历史 EOD 数据${data.data_date ? ` · 截至 ${data.data_date} 收盘` : ""}；结果非投资建议。`, `Screening uses historical EOD data${data.data_date ? ` · as of ${data.data_date} close` : ""}; not investment advice.`)}
+      </p>
     </section>
   );
 }

@@ -264,8 +264,17 @@ def risk_scan(conn: Any, user_id: int, *, persist: bool = True) -> dict[str, Any
 
 
 def watch_scan(conn: Any, user_id: int) -> dict[str, Any]:
-    """值守 Agent 的日频扫描：自选价格异动 + 估值高位提醒。"""
-    return risk_scan(conn, user_id, persist=True)
+    """收盘后扫描：自选异动 + 用户自定义提醒条件，命中写入触发日志。"""
+    out = risk_scan(conn, user_id, persist=True)
+    try:
+        from services.invest import reminders
+
+        scanned = reminders.evaluate(conn, user_id, persist=True)
+    except Exception:
+        scanned = {"triggered": [], "inserted": 0, "checked": 0}
+    out["reminders"] = scanned
+    out["inserted"] = int(out.get("inserted") or 0) + int(scanned.get("inserted") or 0)
+    return out
 
 
 # ---------------------------------------------------------------- Agent 7 护栏

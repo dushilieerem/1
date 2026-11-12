@@ -37,7 +37,7 @@ const TYPE_LABEL: Record<string, { zh: string; en: string }> = {
 
 const TABS: Array<{ key: "all" | "guard" | "community"; zh: string; en: string }> = [
   { key: "all", zh: "全部", en: "All" },
-  { key: "guard", zh: "值守提醒", en: "Watch alerts" },
+  { key: "guard", zh: "提醒", en: "Reminders" },
   { key: "community", zh: "社区互动", en: "Community" },
 ];
 
@@ -127,7 +127,7 @@ export default function Notifications() {
       {error ? <ErrorState message={error} onRetry={load} /> : null}
       {loading ? <LoadingCards rows={3} /> : null}
       {!loading && !items.length ? (
-        <EmptyState title={t("没有消息", "No notifications")} detail={t("值守触发或社区互动后会出现在这里。", "Watch alerts and community activity will appear here.")} />
+        <EmptyState title={t("没有消息", "No notifications")} detail={t("提醒触发或社区互动后会出现在这里。", "Reminder alerts and community activity will appear here.")} />
       ) : null}
 
       {!loading && items.length ? (

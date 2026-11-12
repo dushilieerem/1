@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Bell, Plus, Search, Trash2, X } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Bell, Pause, Play, Plus, Search, Trash2 } from "lucide-react";
 import { api } from "../api";
 import { Disclaimer, EmptyState, ErrorState, LoadingCards, PageHeader, SectionHead, Sheet, Tag } from "../components";
 import { displayIndustry, fmtPct, formatPrice } from "../lib";
@@ -11,15 +11,28 @@ export default function Watch() {
   const nav = useNavigate();
   const toast = useToast();
   const { t, market } = useLocale();
+  const [params] = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const load = () => {
     setError(null);
     api(withMarket("/api/invest/watchlist", market)).then(setData).catch((e) => setError(e.message));
   };
   useEffect(load, [market]);
+
+  const highlight = Number(params.get("highlight") || 0);
+  const reminders: any[] = market === "CN" ? data?.events || [] : [];
+  const reminderCount = data?.reminder_count ?? reminders.length;
+
+  useEffect(() => {
+    if (!data || !highlight) return;
+    const el = document.getElementById(`reminder-${highlight}`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [data, highlight]);
 
   const remove = async (code: string) => {
     try {
@@ -31,8 +44,63 @@ export default function Watch() {
     }
   };
 
+  const toggleReminder = async (reminder: any) => {
+    setBusyId(reminder.id);
+    try {
+      const res = await api<{ status: string }>(`/api/invest/reminders/${reminder.id}/toggle`, { method: "POST" });
+      toast(res.status === "paused" ? t("已暂停该提醒", "Reminder paused") : t("已恢复该提醒", "Reminder resumed"));
+      load();
+    } catch (e: any) {
+      toast(e.message || t("操作失败", "Action failed"));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const addWatch = async (code: string) => {
+    try {
+      await api(withMarket("/api/invest/watchlist", market), { method: "POST", body: JSON.stringify({ code }) });
+      toast(t("已加入自选", "Added to watchlist"));
+      load();
+    } catch (e: any) {
+      toast(e.message || t("加入自选失败", "Failed to add to watchlist"));
+    }
+  };
+
+  const saveReminder = async (payload: Record<string, unknown>) => {
+    if (!editing) return;
+    setBusyId(editing.id);
+    try {
+      await api(`/api/invest/reminders/${editing.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      toast(t("提醒已更新", "Reminder updated"));
+      setEditing(null);
+      load();
+    } catch (e: any) {
+      toast(e.message || t("保存失败", "Save failed"));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteReminder = async (reminder: any) => {
+    if (!window.confirm(t(`删除「${reminder.name} · ${reminder.type_label}」？`, `Delete “${reminder.name} · ${reminder.type_label}”?`))) return;
+    setBusyId(reminder.id);
+    try {
+      await api(`/api/invest/reminders/${reminder.id}`, { method: "DELETE" });
+      toast(t("提醒已删除", "Reminder deleted"));
+      setEditing(null);
+      load();
+    } catch (e: any) {
+      toast(e.message || t("删除失败", "Delete failed"));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const count = data?.groups?.reduce((n: number, g: any) => n + g.items.length, 0) || 0;
   const usUnavailable = market === "US" && data?.available === false;
+  const statusTone = (status: string) => (status === "active" ? "green" : status === "triggered" ? "amber" : "gray");
+  const statusText = (reminder: any) => reminder.status_label || t("生效中", "Active");
 
   return (
     <div className="page">
@@ -41,7 +109,7 @@ export default function Watch() {
         sub={
           market === "US"
             ? t(`${count} 只 · 美股行情`, `${count} name(s) · US quotes`)
-            : t(`${count} 只 · ${data?.events?.length || 0} 条关注事件`, `${count} name(s) · ${data?.events?.length || 0} watch event(s)`)
+            : t(`${count} 只 · ${reminderCount} 条提醒`, `${count} name(s) · ${reminderCount} reminder(s)`)
         }
         right={<button className="round-btn" onClick={() => setAddOpen(true)} aria-label={t("添加", "Add")}><Plus size={20} /></button>}
       />
@@ -81,33 +149,70 @@ export default function Watch() {
 
           {market === "CN" ? (
             <>
-          <SectionHead title="关注事件" sub="收盘后检查 · 不提供实时推送" action={<button className="link-btn" onClick={() => setAddOpen(true)}><Plus size={14} /> 新建</button>} />
+          <SectionHead
+            title="提醒"
+            sub={t(`收盘后检查 · 不提供盘中实时推送 · ${reminderCount} 条`, `Checked after the close · no intraday push · ${reminderCount} reminder(s)`)}
+            action={<button className="link-btn" onClick={() => setAddOpen(true)}><Plus size={14} /> {t("新建", "New")}</button>}
+          />
           <section className="card list-card">
-            {data.events.length === 0 ? (
-              <div className="empty-inline">还没有关注事件。</div>
-            ) : data.events.map((e: any) => (
-              <div className="event-row" key={e.id}>
+            {reminders.length === 0 ? (
+              <div className="empty-inline">{t("还没有提醒。", "No reminders yet.")}</div>
+            ) : reminders.map((e: any) => (
+              <div
+                className={`reminder-row ${highlight === Number(e.id) ? "reminder-highlight" : ""}`}
+                id={`reminder-${e.id}`}
+                key={e.id}
+              >
                 <span className="event-icon"><Bell size={15} /></span>
-                <div>
-                  <b>{e.name || e.code} · {e.type}</b>
-                  <span>{e.condition}</span>
+                <button className="reminder-main" onClick={() => setEditing(e)}>
+                  <span className="reminder-title">
+                    <b>{e.name || e.code} · {e.type_label || t("价格提醒", "Price reminder")}</b>
+                    {e.source_label ? <Tag tone="blue">{e.source_label}</Tag> : null}
+                    {e.watchlisted === false ? <Tag tone="gray">{t("未加自选", "Not watched")}</Tag> : null}
+                  </span>
+                  <span className="reminder-detail">{e.detail || e.note}</span>
+                </button>
+                <div className="reminder-side">
+                  <Tag tone={statusTone(e.status)}>{statusText(e)}</Tag>
+                  <button
+                    type="button"
+                    className="reminder-toggle"
+                    aria-label={e.status === "active" ? t(`暂停 ${e.name} 的提醒`, `Pause ${e.name}`) : t(`恢复 ${e.name} 的提醒`, `Resume ${e.name}`)}
+                    disabled={busyId === e.id}
+                    onClick={() => void toggleReminder(e)}
+                  >
+                    {e.status === "active" ? <Pause size={13} /> : <Play size={13} />}
+                  </button>
                 </div>
-                <Tag tone={e.status === "active" ? "green" : "gray"}>{e.status === "active" ? "生效中" : "已停止"}</Tag>
               </div>
             ))}
+            {reminders.some((e: any) => e.watchlisted === false) ? (
+              <div className="reminder-unwatched">
+                <span>{t("有提醒的标的未在自选。", "Some reminders are on names not in your watchlist.")}</span>
+                {reminders.filter((e: any) => e.watchlisted === false).slice(0, 3).map((e: any) => (
+                  <button key={e.code} type="button" className="link-btn" onClick={() => void addWatch(e.code)}>
+                    {t(`加入 ${e.name}`, `Add ${e.name}`)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <p className="reminder-section-foot">{t("价格提醒按收盘价判断；事件类在事件发生时记录。", "Price reminders use closing prices; event reminders are logged when the event occurs.")}</p>
           </section>
 
-          <SectionHead title="触发日志" sub="近 7 天 · 打开时刷新" />
-          <section className="card list-card">
-            {data.logs.length === 0 ? (
-              <div className="empty-inline">还没有触发记录。</div>
+          <SectionHead title="触发日志" sub={t("近 7 天 · 打开时刷新", "Last 7 days · refreshed on open")} />
+          <section className="card list-card" id="trigger-log">
+            {(data.logs || []).length === 0 ? (
+              <div className="empty-inline">{t("还没有触发记录。", "No triggered records yet.")}</div>
             ) : data.logs.map((l: any) => (
               <div className="log-row" key={l.id}>
                 <div>
                   <b>{l.title}</b>
                   <span>{l.detail} · {l.triggered_at}</span>
                 </div>
-                <Tag tone={l.read ? "gray" : "amber"}>{l.read ? "已读" : "待关注"}</Tag>
+                <div className="log-tags">
+                  {l.source_label ? <Tag tone="blue">{l.source_label}</Tag> : null}
+                  <Tag tone={l.read ? "gray" : "amber"}>{l.read ? t("已读", "Read") : t("待关注", "Unread")}</Tag>
+                </div>
               </div>
             ))}
           </section>
@@ -122,8 +227,103 @@ export default function Watch() {
         </>
       ) : null}
 
+      {editing ? (
+        <EditReminderSheet
+          key={editing.id}
+          reminder={editing}
+          busy={busyId === editing.id}
+          onClose={() => setEditing(null)}
+          onSave={(payload) => void saveReminder(payload)}
+          onDelete={() => void deleteReminder(editing)}
+          onOpenLogs={() => {
+            setEditing(null);
+            document.getElementById("trigger-log")?.scrollIntoView({ block: "start", behavior: "smooth" });
+          }}
+        />
+      ) : null}
+
       <AddWatchSheet market={market} open={addOpen} onClose={() => setAddOpen(false)} onDone={() => { setAddOpen(false); load(); }} />
     </div>
+  );
+}
+
+function EditReminderSheet({
+  reminder,
+  busy,
+  onClose,
+  onSave,
+  onDelete,
+  onOpenLogs,
+}: {
+  reminder: any;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (payload: Record<string, unknown>) => void;
+  onDelete: () => void;
+  onOpenLogs: () => void;
+}) {
+  const { t } = useLocale();
+  const [threshold, setThreshold] = useState(reminder.threshold == null ? "" : String(reminder.threshold));
+  const [endDate, setEndDate] = useState(reminder.end_date || "");
+  const [note, setNote] = useState(reminder.note || "");
+  const unit = reminder.unit || "";
+  const numberType = reminder.type === "event";
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      title={t("修改提醒", "Edit reminder")}
+      sub={`${reminder.name} · ${reminder.type_label || ""} · ${reminder.term || t("长期有效", "No end date")}`}
+      footer={
+        <div className="reminder-sheet-actions">
+          <button type="button" className="btn btn-ghost" onClick={onDelete} disabled={busy}>
+            <Trash2 size={14} /> {t("删除", "Delete")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => onSave({
+              threshold: numberType ? undefined : threshold === "" ? undefined : Number(threshold),
+              end_date: endDate || null,
+              note,
+            })}
+          >
+            {busy ? t("保存中…", "Saving…") : t("保存修改", "Save")}
+          </button>
+        </div>
+      }
+    >
+      <div className="reminder-edit-detail">
+        <b>{t("当前条件", "Current condition")}</b>
+        <span>{reminder.detail || reminder.note}</span>
+      </div>
+      {numberType ? null : (
+        <label className="field">
+          <span>{t("阈值", "Threshold")}{unit ? `（${unit}）` : ""}</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={threshold}
+            onChange={(e) => setThreshold(e.target.value)}
+            placeholder={reminder.threshold == null ? t("请输入阈值", "Enter a threshold") : String(reminder.threshold)}
+          />
+        </label>
+      )}
+      <label className="field">
+        <span>{t("截止日期（留空为长期有效）", "End date (blank = no end date)")}</span>
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>{t("描述", "Description")}</span>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={reminder.note} />
+      </label>
+      <button type="button" className="link-btn" onClick={onOpenLogs}>{t("查看触发记录", "View trigger log")}</button>
+      <div className="callout">
+        <b>{t("说明：", "Note:")}</b>
+        {t("修改只影响之后的判断；已触发的记录不会回滚。只做提醒，不代下单。", "Edits apply to future checks only; triggered logs are kept. Reminders never place orders.")}
+      </div>
+    </Sheet>
   );
 }
 
@@ -143,7 +343,7 @@ function AddWatchSheet({
   const [q, setQ] = useState("");
   const [items, setItems] = useState<any[]>([]);
   const [selected, setSelected] = useState<any>(null);
-  const [type, setType] = useState("价格");
+  const [type, setType] = useState("价格提醒");
   const [condition, setCondition] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -168,7 +368,7 @@ function AddWatchSheet({
       if (market === "CN") {
         await api("/api/invest/events", { method: "POST", body: JSON.stringify({ code: selected.id, type, condition: condition || `${type}条件` }) });
       }
-      toast(market === "US" ? t("已加入自选", "Added to watchlist") : t("已加入自选并创建关注事件", "Added to watchlist and created a watch event"));
+      toast(market === "US" ? t("已加入自选", "Added to watchlist") : t("已加入自选并创建提醒", "Added to watchlist and created a reminder"));
       setCondition("");
       onDone();
     } catch (e: any) {
@@ -182,8 +382,8 @@ function AddWatchSheet({
     <Sheet
       open={open}
       onClose={onClose}
-      title={market === "US" ? t("添加美股自选", "Add US ticker") : t("添加自选 / 关注事件", "Add to watchlist / event")}
-      sub={t("收盘后检查 · 非实时", "Checked after the close · not real-time")}
+      title={market === "US" ? t("添加美股自选", "Add US ticker") : t("添加自选 / 提醒", "Add to watchlist / reminder")}
+      sub={t("收盘后检查 · 不提供盘中实时推送", "Checked after the close · no intraday push")}
       footer={<button className="btn btn-primary w100" onClick={submit} disabled={busy}>{busy ? t("创建中…", "Creating…") : t("创建", "Create")}</button>}
     >
       <label className="field">
@@ -209,23 +409,25 @@ function AddWatchSheet({
       {market === "CN" ? (
         <>
           <label className="field">
-            <span>事件类型</span>
+            <span>{t("提醒类型", "Reminder type")}</span>
             <select value={type} onChange={(e) => setType(e.target.value)}>
-              <option>价格</option><option>财报</option><option>公告</option><option>热度</option><option>舆情异常</option><option>估值分位</option>
+              <option>价格提醒</option><option>财报提醒</option><option>事件提醒</option>
+              <option>估值提醒</option><option>资金提醒</option><option>热度提醒</option>
             </select>
           </label>
           <label className="field">
-            <span>条件（可选）</span>
-            <input value={condition} onChange={(e) => setCondition(e.target.value)} placeholder="例如：收盘价跌破 220 元" />
+            <span>{t("条件（可选）", "Condition (optional)")}</span>
+            <input value={condition} onChange={(e) => setCondition(e.target.value)} placeholder={t("例如：收盘价跌破 220 元", "e.g. close below 220")} />
           </label>
           <div className="callout">
-            <b>注意：</b>没有推送通道，事件只在收盘后记录日志；不推送“买/卖”指令。
+            <b>{t("注意：", "Note:")}</b>
+            {t("收盘后检查，不提供盘中实时推送；只做提醒，不推送买卖指令。", "Checked after the close; no intraday push. Reminders only, never buy/sell instructions.")}
           </div>
         </>
       ) : (
         <div className="callout">
           <b>{t("注意：", "Note:")}</b>
-          {t("美股版只加入自选，不创建关注事件。", "US mode only adds the ticker to the watchlist; watch events are not available.")}
+          {t("美股版只加入自选，不创建提醒。", "US mode only adds the ticker to the watchlist; reminders are not available.")}
         </div>
       )}
     </Sheet>

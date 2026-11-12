@@ -181,6 +181,35 @@ def _call(
     return result
 
 
+def _glossary_model_id(query: str) -> str | None:
+    """第 5 层：模型只返回词库 ID，校验存在后才用；失败静默走兜底。"""
+    try:
+        from ai.router import available_task, run_task
+
+        if not available_task("invest.glossary"):
+            return None
+        catalog = "\n".join(f"{term_id} | {name}" for term_id, name in glossary.term_ids())
+        prompt = (
+            "你是术语映射器。用户会用简称、英文、错别字或口语描述问一个金融术语。"
+            "从下面的词库中选择最贴近的一个，只输出 JSON：{\"term_id\":\"...\"}。"
+            "无法确定或没有相近项时输出 {\"term_id\":\"\"}。不要解释，不要生成定义。\n\n"
+            f"词库：\n{catalog}"
+        )
+        out = run_task(
+            "invest.glossary",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": str(query or "")},
+            ],
+        )
+        data = out.get("data") if isinstance(out, dict) else None
+        term_id = str((data or {}).get("term_id") or "").strip()
+        valid = {term_id_key for term_id_key, _ in glossary.term_ids()}
+        return term_id if term_id in valid else None
+    except Exception:
+        return None
+
+
 _TARGET = {
     "brief": "content",
     "review": "content",
@@ -935,6 +964,7 @@ def status() -> dict[str, Any]:
         from ai.router import available_task
         tasks = [
             "invest.intent", "invest.daily", "invest.stock", "invest.stock_deep", "invest.portfolio",
+            "invest.glossary",
             "invest.announcement", "invest.condition", "invest.compare",
             "invest.paper", "invest.quant", "invest.backtest", "invest.allocation",
         ]
@@ -1001,6 +1031,13 @@ def chat(
     except Exception:
         routed = {"intent": "chat", "slots": {}}
     intent_name = str(routed.get("intent") or "chat")
+    # 术语查询兜底：短问句常被路由成 chat；高置信命中时按术语解释返回。
+    if intent_name == "chat":
+        glance = glossary.lookup(q)
+        if glance.get("matched") and glance.get("layer") in (1, 2, 3):
+            intent_name = "glossary"
+        elif re.search(r"^(什么是|什么叫|啥是|解释一下|介绍一下|请问|术语)", q):
+            intent_name = "glossary"
     # 模型缺槽位时，中文“对比 A 和 B / A、B、C”仍可确定性路由。
     compare_terms = _extract_compare_terms(q)
     if len(compare_terms) >= 2 and re.search(r"对比|比较|vs\.?|versus", q, flags=re.I):
@@ -1064,12 +1101,31 @@ def chat(
         return {"ok": True, "intent": intent_name, **_meta(intent_name), **_call("invest.allocation", payload, _ALLOCATION_SYSTEM, user_id=int(user["id"]), refresh=refresh)}
 
     if intent_name == "glossary":
-        term = glossary.find_term(q)
+        hit = glossary.lookup(q)
+        if not hit.get("matched"):
+            model_id = _glossary_model_id(q)
+            if model_id:
+                hit = glossary.lookup(q, model_term_id=model_id)
+        term = hit.get("matched")
         if not term:
+            candidates = hit.get("candidates") or []
             return {
                 "ok": True,
                 "intent": intent_name,
-                "card": {"summary": "术语库暂未收录该术语，可到「学习」页搜索或反馈补充。", "sections": [], "meta": {"dataSource": "术语库"}},
+                "card": {
+                    "summary": hit.get("message") or "术语库暂未收录该术语，你要找的是不是：",
+                    "sections": [],
+                    "meta": {"dataSource": "术语库"},
+                },
+                "glossary": {
+                    "matched": False,
+                    "query": hit.get("display") or q,
+                    "candidates": [
+                        {"id": x["id"], "term": x["term"], "category": x["category"]}
+                        for x in candidates[:3]
+                    ],
+                },
+                "disclaimer": "术语库口径 · 非投资建议",
                 **_meta(intent_name),
             }
         return {
@@ -1085,6 +1141,7 @@ def chat(
                 "disclaimer": "术语库口径 · 非投资建议",
                 "meta": {"dataSource": "术语库"},
             },
+            "glossary": {"matched": True, "id": term["id"], "term": term["term"], "layer": hit.get("layer")},
             **_meta(intent_name),
         }
 

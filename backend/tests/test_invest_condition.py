@@ -139,5 +139,8 @@ def test_screen_ok_returns_max_five_plus_summary_and_industry(monkeypatch):
     assert result["count"] == 3
     assert len(result["items"]) == 3
     assert result["summary"]
+    assert 3 <= len(result["features"]) <= 4
+    assert 1 <= len(result["risks"]) <= 3
+    assert result["data_date"] == "2026-11-02"
     assert result["industry_distribution"][0]["name"] in {"食品饮料", "银行", "电力设备"}
     assert len(result["followups"]) == 3

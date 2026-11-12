@@ -210,6 +210,28 @@ INTENT_TASK = register(
     )
 )
 
+def validate_glossary_map(raw: str, request: TaskRequest) -> dict[str, Any]:
+    """术语归一：只允许返回词库中的 term_id，不生成定义。"""
+    del request
+    data = _load(raw)
+    term_id = str(data.get("term_id") or "").strip()
+    if not term_id:
+        raise AiBadOutput("术语映射缺少 term_id")
+    return {"term_id": term_id}
+
+
+GLOSSARY_TASK = register(
+    TaskSpec(
+        task_id="invest.glossary",
+        description="术语解释：把口语描述映射到词库 ID（不生成定义）",
+        temperature=0.0,
+        max_tokens=100,
+        timeout_sec=20,
+        executors=("local",),
+        validator=validate_glossary_map,
+    )
+)
+
 _DAILY_SECTIONS = (
     ("market", "一、大盘概览"),
     ("structure", "二、市场结构"),

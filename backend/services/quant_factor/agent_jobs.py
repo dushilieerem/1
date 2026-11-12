@@ -190,7 +190,26 @@ def run(uid,org,jid):
             if contract:instruction+=' 以research_contract.allowed_fields为本任务唯一允许字段；不因通用说明较宽而读取其他字段。候选预热为0，较长回看将损失评分观测，不得自动扩大区间。'
             prompt_error=factor_prompt_error(instruction+'\n'+prompt,max_chars=12000 if contract else 2000)
             if prompt_error:raise WorkflowError(prompt_error+'；请精简研究说明，完整报告仍已保留。')
-            out=generate(uid,org,row['project_id'],jid,{'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None,'custom_source_contract':VERSION},'idempotency_key':jid},research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
+            body={'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None,'custom_source_contract':VERSION},'idempotency_key':jid}
+            out=generate(uid,org,row['project_id'],jid,body,research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
+            if out.get('status')=='ready':
+                from .factor_window import conflict as window_conflict
+                factor=out.get('factor') or {}
+                window_error=window_conflict(draft.get('name'),draft.get('hypothesis'),factor.get('factor_code'))
+                if window_error:
+                    # The implementation is the research Agent's own output; feed
+                    # the mismatch back once instead of recording a terminal
+                    # "runtime exception". No trial or market compute was spent.
+                    update(uid,org,jid,'running',event('implementation_window_feedback',message=window_error))
+                    retry_id=jid+'-window2'
+                    feedback=('上一版实现没有遵守冻结研究假设的窗口：'+window_error+
+                              ' 请严格按研究假设重写实现，保持假设、方向和预测目标不变；不要用另一个窗口替代。')
+                    body2={**body,'prompt':instruction+'\n'+feedback+'\n'+prompt,'idempotency_key':retry_id}
+                    out=generate(uid,org,row['project_id'],retry_id,body2,research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
+                    if out.get('status')=='ready':
+                        factor=out.get('factor') or {}
+                        window_error=window_conflict(draft.get('name'),draft.get('hypothesis'),factor.get('factor_code'))
+                        if window_error:raise WorkflowError('实现窗口与冻结假设不一致，已反馈研究 Agent 重写一次仍未通过：'+window_error)
             if out.get('status')!='ready' or out.get('validation',{}).get('status')!='passed':raise WorkflowError('代码未通过平台校验：'+'；'.join(out.get('validation',{}).get('errors',[])))
             from .causality import diagnose_source,diagnostic_scope,FIXTURE_VERSION
             from .f0_agent import record_progress

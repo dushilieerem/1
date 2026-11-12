@@ -68,3 +68,17 @@ class AgentAuditTests(unittest.TestCase):
   d={'hypothesis':'h','candidateExpression':'window=5; zero range -> NaN','target':'1 day','name':'factor','code':'manual code'}
   with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':d}}),patch.object(jobs,'assert_quota_available'),patch.object(jobs,'record_usage'),patch('services.quant_factor.generation.generate',return_value={'status':'rejected','validation':{'status':'failed','errors':['stop']}}) as gen,patch.object(jobs,'update',return_value=True):
    jobs.run(1,2,'j');prompt=gen.call_args.args[4]['prompt'];self.assertIn('window=5',prompt);self.assertIn('manual code',prompt);self.assertIn('1 day',prompt)
+
+
+class WindowFeedbackTests(unittest.TestCase):
+ def test_f3_window_mismatch_is_fed_back_and_rewritten_once(self):
+  draft={'hypothesis':'5 日反转：过去 5 个交易日累计收益最低的股票次日反转','target':'1 day','name':'rev5','code':''}
+  first={'status':'ready','validation':{'status':'passed'},'factor':{'factor_name':'rev5','factor_code':'def f0_factor(self):\n    return -self.close.pct_change(1)'},'meta':{}}
+  second={'status':'ready','validation':{'status':'passed'},'factor':{'factor_name':'rev5','factor_code':'def f0_factor(self):\n    return -self.close.pct_change(5)'},'meta':{}}
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':draft}}),patch.object(jobs,'update',return_value=True) as update,patch('services.quant_factor.f0_agent.record_progress'),patch('services.quant_factor.generation.generate',side_effect=[first,second]) as gen:
+   jobs.run(1,2,'j')
+  self.assertEqual(gen.call_count,2)
+  self.assertEqual(gen.call_args_list[0].args[3],'j')
+  self.assertTrue(gen.call_args_list[1].args[3].endswith('-window2'))
+  self.assertIn('5 日反转',gen.call_args_list[1].args[4]['prompt'])
+  self.assertEqual([c.args[4]['action'] for c in update.call_args_list].count('implementation_window_feedback'),1)

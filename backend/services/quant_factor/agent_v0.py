@@ -52,6 +52,21 @@ _AUDIT_PATH = Path(env('QUANT_AGENT_V0_AUDIT')) if env('QUANT_AGENT_V0_AUDIT') e
 _STATE_LOCK = threading.RLock()
 _TICK_LOCK = threading.Lock()
 MAX_TASKS_PER_DAY = int(env('QUANT_AGENT_V0_MAX_TASKS_PER_DAY', '20') or 20)
+MAX_CONSECUTIVE_FAILURES = int(env('QUANT_AGENT_V0_MAX_CONSECUTIVE_FAILURES', '3') or 3)
+_FAILURE_MARKERS = (
+    '研发计算异常', 'F3 未生成', '模型调用', '研究模型', '数据执行', '执行依赖',
+    '窗口', '研究提案', '诊断父版本', '超时', 'timeout', 'connection',
+    'shutdown', '物理调用', '等价实现', '候选异常', '调度',
+)
+
+
+def _technical_stop(run: dict | None) -> bool:
+    if not run:
+        return False
+    reason = str(run.get('stop_reason') or '')
+    if run.get('technical_wait') or any(marker in reason for marker in _FAILURE_MARKERS):
+        return True
+    return False
 
 
 def _today_local() -> str:
@@ -152,11 +167,11 @@ def _public_state(uid: int, org: int, *, can_control: bool = False) -> dict:
         reason = '已有研究在运行；同一时间只推进 1 项。'
     elif pending and topic:
         wait_state = state.get('last_state')
-        status = wait_state if wait_state in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review') else 'pending_start'
-        reason = (state.get('last_error') if status in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review') else '') or 'Agent 已起草任务，等待启动。'
+        status = wait_state if wait_state in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review', 'waiting_failures') else 'pending_start'
+        reason = (state.get('last_error') if status in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review', 'waiting_failures') else '') or 'Agent 已起草任务，等待启动。'
     elif pending:
         wait_state = state.get('last_state')
-        status = wait_state if wait_state in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review') else 'drafting'
+        status = wait_state if wait_state in ('waiting_data', 'waiting_quota', 'waiting_limit', 'waiting_review', 'waiting_failures') else 'drafting'
         reason = state.get('last_error') or 'Agent 已起草任务，等待固定数据。'
     else:
         status = 'idle'
@@ -533,7 +548,8 @@ def tick(uid: int, org: int) -> dict:
                 ).fetchone()
                 if topic:
                     last_run = c.execute(
-                        'SELECT status FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s '
+                        "SELECT id,status,stop_reason,decision->'technical_wait'->>'kind' AS technical_wait "
+                        'FROM quant_factor_f0_runs WHERE user_id=%s AND org_id=%s AND topic_id=%s '
                         'ORDER BY created_at DESC LIMIT 1',
                         (uid, org, topic['id']),
                     ).fetchone()
@@ -550,6 +566,19 @@ def tick(uid: int, org: int) -> dict:
                 _update_state(last_state='running', last_tick_at=_now())
                 return {'state': 'running', 'reason': '已有研究在运行；同一时间只推进 1 项。'}
             if last_run and last_run['status'] in ('stopped', 'failed', 'completed'):
+                last_id = str(state.get('last_counted_run_id') or '')
+                if _technical_stop(last_run):
+                    if last_id != str(last_run['id']):
+                        streak = int(state.get('failure_streak') or 0) + 1
+                        _update_state(failure_streak=streak, last_counted_run_id=last_run['id'], last_failure_at=_now())
+                        state = _read_state()
+                    if int(state.get('failure_streak') or 0) >= MAX_CONSECUTIVE_FAILURES:
+                        reason = f'连续 {state.get("failure_streak")} 次技术失败，已暂停自动选题；请人工核对后重新开启'
+                        _update_state(last_state='waiting_failures', last_error=reason, last_tick_at=_now())
+                        return {'state': 'waiting_failures', 'reason': reason}
+                elif last_id != str(last_run['id']) or state.get('failure_streak'):
+                    _update_state(failure_streak=0, last_counted_run_id=last_run['id'])
+                    state = _read_state()
                 if open_review:
                     reason = '上一项研究仍在等待复核或登记；未新建下一项任务'
                     _update_state(last_state='waiting_review', last_error=reason, last_tick_at=_now())

@@ -139,3 +139,12 @@ class AgentSafetyCapTests(unittest.TestCase):
             result = agent_v0.tick(1, 2)
         self.assertEqual(result['state'], 'waiting_limit')
         create.assert_not_called()
+
+
+class AgentFailureBreakerTests(unittest.TestCase):
+    def test_technical_stops_are_distinguished_from_normal_research_failures(self):
+        self.assertTrue(agent_v0._technical_stop({'stop_reason': '研发计算异常，未产生可检验报告'}))
+        self.assertTrue(agent_v0._technical_stop({'stop_reason': 'F3 未生成通过校验的实现'}))
+        self.assertTrue(agent_v0._technical_stop({'stop_reason': 'x', 'technical_wait': 'execution_dependency'}))
+        self.assertFalse(agent_v0._technical_stop({'stop_reason': 'max_trials=5 已全部使用，remaining=0'}))
+        self.assertFalse(agent_v0._technical_stop(None))

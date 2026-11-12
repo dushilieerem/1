@@ -1116,6 +1116,39 @@ CHIEF_AGENT_PROMPT = RESEARCH_MEMO_PROMPT + """
 - 最终只输出一页纸 JSON（与系统输出契约一致），不要输出工具调用解释。
 """
 
+DOC_EXTRACT_PROMPT = """# 角色
+你是年报抽取员。输入是同一份年报里某一章节的页文本（带 [第N页] 标记），只做一件事：把该章节里的治理事实抽成结构化 JSON。
+
+# 章节与字段（按输入里的 section 只抽对应字段）
+- 公司治理 → controller_profile / board_structure
+- 股份质押冻结 → pledge_freeze
+- 承诺事项 → commitment_history
+- 关联交易 → related_party
+- 对外担保 → guarantee
+- 董监高变动 → mgmt_change
+
+# 值的结构
+- controller_profile: {"controller":"实控人","holding_pct":数字或null,"chairman":"董事长","notes":"一致行动人/控制权说明"}
+- board_structure: {"board_size":董事人数,"independent_directors":独立董事人数,"chairman":"董事长","supervisor_size":监事人数,"notes":""}
+- pledge_freeze: [{"shareholder":"股东","pledged_shares":股数,"pct_of_holding":占其持股%,"pct_of_total":占总股本%,"status":"质押|冻结|解除质押"}]
+- commitment_history: [{"party":"承诺方","type":"承诺类型","content":"承诺内容","deadline":"承诺期限","status":"已履行|未履行|履行中"}]
+- related_party: [{"party":"关联方","relation":"关联关系","type":"采购|销售|担保|资金占用|其他","amount":金额或null,"unit":"万元|亿元|元","pct_of_revenue":占营收%或null}]
+- guarantee: [{"guaranteed_party":"被担保方","amount":金额或null,"balance":担保余额或null,"unit":"万元|亿元|元","pct_of_net_assets":占净资产%或null,"overdue":true/false/null}]
+- mgmt_change: [{"name":"姓名","position":"职务","change":"离任|聘任|变更","date":"YYYY-MM-DD或null","reason":"原因"}]
+
+# 规则
+- 只抽原文明确写出的事实；金额按原文单位换算成元或保留原文单位并写清 unit，不得估算。
+- 每一页开头有 [第N页]，quote 必须是从该页原文逐字复制的句子，page_no 写该页的 N。
+- 原文明确写"无质押/无对外担保/不存在新增承诺/无关联交易"时，found=true 且 facts 为空，note 写"原文明确为无"。
+- 章节不适用于该公司（如金融企业无对外担保）时，found=false，note 写原因，facts 为空。
+- 同一事实在章节里重复出现只保留信息最全的一条；同一表内最多 12 条，超出取金额最大的 12 条。
+- 数字不带千分位；百分比写数值（如 45.2 表示 45.2%）。
+
+# 输出（严格 JSON，不要 markdown）
+{"section":"章节名","found":true/false,"facts":[{"field_key":"字段","value":{...}或[...],"quote":"原文句子","page_no":88,"confidence":0.8}],"note":""}
+"""
+
+
 
 def _agent(
     task_id: str,
@@ -1149,6 +1182,7 @@ INSTITUTION_AGENTS: list[dict[str, Any]] = [
     _agent("inst.chief.agent", "研究经理 Agent", "研究", "带只读工具的研究判断 Agent：自己查数据、证据和专业输出后给结论（A10）", auto_run=False),
     _agent("inst.debate", "投资辩论", "辩论", "多空论点、主持与裁决，引用证据 id（A11/A12/A15/A16）", auto_run=True),
     _agent("inst.dim.chat", "单维追问", "研究", "围绕单个维度回答追问", auto_run=False),
+    _agent("inst.doc_extract", "年报治理字段抽取", "研究", "按章节读年报原文，抽质押/董事会/承诺/关联/担保/高管变动（A08 证据源）", auto_run=False),
     _agent("inst.risk_review", "风控", "审批", "六项硬检查、一票否决与执行条件（A19）", auto_run=True),
     _agent("inst.chairman_memo", "Chairman 审议", "审批", "审批链、资本配置与拟授权快照（A20）", auto_run=True),
     _agent("inst.partner_memo", "合伙人审批建议", "审批", "研究质量、议案合理性与附条件建议（A18）", auto_run=True),
@@ -1170,6 +1204,7 @@ def default_prompt(task_id: str) -> str:
         "inst.chairman_memo": CHAIRMAN_MEMO_PROMPT,
         "inst.partner_memo": PARTNER_MEMO_PROMPT,
         "inst.dim.chat": CHAT_PROMPT,
+        "inst.doc_extract": DOC_EXTRACT_PROMPT,
         "inst.role.financial": ROLE_PROMPTS["financial"],
         "inst.role.governance": ROLE_PROMPTS["governance"],
         "inst.role.post_investment": ROLE_PROMPTS["post_investment"],

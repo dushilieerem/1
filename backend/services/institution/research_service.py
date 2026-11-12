@@ -1087,6 +1087,17 @@ def _build_research(company: dict[str, Any], mode: str = "full", targets: list[s
             doc_summary = doc_layer.load_doc_extracts(conn, symbol, data_as_of)
         except Exception:
             doc_summary = doc_layer.empty_doc_extracts("doc_extract 读取失败")
+    if os.getenv("SVQUANT_DOC_LLM_EXTRACT", "0").strip() in {"1", "true", "yes"}:
+        try:
+            from services.institution import doc_llm
+
+            if doc_llm.enabled():
+                doc_summary = doc_layer.merge_pending(
+                    doc_summary, doc_llm.field_items(symbol, as_of=data_as_of)
+                )
+        except Exception:
+            # 原文抽取失败不能阻断研究生成
+            pass
     net_debt = _net_debt_proxy(latest_fin)
     if debt_summary:
         if debt_summary.get("is_financial"):

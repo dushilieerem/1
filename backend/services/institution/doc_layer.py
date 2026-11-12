@@ -201,6 +201,27 @@ def load_doc_extracts(conn, symbol: str, as_of: Any) -> dict[str, Any]:
     }
 
 
+def merge_pending(doc_summary: dict[str, Any], grouped: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """把分析时从年报原文抽出的字段并入文档层结果。
+
+    只补“还没有正式证据”的字段：已有 verified/have 的字段保持原样；
+    并入的条目 review_status=pending，只作线索，不改变 gate 结论。
+    """
+    fields = doc_summary.get("fields") or {}
+    coverage = doc_summary.get("coverage") or {}
+    for key, items in (grouped or {}).items():
+        if key not in fields or not items:
+            continue
+        if coverage.get(key) == "have":
+            continue
+        existing = list(fields[key].get("items") or [])
+        fields[key] = {**fields[key], "status": "pending", "items": (items + existing)[:3]}
+        coverage[key] = "pending"
+    doc_summary["fields"] = fields
+    doc_summary["coverage"] = coverage
+    return doc_summary
+
+
 def document_payload(facts: dict[str, Any], dim_key: str) -> dict[str, Any]:
     """给某个六维 Agent 的文档字段子集。"""
     keys = DOC_DIM_MAP.get(dim_key, ())

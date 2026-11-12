@@ -730,8 +730,19 @@ INDUSTRY_TASK = register(
     )
 )
 
-RESEARCH_MEMO_TASK = register(
+DOC_EXTRACT_TASK = register(
     TaskSpec(
+        task_id="inst.doc_extract",
+        description="机构端年报章节抽取：按章节页文本抽治理事实（质押/董事会/承诺/关联/担保/高管变动）",
+        temperature=0.1,
+        max_tokens=16000,
+        timeout_sec=180,
+        executors=("local",),
+        response_format={"type": "json_object"},
+    )
+)
+
+RESEARCH_MEMO_TASK = register(    TaskSpec(
         task_id="inst.research_memo",
         description="机构端 CIO 一页纸：研究建议、六维评分、矛盾、证据与待核验",
         temperature=0.3,

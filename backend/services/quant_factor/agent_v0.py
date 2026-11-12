@@ -372,7 +372,9 @@ def _model_proposal(uid: int, org: int):
         prefix = 'agent-v0:proposal:' + uuid.uuid4().hex
         raw = ''
         for attempt in range(2):
-            out = model_budget.run(uid, org, None, prefix + ':attempt:' + str(attempt + 1), TASK, messages=messages)
+            from .research_queue import lightweight_advice
+            with lightweight_advice():
+                out = model_budget.run(uid, org, None, prefix + ':attempt:' + str(attempt + 1), TASK, messages=messages)
             raw = str(out.get('content') or '').strip()
             if raw.startswith('```'):
                 raw = raw.split('\n', 1)[1].rsplit('```', 1)[0]

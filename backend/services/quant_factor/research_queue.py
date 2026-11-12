@@ -68,6 +68,17 @@ def _release_if_finished(c,root):
  active=c.execute("SELECT id FROM quant_research_queue_jobs WHERE deployment_id=%s AND root_id=%s AND status IN ('queued','running') LIMIT 1",(DEPLOYMENT_ID,root)).fetchone()
  if not active and not unknown_calls(c,root) and not compute_pending(c,root):c.execute('UPDATE quant_research_queue_slots SET root_id=NULL,updated_at=NOW() WHERE deployment_id=%s AND root_id=%s',(DEPLOYMENT_ID,root))
 
+def _resume_yielded_root(c,root):
+ root_job=c.execute("SELECT id,kind,status FROM quant_research_queue_jobs WHERE deployment_id=%s AND root_id=%s AND id=root_id",(DEPLOYMENT_ID,root)).fetchone()
+ if not root_job or root_job['kind']!='f0' or root_job['status']!='completed':return
+ state=c.execute('SELECT status,decision FROM quant_factor_f0_runs WHERE id=%s',(root_job['object_id'],)).fetchone()
+ if not state or state['status']!='queued' or not (state.get('decision') or {}).get('scheduler_yield'):return
+ active=c.execute("SELECT id FROM quant_research_queue_jobs WHERE deployment_id=%s AND root_id=%s AND id<>%s AND status IN ('queued','running','waiting') LIMIT 1",(DEPLOYMENT_ID,root,root_job['id'])).fetchone()
+ if active:return
+ changed=c.execute("UPDATE quant_research_queue_jobs SET status='queued',queued_at=NOW(),reason='子任务完成后恢复调度',updated_at=NOW() WHERE id=%s AND status='completed' RETURNING id",(root_job['id'],)).fetchone()
+ if changed:c.execute('UPDATE quant_research_queue_slots SET root_id=%s,updated_at=NOW() WHERE deployment_id=%s',(root,DEPLOYMENT_ID))
+
+
 def finish(job,reason='',*,waiting=False):
  with get_conn() as c:
   _lock(c)
@@ -82,7 +93,9 @@ def finish(job,reason='',*,waiting=False):
      if changed:c.execute('UPDATE quant_research_queue_slots SET root_id=NULL,updated_at=NOW() WHERE deployment_id=%s AND root_id=%s',(DEPLOYMENT_ID,job['root_id']))
      return bool(changed)
   changed=c.execute("UPDATE quant_research_queue_jobs SET status=%s,reason=%s,updated_at=NOW() WHERE id=%s AND deployment_id=%s AND status='running' AND owner_epoch=%s RETURNING id",('waiting' if waiting else 'completed',str(reason)[:1000],job['id'],DEPLOYMENT_ID,job['owner_epoch'])).fetchone()
-  if changed:_release_if_finished(c,job['root_id'])
+  if changed:
+   _release_if_finished(c,job['root_id'])
+   if job['kind']!='f0':_resume_yielded_root(c,job['root_id'])
  return bool(changed)
 
 def cancel(c,kind,object_id,uid,org):
@@ -297,7 +310,7 @@ def lightweight_advice():
  finally:_LIGHT.reset(token)
 
 def permits_lightweight(task_id):
- return _LIGHT.get() and task_id in ('quant.factor.research_assistant','quant.factor.independent_reviewer')
+ return _LIGHT.get() and task_id in ('quant.factor.research_assistant','quant.factor.independent_reviewer','quant.factor.task_planner')
 
 
 def requeue_existing(c,kind,object_id,uid,org,*,run_id=None,target=None,never_submitted=False,payload=None):

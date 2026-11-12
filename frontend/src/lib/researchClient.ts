@@ -66,7 +66,7 @@ const protectedPaths = [
  /^\/factor-workflow\/imports\/[^/]+\/source$/,
  /^\/factor-workflow\/projects\/[^/]+\/topics$/,
  /^\/factor-workflow\/topics$/, 
- /^\/factor-workflow\/topics\/[^/]+(?:\/(ledger|threshold|branches|trials|handback|pause|resume|f0-runs|research-advice))?$/,
+ /^\/factor-workflow\/topics\/[^/]+(?:\/(ledger|threshold|branches|trials|handback|pause|resume|archive|f0-runs|research-advice))?$/,
  /^\/factor-workflow\/topics\/[^/]+\/branches\/[^/]+\/(takeover|f0|activate)$/,
  /^\/factor-workflow\/f0-runs\/[^/]+(?:\/resume)?$/,
  /^\/factor-workflow\/pending-review-count$/,

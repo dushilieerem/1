@@ -379,6 +379,9 @@ def list_org_topics(uid: int, org: int) -> list[dict]:
                       (SELECT r.decision->'technical_wait'->>'kind' FROM quant_factor_f0_runs r
                         WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
                         ORDER BY r.created_at DESC LIMIT 1) AS dispatch_technical_wait,
+                      (SELECT r.decision->>'current_action' FROM quant_factor_f0_runs r
+                        WHERE r.user_id=t.user_id AND r.org_id=t.org_id AND r.topic_id=t.id
+                        ORDER BY r.created_at DESC LIMIT 1) AS dispatch_action,
                       (SELECT COUNT(DISTINCT c.id) FROM quant_factor_candidates c
                         JOIN quant_factor_trials r
                           ON r.user_id=c.user_id AND r.org_id=c.org_id
@@ -676,6 +679,12 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
             (uid, org, topic_id)).fetchone()
     with get_conn() as c:
         work=c.execute("SELECT config->>'v5ActiveBranch' AS branch_id FROM detect_projects WHERE user_id=%s AND id=%s",(uid,topic['project_id'])).fetchone()
+    with get_conn() as c:
+        sealed_records=[dict(row) for row in c.execute(
+            """SELECT id,branch_id,status,report_id,candidate_id,created_at,evaluated_at
+               FROM quant_factor_sealed_validations
+               WHERE user_id=%s AND org_id=%s AND topic_id=%s
+               ORDER BY created_at""",(uid,org,topic_id)).fetchall()]
     dispatch = None
     if f0:
         dispatch = {"status": f0["status"], "stop_reason": f0["stop_reason"] or ""}
@@ -685,6 +694,7 @@ def ledger_view(uid: int, org: int, topic_id: str) -> dict:
         "active_branch_id": (work or {}).get('branch_id'),
         "branches": branches,
         "trials": [_public(row) for row in trials],
+        "sealed_records": sealed_records,
         "dispatch": dispatch,
         "k": k,
         # Before any counted trial the bar is still the K=1 threshold (t*=1.96), never null.

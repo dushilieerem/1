@@ -200,7 +200,7 @@ def run(uid,org,jid):
                     # The implementation is the research Agent's own output; feed
                     # the mismatch back once instead of recording a terminal
                     # "runtime exception". No trial or market compute was spent.
-                    update(uid,org,jid,'running',event('implementation_window_feedback',message=window_error))
+                    if not update(uid,org,jid,'running',event('implementation_window_feedback',message=window_error)):return
                     retry_id=jid+'-window2'
                     feedback=('上一版实现没有遵守冻结研究假设的窗口：'+window_error+
                               ' 请严格按研究假设重写实现，保持假设、方向和预测目标不变；不要用另一个窗口替代。')

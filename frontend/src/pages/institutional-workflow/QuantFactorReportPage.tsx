@@ -23,13 +23,21 @@ export function ResearchGateSummary({gate,phase='development',novelty,purpose}:{
  const overall=passed&&(!noveltyApplicable||(noveltyPassed&&!isFlowTest));
  const noveltyLabel=isFlowTest?'流程测试未执行':noveltyPassed?'通过':novelty?.status==='failed'?'未通过':novelty?.status==='deferred'?'待执行':novelty?.status==='unavailable'?'不可用':novelty?.status==='incomplete'||novelty?.status==='resource_pending'?'未完成':'未记录';
  const noveltyHint=novelty?.duplicates?.length?('定义重复：'+novelty.duplicates.map(d=>d.name).filter(Boolean).join('、')):novelty?.message||novelty?.gate?.limitation;
- const headline=!passed?stage+'数值条件未通过':isFlowTest?stage+'流程测试（未执行正式查重，不可入库）':noveltyApplicable&&!noveltyPassed?stage+'数值通过，查重未通过':stage+'硬门槛通过（数值+查重）';
+ const headline=!passed?stage+'数值条件未通过':isFlowTest?stage+'流程测试（未执行正式查重，不可入库）':noveltyApplicable&&!noveltyPassed?stage+'数值通过，查重未通过':stage+'硬门槛通过（'+(noveltyApplicable?'数值+查重':'数值')+'）';
  return <section className={'qr-gate qr-gate-summary '+(overall?'passed':'failed')} aria-label={stage+'门槛结论'}><h3>{headline}</h3><div className="qr-gate-checks">{gate.checks.map((c,i)=><div className="qr-gate-check" key={i}><strong>{c.name}</strong><span className={c.passed?'pass':'fail'}>{c.passed?'通过':'未通过'}</span><span title={String(c.actual)}>实际值 <b>{number(c.actual)}</b></span><span title={String(c.threshold)}>门槛 {c.operator} {number(c.threshold)}</span>{c.reason&&<p>{c.reason}</p>}</div>)}{noveltyApplicable&&<div className="qr-gate-check"><strong>因子库相关性</strong><span className={noveltyPassed&&!isFlowTest?'pass':'fail'}>{noveltyLabel}</span><span title={String(novelty?.gate?.max_abs_correlation??'')}>最大绝对相关 <b>{percentGate(novelty?.gate?.max_abs_correlation)}</b></span><span title={String(novelty?.gate?.threshold??'')}>门槛 &lt; {percentGate(novelty?.gate?.threshold)}</span><span>对照 {novelty?.gate?.compared_count??0}/{novelty?.gate?.expected_count??0}</span>{novelty?.gate?.closest&&<p>最接近：{novelty.gate.closest.factor_name||novelty.gate.closest.reference_id||'未记录'}{typeof novelty.gate.closest.mean_abs_spearman==='number'?' · '+percentGate(novelty.gate.closest.mean_abs_spearman):''}</p>}{noveltyHint&&<p>{noveltyHint}</p>}</div>}</div></section>;
 }
+function factorWindows(code:string):number[]{
+ const out:number[]=[];
+ for(const re of [/pct_change\(\s*(?:periods\s*=\s*)?(\d+)\s*\)/g,/shift\(\s*(?:periods\s*=\s*)?(\d+)\s*\)/g]){let m;while((m=re.exec(code)))out.push(Number(m[1]));}
+ return [...new Set(out)];
+}
+function declaredWindows(text:string):number[]{
+ const out:number[]=[];
+ for(const re of [/r(\d+)_i,t/g,/close_i,t-(\d+)/g,/(\d+)\s*个交易日/g,/(\d+)\s*日反转/g]){let m;while((m=re.exec(text)))out.push(Number(m[1]));}
+ return [...new Set(out)];
+}
 function factorWindow(code:string):number|undefined{
- const pct=code.match(/pct_change\(\s*(\d+)\s*\)/);if(pct)return Number(pct[1]);
- const shift=code.match(/shift\(\s*(\d+)\s*\)/);if(shift)return Number(shift[1]);
- return undefined;
+ const windows=factorWindows(code);return windows.length===1?windows[0]:undefined;
 }
 function explainFactorCode(code:string):string[]{
  const notes:string[]=[];
@@ -58,19 +66,20 @@ function FactorDefinitionCard({run,request,plan,hypothesis,background,summary,pl
  const description=hypothesis|| (typeof plan?.hypothesis==='string'?plan.hypothesis:'') || run.description?.replace(/ \/ (development|validation)$/,'') || '该报告未保存研究假设；请查看下方实现或输入与来源。';
  const fields=Array.isArray(contract.allowed_fields)?contract.allowed_fields.map(String):[];
  const notes=explainFactorCode(code);
- const window=factorWindow(code);
+ const windows=factorWindows(code);
+ const window=windows.length===1?windows[0]:undefined;
  const ranked=/\.rank\(/.test(code);
  const formula=window&&/close/.test(code)?`S_i,t = -${ranked?'rank_pct':'1'} × (close_i,t / close_i,t-${window} - 1)`:undefined;
- const hypothesisWindow=(()=>{const h=description;const m=h.match(/r(\d+)_i,t/)||h.match(/过去\s*(\d+)\s*个交易日/)||h.match(/(\d+)\s*个交易日/);return m?Number(m[1]):undefined;})();
- const taskWindow=(()=>{const m=(run.description||'').match(/(\d+)\s*日/);return m?Number(m[1]):undefined;})();
- const mismatch=window!=null&&hypothesisWindow!=null&&window!==hypothesisWindow;
- const nameMismatch=window!=null&&taskWindow!=null&&window!==taskWindow;
+ const hypothesisWindows=declaredWindows(description);
+ const taskWindows=declaredWindows(run.description||'');
+ const mismatch=windows.length===1&&hypothesisWindows.length===1&&windows[0]!==hypothesisWindows[0];
+ const nameMismatch=windows.length===1&&taskWindows.length===1&&windows[0]!==taskWindows[0];
  return <section className="card qr-section" aria-label="因子说明"><h3>因子说明</h3>
   <p><b>因子名称：</b>{name}{planner&&<small className="fine"> · {planner==='model'?'模型策划':'模板回退'}</small>}</p>
   <p><b>研究假设：</b>{description}</p>
   {formula&&<p><b>实现公式（按代码）：</b><code>{formula}</code></p>}
-  {mismatch&&<p className="hint warning">实现实际使用 {window} 日窗口，研究假设写的是 {hypothesisWindow} 日；请核对实现与假设是否一致，不能只看任务名称。</p>}
-  {nameMismatch&&<p className="hint warning">任务名称写的是 {taskWindow} 日，但实现/冻结假设实际是 {window} 日；以代码和假设为准，任务名称只是历史标签。</p>}
+  {mismatch&&<p className="hint warning">实现实际使用 {window} 日窗口，研究假设写的是 {hypothesisWindows[0]} 日；请核对实现与假设是否一致，不能只看任务名称。</p>}
+  {nameMismatch&&<p className="hint warning">任务名称写的是 {taskWindows[0]} 日，但实现/冻结假设实际是 {window} 日；以代码和假设为准，任务名称只是历史标签。</p>}
   {background&&<p><b>研究背景：</b>{background}</p>}
   {summary&&<p><b>提案摘要：</b>{summary}</p>}
   <p><b>实现要点：</b></p><ul>{notes.map((n,i)=><li key={i}>{n}</li>)}</ul>
@@ -96,9 +105,9 @@ export function QuantFactorReportPage(){
   void(async()=>{if(assetMode){const data=await loadFactorAssetReport(assetId,phase,controller.signal);if(alive){setAssetReport(data);setRun(data.run);const asset=data.asset as {hypothesis?:string;definition?:Record<string,unknown>};setResearchDefinition({hypothesis:asset?.hypothesis,request:asset?.definition});}}else{const record=await getRun(runId);if(!alive)return;if(!record)throw Error('报告不存在、无权访问或服务暂不可用。');setRun(record);}})().catch(e=>{if(alive&&!controller.signal.aborted)setError(e instanceof Error?e.message:'报告暂时无法读取。');}).finally(()=>{if(alive)setLoading(false);});const off=subscribeAuth(()=>setRevision(n=>n+1));return()=>{alive=false;controller.abort();off();};
  },[runId,assetId,phase,assetMode,revision]);
  useEffect(()=>{let alive=true;setGate(undefined);setIdentity(undefined);setCandidateStatus('');setNovelty(undefined);setGateError('');
-  if(assetMode){if(assetReport){const asset=assetReport.asset as {hypothesis?:string;definition?:Record<string,unknown>};setResearchDefinition({hypothesis:asset?.hypothesis,request:asset?.definition});setGate(assetReport.gate);}return;}
+  if(assetMode){if(assetReport){const asset=assetReport.asset as {hypothesis?:string;definition?:Record<string,unknown>;kind?:string};setResearchDefinition({hypothesis:asset?.hypothesis,request:asset?.definition,plan:{researchPurpose:asset?.kind==='novel_factor'?'discovery':'replication'}});setGate(assetReport.gate);setNovelty(assetReport.novelty as ResearchNovelty|undefined);}return;}
   setResearchDefinition(undefined);
-  const match=run?.id.match(/^qf_([0-9a-f-]{36})_(development|validation)$/);if(match)researchFetch('/api/factor-workflow/candidates/'+match[1]).then(async response=>{if(!response.ok)throw Error('门槛记录暂不可读');return response.json();}).then(data=>{if(alive){setIdentity(data.presentation);setCandidateStatus(data.status);setGate(data.evidence?.[match[2]]?.gate);setNovelty(data.evidence?.[match[2]]?.novelty);const snapshot=(data.snapshot||{}) as {plan?:Record<string,unknown>;request?:Record<string,unknown>};setResearchDefinition({hypothesis:typeof snapshot.plan?.hypothesis==='string'?snapshot.plan.hypothesis:undefined,plan:snapshot.plan,request:snapshot.request});}}).catch(()=>{if(alive)setGateError('研究门槛记录暂不可读，以下报告计算结果仍可查看。');});return()=>{alive=false;};
+  const match=run?.id.match(/^qf_([0-9a-f-]{36})_(development|validation)$/);if(match)researchFetch('/api/factor-workflow/candidates/'+match[1]).then(async response=>{if(!response.ok)throw Error('门槛记录暂不可读');return response.json();}).then(data=>{if(alive){setIdentity(data.presentation);setCandidateStatus(data.status);setGate(data.evidence?.[match[2]]?.gate);setNovelty((data.evidence?.development||{}).novelty);const snapshot=(data.snapshot||{}) as {plan?:Record<string,unknown>;request?:Record<string,unknown>};setResearchDefinition({hypothesis:typeof snapshot.plan?.hypothesis==='string'?snapshot.plan.hypothesis:undefined,plan:snapshot.plan,request:snapshot.request});}}).catch(()=>{if(alive)setGateError('研究门槛记录暂不可读，以下报告计算结果仍可查看。');});return()=>{alive=false;};
  },[run?.id,assetMode,assetReport]);
  useEffect(()=>{let alive=true;if(!run?.projectId){setResearchContext(undefined);return;}void getProject(run.projectId).then(project=>{if(!alive||!project)return;const cfg=project.config as unknown as Record<string,unknown>;const context=(cfg.researchContext||{}) as Record<string,unknown>;const agent=(cfg.agentV0||{}) as Record<string,unknown>;const proposal=(agent.proposal||{}) as Record<string,unknown>;setResearchContext({background:typeof context.background==='string'?context.background:undefined,summary:typeof proposal.summary==='string'?proposal.summary:undefined,planner:typeof agent.planner==='string'?agent.planner:undefined});}).catch(()=>{});return()=>{alive=false;};},[run?.projectId]);
  const result=run?.result,meta=result?.meta||{},fa=result?.factor_analysis,request=run?.request||{},metrics=result?.metrics||{};
@@ -122,7 +131,7 @@ export function QuantFactorReportPage(){
  return <div className="quant-factor-report"><WorkspaceHeading title="因子研究报告" description="以固定输入与真实计算结果，评估因子的预测能力、收益风险与适用边界。">{run&&<button className="btn" onClick={()=>exportRecord(run)}>导出完整报告</button>}<Link className="btn" to={assetMode?backToAsset:quantReportsPath(run?.projectId||undefined)}>{assetMode?'返回因子详情':'实验记录'}</Link></WorkspaceHeading><FactorModuleTabs active={assetMode?'library':'experiments'} projectId={assetMode?undefined:run?.projectId||undefined}/>
  {loading?<p role="status" className="card card-pad">正在读取报告…</p>:error?<p className="hint error" role="alert">{error}<button className="btn small" onClick={()=>setRevision(n=>n+1)}>重试</button></p>:run&&result&&<>
  <section className="card qr-hero"><div><div className="qr-eyebrow">FACTOR RESEARCH <span>{stage}</span>{identity&&<span>{trialCandidateLabel({presentation:identity,status:candidateStatus})}</span>}</div><h2>{assetReport?.asset.display_name||run.description?.replace(/ \/ (development|validation)$/,'')||run.factorName}</h2><p className="qr-factor-name">{run.factorName}{assetReport&&<> · 第 {assetReport.asset.version} 版 · 审批时固定报告</>}</p><div className="qr-facts"><span><small>实际区间</small>{result.date_range?.start||'未返回'} — {result.date_range?.end||'未返回'}</span><span><small>股票池</small>{staticResearchSample(request)?researchScopeLabel(request):optionLabel(request?.universe||'',DETECT_UNIVERSE_OPTIONS)||'未注明'}</span><span><small>比较基准</small>{benchmark||'未注明'}</span><span><small>成交 / 调仓</small>{({next_open:'次日开盘',next_close:'次日收盘',same_close:'当日收盘'} as Record<string,string>)[request?.execution_timing||'']||'未注明'} / {request?.rebalance_days??'—'} 日</span></div></div>{assetMode?<Link className="btn primary" to={backToAsset}>返回因子详情 →</Link>:<Link className="btn primary" to={'/quant/factor/workflow/'+run.projectId+(stage==='样本外复验'?'/F5':'/F4')+returnQuery}>返回研究任务 →</Link>}</section>
- {gate&&<ResearchGateSummary gate={gate} phase={assetReport?.phase} novelty={novelty} purpose={typeof researchDefinition?.plan?.researchPurpose==='string'?researchDefinition.plan.researchPurpose:undefined}/>}
+ {gate&&<ResearchGateSummary gate={gate} phase={assetReport?.phase||(run?.id.endsWith('_validation')?'sealed':undefined)} novelty={novelty} purpose={typeof researchDefinition?.plan?.researchPurpose==='string'?researchDefinition.plan.researchPurpose:undefined}/>}
  {result.error&&<p className="hint warning">本次计算未完成：{String(result.error)}</p>}
  <FactorDefinitionCard run={run} request={request} plan={researchDefinition?.plan} hypothesis={researchDefinition?.hypothesis} background={researchContext?.background} summary={researchContext?.summary} planner={researchContext?.planner} onShowSource={()=>setView('definition')}/>
  <div className="qr-metrics"><Metric label="组合累计收益" value={mainReturn} percent hint="按报告净值序列计算"/><Metric label="年化收益" value={metrics.annual_return} percent hint="报告统计"/><Metric label="相对基准收益" value={relativeReturn} percent hint="组合净值 ÷ 基准净值 − 1"/><Metric label="最大回撤" value={metrics.max_drawdown} percent hint="报告统计"/><Metric label="夏普比率" value={metrics.sharpe??metrics.sharpe_ratio} hint="风险调整表现"/><Metric label="Rank IC" value={metrics.rank_ic??fa?.rank_ic_mean} hint="因子与前瞻收益的秩相关"/></div>

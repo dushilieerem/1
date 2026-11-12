@@ -54,3 +54,8 @@ def test_parent_window_mention_with_a_new_single_window_is_not_rejected():
     hypothesis = '将父候选的3日反转改为2日反转：r2=close_{i,t}/close_{i,t-2}-1'
     code = 'def f0_factor(self):\n    return -(self.close/self.close.shift(2)-1)'
     assert conflict('反转基线', hypothesis, code) == ''
+
+
+def test_keyword_period_arguments_are_checked_not_bypassed():
+    assert implementation_window('self.close.pct_change(periods=5)') == 5
+    assert conflict('反转', '5 日反转：r5=close_{i,t}/close_{i,t-5}-1', 'self.close.pct_change(periods=2)') != ''

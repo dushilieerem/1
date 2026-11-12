@@ -108,7 +108,8 @@ def full_report(uid,org,asset_id,phase):
  # frozen_data_view contains a public view identity, never caller paths or auth tokens.
  if 'frozen_data_view' in safe_request:safe_request['frozen_data_view']=pick(mapping(safe_request['frozen_data_view']),('view_id','view_manifest_sha256','daily_release','daily_dataset_sha256'))
  return {'readonly':True,'phase':phase,'report_id':rid,
-  'asset':{'id':asset['id'],'display_name':asset['display_name'],'version':asset['version'],'kind':asset['kind'],'purpose':'research_only','approved_at':mapping(asset.get('approval')).get('at')},
+  'asset':{'id':asset['id'],'candidate_id':asset.get('candidate_id'),'display_name':asset['display_name'],'version':asset['version'],'kind':asset['kind'],'purpose':'research_only','approved_at':mapping(asset.get('approval')).get('at')},
+  'novelty':{'status':'passed' if (mapping(asset.get('novelty_report')).get('gate') or {}).get('passed') is True else 'failed','gate':copy.deepcopy(mapping(asset.get('novelty_report')).get('gate') or {}),'reference_hash':mapping(asset.get('novelty_report')).get('reference_hash')},
   'run':{'id':rid,'factorName':request.get('factor_name') or mapping(asset.get('definition')).get('factor_name') or asset['display_name'],
    'description':asset['display_name'],'request':safe_request,'result':result,'projectId':None,
    'finishedAt':iso((raw if phase=='development' else block).get('finished_at') or (raw if phase=='development' else block).get('completed_at')),

@@ -14,7 +14,7 @@ import {clearStartKey,getOrCreateStartKey} from '@/lib/factorStartRequest';
 type Topic={id:string;display_no?:number;project_id:string;project_name:string;view_id:string;primary_holding_period:number;max_trials:number;max_sealed:number;sealed_used?:number;status:string;dispatch_status?:string|null;dispatch_stop_reason?:string|null;dispatch_action?:string|null;dispatch_technical_wait?:string|null;pending_review?:number;pending_feedback?:number;sealed_passed?:number;sealed_running?:number;sealed_failed?:number;approved_count?:number;registered_count?:number;latest_outcome?:string|null;research_purpose?:string|null;k:number;branch_count:number;trial_count:number;development_start?:string;development_end?:string;validation_start?:string;validation_end?:string;created_at?:string;updated_at?:string};
 type Branch={id:string;topic_id:string;parent_id?:string|null;source:string;status:string;hypothesis_version:number;implementation_version:number;created_at?:string;display_label?:string;display_title?:string;hypothesis_text?:string;source_label?:string;creation_label?:string;execution_label?:string;display_status?:string};
 type Trial={branch_label?:string;trial_no:number;branch_id:string;kind:string;outcome:string;executor:string;report_id?:string|null;created_at?:string;returned_metrics?:boolean;rerun_of?:string|null;result_summary?:{gate?:{checks?:{name:string;actual:number|null;threshold:number;passed:boolean}[]}}};
-type Ledger={topic:Topic;active_branch_id?:string;branches:Branch[];trials:Trial[];k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
+type Ledger={topic:Topic;active_branch_id?:string;branches:Branch[];trials:Trial[];sealed_records?:Array<{id:string;branch_id?:string|null;status:string;report_id?:string|null;candidate_id?:string|null;created_at?:string|null;evaluated_at?:string|null}>;k:number;threshold:number|null;threshold_next_if_counted:number;next_trial_no:number;dispatch?:{status:string;stop_reason:string}|null};
 type AgentStatus={available:boolean;mode?:string;enabled:boolean;state:string;reason:string;paused?:boolean;pending?:{project_id:string;name:string;topic_id?:string|null;topic_status?:string|null}|null;active_run?:{id:string;topic_id?:string;status:string}|null;last_tick_at?:string|null;last_error?:string;updated_at?:string|null;can_control?:boolean};
 
 const statusText=(t:Pick<Topic,'status'|'dispatch_status'|'pending_review'|'sealed_passed'|'latest_outcome'>)=>{
@@ -360,9 +360,9 @@ export function QuantFactorHomePage(){
    <small>已起草 · 固定数据修好后自动创建并启动</small>
   </button>
  ):null;
- const topicCards=[...(agentDraftCard?[agentDraftCard]:[]),...filteredTopics.map(t=>{const s=taskStateOf(t);const stageName=s.stages.find(x=>x.id===s.currentStage)?.label||'';return (
+ const topicCards=[...(agentDraftCard?[agentDraftCard]:[]),...filteredTopics.map(t=>{const s=taskStateOf(t);const stageName=s.stages.find(x=>x.id===s.currentStage)?.label||'';const taskLabel=t.status==='archived'?'已归档':s.label;return (
   <button key={t.id} className={'ff-task'+(selected===t.id?' selected':'')} onClick={()=>setSelected(t.id)} aria-current={selected===t.id?'true':undefined}>
-   <div className="ff-task-row"><span className={'badge '+s.tone}>{s.label}</span><small>日频</small></div>
+   <div className="ff-task-row"><span className={'badge '+(t.status==='archived'?'gray':s.tone)}>{taskLabel}</span><small>日频</small></div>
    <strong>{t.project_name||'未命名挖掘任务'}</strong>
    <small>{stageName} · 已检验 {t.trial_count} 次 / 上限 {t.max_trials} 次</small>
    {t.updated_at||t.created_at?<time>{new Date(t.updated_at||t.created_at||'').toLocaleString()}</time>:null}
@@ -413,7 +413,7 @@ export function QuantFactorHomePage(){
  const canStart=['draft','error','waiting'].includes(taskState?.key||'');
  const stageTitle=stageDefs.find(s=>s.id===stageView);
  const latestTrials=[...(ledger?.trials||[])].sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
- const sealedTrials=latestTrials.filter(t=>String(t.kind||'').includes('sealed'));
+ const sealedTrials=ledger?.sealed_records||[];
  const stageContent=!topic?null:(
   <article className="card ff-stage-card">
    <div className="card-head"><div><h2>{stageTitle?.label}</h2><p>{stageTitle?.role} · {stageTitle?.status==='done'?'已完成':stageTitle?.status==='current'?'当前环节':'尚未开始'}</p></div><span className="badge">{purposeText(topic.research_purpose)}</span></div>
@@ -433,7 +433,7 @@ export function QuantFactorHomePage(){
     </>}
     {stageView==='validation'&&<>
      <dl className="ff-kv"><dt>封存已用</dt><dd>{topic.sealed_used||0} / {topic.max_sealed}</dd><dt>验证通过</dt><dd>{topic.sealed_passed||0} 次</dd><dt>验证中</dt><dd>{topic.sealed_running||0} 次</dd><dt>验证失败</dt><dd>{topic.sealed_failed||0} 次</dd><dt>待审批</dt><dd>{topic.pending_review||0} 项</dd></dl>
-     {sealedTrials.length>0?<div className="trial-list" style={{marginTop:10}}>{sealedTrials.slice(0,5).map(t=><div className="trial-row" key={t.trial_no}><span className="tk">验证</span><div className="tb"><b>{outcomeText(t)}</b><small>{new Date(t.created_at||'').toLocaleString()}</small></div>{t.report_id?<Link className="btn small" to={'/quant/factor/report/'+t.report_id}>报告</Link>:null}</div>)}</div>:<p className="subtle">尚无封存验证记录。</p>}
+     {sealedTrials.length>0?<div className="trial-list" style={{marginTop:10}}>{sealedTrials.slice(0,5).map(t=><div className="trial-row" key={t.id}><span className="tk">验证</span><div className="tb"><b>{t.status==='passed'?'验证通过':t.status==='failed'?'验证未通过':t.status}</b><small>{new Date(t.evaluated_at||t.created_at||'').toLocaleString()}</small></div>{t.report_id?<Link className="btn small" to={'/quant/factor/report/'+t.report_id}>报告</Link>:null}</div>)}</div>:<p className="subtle">尚无封存验证记录。</p>}
     </>}
     {stageView==='approval'&&<>
      <dl className="ff-kv"><dt>本任务待审批</dt><dd>{topic.pending_review||0} 项</dd><dt>已批准待登记</dt><dd>{topic.approved_count||0} 项</dd><dt>已入库</dt><dd>{topic.registered_count?topic.registered_count+' 项':'尚未完成入库'}</dd></dl>
@@ -491,7 +491,7 @@ export function QuantFactorHomePage(){
    </WorkspaceHeading>
    <FactorModuleTabs active="home"/>
    <div className="sys compact">
-    {(()=>{const running=topics.filter(t=>t.dispatch_status==='running'||t.dispatch_status==='queued').length,review=topics.filter(t=>(t.pending_review||0)>0).length,agentDraft=topics.filter(t=>t.project_name.startsWith('Agent ')&&!t.dispatch_status&&t.status!=='archived').length+(agent?.pending&&!agent.pending.topic_id?1:0),waitingData=topics.filter(t=>t.dispatch_status==='stopped'&&/固定数据|数据版本|计算服务|模型调用次数|调用额度/.test(t.dispatch_stop_reason||'')).length;const state=running?'运行中':waitingData?'空闲 · 等待固定数据':review?'空闲 · 待审批':agentDraft?'空闲 · Agent 待启动':'空闲';return <div className="sys-state"><span className="ico">⇅</span><div><b><span className={"live-dot"+(running?'':' off')}/> 因子研究系统{state}</b><small className="fine">{loading?'读取中':`挖掘任务 ${topics.length} 个 · 运行中 ${running} · Agent 待启动 ${agentDraft} · 待审批 ${review} · 自主研究 ${agentStateText(agent)}`}</small></div></div>;})()}
+    {(()=>{const running=topics.filter(t=>t.dispatch_status==='running'||t.dispatch_status==='queued').length,review=topics.filter(t=>(t.pending_review||0)>0).length,agentDraft=topics.filter(t=>t.project_name.startsWith('Agent ')&&!t.dispatch_status&&t.status!=='archived').length+(agent?.pending&&!agent.pending.topic_id?1:0),waitingData=topics.filter(t=>t.dispatch_status==='stopped'&&/固定数据|数据版本|计算服务/.test(t.dispatch_stop_reason||'')).length;const state=running?'运行中':waitingData?'空闲 · 等待固定数据':review?'空闲 · 待审批':agentDraft?'空闲 · Agent 待启动':'空闲';return <div className="sys-state"><span className="ico">⇅</span><div><b><span className={"live-dot"+(running?'':' off')}/> 因子研究系统{state}</b><small className="fine">{loading?'读取中':`挖掘任务 ${topics.filter(t=>t.status!=='archived').length} 个 · 运行中 ${running} · Agent 待启动 ${agentDraft} · 待审批 ${review} · 自主研究 ${agentStateText(agent)}`}</small></div></div>;})()}
     <div className="actions"><button className="btn small" disabled={!canWrite||agentBusy} onClick={()=>void toggleAgent()} title={agent?.reason||'开启后在授权范围内自动起草并启动 1 项'}>{agentBusy?'处理中…':agent?.enabled?'暂停选题':'开启自主研究'}</button><span className="fine">全局调度{paused?'已暂停':'开启'}</span><button className="btn small" disabled={!canManage||!canWrite||controlBusy} onClick={()=>void toggleGlobalPause()} title={canManage?(paused?"恢复全部自动研究":"全局暂停，不启动新自动动作"):"需要研究负责人权限"}>{paused?"恢复全部":"全局暂停"}</button></div>
    </div>
    {agent?.pending&&<p className="fine" role="status">Agent 已起草：{agent.pending.name} · {agent.state==='waiting_data'?'等待固定数据，修好后自动启动':agentStateText(agent)}</p>}

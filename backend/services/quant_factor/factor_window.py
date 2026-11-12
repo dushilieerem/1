@@ -40,7 +40,7 @@ def implementation_window(code: str | None) -> int | None:
 
 def implementation_windows(code: str | None) -> set[int]:
     value = str(code or '')
-    return {int(x) for x in re.findall(r'(?:pct_change|shift)\(\s*(\d+)\s*\)', value)}
+    return {int(x) for x in re.findall(r'(?:pct_change|shift)\(\s*(?:periods\s*=\s*)?(\d+)\s*\)', value)}
 
 
 def conflict(name: str | None, hypothesis: str | None, code: str | None) -> str:

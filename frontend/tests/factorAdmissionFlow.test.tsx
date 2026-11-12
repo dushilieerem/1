@@ -48,11 +48,11 @@ test('旧反馈和作者只读不会出现新批准入口；取消弹窗回到�
  login();reviewFixture('research_feedback_only');const view=render(<MemoryRouter><FactorReviewPage/></MemoryRouter>);
  await waitFor(()=>assert.ok(view.getByRole('button',{name:'领取复核'})));assert.equal(view.queryByRole('button',{name:'批准研究用途并入库'}),null);
  fireEvent.click(view.getByRole('button',{name:'领取复核'}));await waitFor(()=>assert.ok(view.getByText('我在复核')));
- const button=view.getByRole('button',{name:'退回补证'});button.focus();fireEvent.click(button);fireEvent.click(within(view.getByRole('dialog')).getByRole('button',{name:'取消'}));assert.equal(document.activeElement,button);
+ const button=view.getByRole('button',{name:'复核不通过'});button.focus();fireEvent.click(button);fireEvent.click(within(view.getByRole('dialog')).getByRole('button',{name:'取消'}));assert.equal(document.activeElement,button);
 });
 test('作者只读材料没有批准、领取或决定按钮',async()=>{
  login('write');reviewFixture('research_admission',true);const view=render(<MemoryRouter><FactorReviewPage/></MemoryRouter>);
- await waitFor(()=>assert.ok(view.getByRole('heading',{name:'候选测试',level:2})));assert.equal(view.queryByRole('button',{name:'批准研究用途并入库'}),null);assert.equal(view.queryByRole('button',{name:'领取复核'}),null);assert.equal(view.queryByRole('button',{name:'退回补证'}),null);
+ await waitFor(()=>assert.ok(view.getByRole('heading',{name:'候选测试',level:2})));assert.equal(view.queryByRole('button',{name:'批准研究用途并入库'}),null);assert.equal(view.queryByRole('button',{name:'领取复核'}),null);assert.equal(view.queryByRole('button',{name:'复核不通过'}),null);
 });
 test('冻结资产复用保存来源和原定义，不复制旧验证状态或自动运行',async()=>{
  login('write');let saved:any;const posts:string[]=[];

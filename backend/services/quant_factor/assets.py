@@ -147,6 +147,7 @@ def approve(uid,org,cid,note,metadata,acknowledged):
         if rev.get('purpose')!=PURPOSE:raise WorkflowError('此事项不是研究资产审批；旧反馈和封存失败复盘不能升级为批准')
         if rev.get('status')!='requested':raise WorkflowError('此版本已有决定，不能覆盖')
         facts=eligibility(row,c)
+        if facts.get('flow_test'):raise WorkflowError('流程测试候选不可登记入库；该候选仅用于验证审批流程')
         now=datetime.now(timezone.utc).isoformat();snap=row['snapshot'];dev=row['evidence']['development'];seal=facts['sealed']
         asset={'schema':SCHEMA,'id':('qfa_' if facts['kind']=='discovery' else 'qfr_')+cid,
                'org_id':org,'candidate_id':cid,'snapshot_hash':row['snapshot_hash'],'version':1,

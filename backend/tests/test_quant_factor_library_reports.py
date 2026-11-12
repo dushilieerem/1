@@ -51,7 +51,7 @@ def asset_fixture():
  gate={'passed':False,'checks':[{'name':'有效IC观测数','actual':None,'threshold':60,'passed':False,'operator':'>='}]}
  asset={'schema':assets.SCHEMA,'id':'qfa_candidate-one','org_id':9,'candidate_id':'candidate-one','snapshot_hash':digest(snap),'version':1,
   'kind':'novel_factor','display_name':'固定资产','purpose':'research_only','definition':request,'approval':{'at':'2026-11-10T01:00:00Z'},
-  'development_result_hash':digest(raw),'novelty_result_hash':digest(novelty),
+  'development_result_hash':digest(raw),'novelty_result_hash':digest(novelty),'novelty_report':{'reference_hash':'catalog','gate':{'passed':True,'complete':True,'threshold':.7,'max_abs_correlation':.2,'compared_count':1,'expected_count':1}},
   'development_report':{'report_id':'dev-report','gate':gate},'sealed_report':{'report_id':'sealed-report','result_hash':digest(sb),'summary':{'gate':gate}}}
  asset['registration_hash']=digest(asset)
  row={'asset':asset,'snapshot_hash':digest(snap),'snapshot':snap,'evidence':{'development':dev},'private_chat':'HIDDEN'}
@@ -114,7 +114,7 @@ class AssetTests(unittest.TestCase):
   row,seal=asset_fixture();out=self.read(row,seal)
   self.assertTrue(out['readonly']);self.assertIsNone(out['run']['projectId']);self.assertEqual(out['run']['request']['start'],'2025-07-01');self.assertEqual(out['run']['result']['equity_curve'],row['evidence']['development']['result']['equity_curve']);self.assertEqual(out['run']['result']['factor_analysis']['ic_series'][0]['sample_size'],40)
   self.assertEqual(out['run']['result']['factor_analysis']['definition']['ic_type'],'pearson');self.assertEqual(out['run']['result']['factor_analysis']['definition']['groups'],5);self.assertEqual(out['run']['result']['factor_analysis']['quantile_metrics'][0]['excess_volatility'],.03)
-  self.assertEqual(out['run']['result']['meta']['cost_model']['note'],'真实费用口径');self.assertNotIn('HIDDEN',str(out));self.assertIsNone(out['run']['finishedAt']);self.assertFalse(out['gate']['passed']);self.assertIsNone(out['gate']['checks'][0]['actual']);self.assertEqual(out['provenance']['source_result_hash'],row['asset']['development_result_hash']);self.assertEqual(out['provenance']['request_source'],'registered_definition')
+  self.assertEqual(out['run']['result']['meta']['cost_model']['note'],'真实费用口径');self.assertNotIn('HIDDEN',str(out));self.assertIsNone(out['run']['finishedAt']);self.assertFalse(out['gate']['passed']);self.assertIsNone(out['gate']['checks'][0]['actual']);self.assertEqual(out['provenance']['source_result_hash'],row['asset']['development_result_hash']);self.assertEqual(out['provenance']['request_source'],'registered_definition');self.assertEqual(out['novelty']['status'],'passed');self.assertEqual(out['novelty']['gate']['threshold'],.7)
  def test_sealed_uses_hashed_intent_not_development_period_and_keeps_real_series(self):
   row,seal=asset_fixture();out=self.read(row,seal,'sealed')
   self.assertEqual(out['run']['request']['start'],'2026-06-22');self.assertEqual(out['run']['request']['end'],'2026-09-21');self.assertEqual(out['run']['result']['date_range']['start'],'2026-06-22');self.assertEqual(out['provenance']['request_source'],'sealed_intent');self.assertEqual(out['report_id'],'sealed-report')

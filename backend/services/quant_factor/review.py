@@ -64,7 +64,8 @@ def request_review(uid,org,cid,note,purpose="research_admission",controller=None
             raise WorkflowError('既有复核事项尚未结束，不能将反馈直接升级为资产审批')
         if purpose=='research_admission':
             from .assets import eligibility
-            eligibility(dict(row),c,for_submission=True)
+            facts=eligibility(dict(row),c,for_submission=True)
+            if facts.get('flow_test'):raise WorkflowError('流程测试候选不可登记入库；该候选仅用于验证审批流程')
         else:materials=feedback_materials(dict(row))
         if existing:card['review_history']=[*(card.get('review_history') or []),existing]
         card['review']={'status':'requested','question':note.strip(),'at':datetime.now(timezone.utc).isoformat(),'snapshot_hash':row['snapshot_hash'],'purpose':purpose,**({'materials':materials} if purpose=='research_feedback_only' else {})}

@@ -556,9 +556,9 @@ def tick(uid: int, org: int) -> dict:
                         (uid, org, topic['id']),
                     ).fetchone()
                     open_review = c.execute(
-                        "SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s AND project_id=%s "
-                        "AND (archive->'review'->>'status'='requested' OR archive->'research_asset' IS NOT NULL) LIMIT 1",
-                        (uid, org, pending['id']),
+                        "SELECT id FROM quant_factor_candidates WHERE user_id=%s AND org_id=%s "
+                        "AND archive->'review'->>'status'='requested' LIMIT 1",
+                        (uid, org),
                     ).fetchone()
         if active:
             _update_state(last_state='running', last_tick_at=_now())

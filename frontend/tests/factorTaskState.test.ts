@@ -189,3 +189,9 @@ test('旧模型调用次数限制显示已停用，而不是笼统技术条件�
  const s=deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_technical_wait:'execution_dependency',dispatch_stop_reason:'今日账号模型调用次数已达上限，未预留新请求'});
  assert.equal(s.label,'旧调用配额已停用');assert.match(s.needsYou,/重新启动研究/);assert.ok(!s.needsYou.includes('技术条件限制'));
 });
+
+
+test('实现与假设窗口不一致显示实现需修订，而不是运行异常',()=>{
+ const s=deriveFactorTaskState({...base,dispatch_status:'stopped',dispatch_stop_reason:'冻结研究假设写的是 5 日，实际实现代码是 1 日；请修订实现或建立新的研究分支'});
+ assert.equal(s.label,'实现需修订');assert.match(s.needsYou,/退回修订/);assert.notEqual(s.label,'运行异常');
+});

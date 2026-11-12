@@ -96,6 +96,9 @@ function technicalWait(kind: string | null | undefined, reason: string): { label
   if (/(提案|诊断|planner|proposal)/.test(reason)) {
     return { label: '等待修订提案', needsYou: '规划或诊断结果未通过一致性校验；旧证据保留，需修订后再继续。' };
   }
+  if (/(窗口|冻结研究假设|实现.*假设|implementation.*hypothesis)/.test(reason)) {
+    return { label: '实现需修订', needsYou: '研究 Agent 生成的实现与冻结假设的窗口不一致；系统已退回修订，不能用错窗口去消耗试验次数。' };
+  }
   return { label: '等待处理', needsYou: '上次自动研究遇到执行条件限制；已有数据范围、结果和次数保留，核对后继续。' };
 }
 
@@ -162,8 +165,11 @@ export function deriveFactorTaskState(t: FactorTaskFacts): FactorTaskState {
     key = 'error'; label = '服务异常'; tone = 'bad';
     needsYou = '可重试启动并保留原任务；连续异常请联系维护人员，技术原文见诊断详情。';
   } else if (dispatch === 'stopped') {
+    const implementationWait = /(窗口|冻结研究假设|实现.*假设|implementation.*hypothesis)/.test(reason) ? technicalWait('execution_dependency', reason) : null;
     const trialBudgetExhausted = ['max_trials', '试验预算已用尽', 'remaining=0', '已用满'].some(s => reason.includes(s));
-    if (trialBudgetExhausted) {
+    if (implementationWait) {
+      key = 'waiting'; label = implementationWait.label; tone = 'warn'; needsYou = implementationWait.needsYou;
+    } else if (trialBudgetExhausted) {
       key = 'ended'; label = '未达标，已结束'; tone = 'gray';
       needsYou = '本任务研发试验预算已用尽，已有证据和报告保留；继续研究需新建任务或新的授权计划，不能在本任务上直接续跑。';
     } else if (['authorization','授权','额度不足','预算不足'].some(s=>reason.includes(s))) {

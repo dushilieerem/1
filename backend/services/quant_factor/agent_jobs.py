@@ -192,6 +192,17 @@ def run(uid,org,jid):
             if prompt_error:raise WorkflowError(prompt_error+'；请精简研究说明，完整报告仍已保留。')
             body={'prompt':instruction+'\n'+prompt,'context':{'frequency':'1d','preferred_factor_name':draft.get('name') or None,'custom_source_contract':VERSION},'idempotency_key':jid}
             out=generate(uid,org,row['project_id'],jid,body,research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
+            if out.get('status')!='ready' or out.get('validation',{}).get('status')!='passed':
+                errors='；'.join(out.get('validation',{}).get('errors',[]) or [])
+                if any(marker in errors for marker in ('需求暂不支持','不支持','白名单','OLS','回归','ln','log','math','import')):
+                    if not update(uid,org,jid,'running',event('implementation_capability_feedback',message=errors[:800])):return
+                    retry_id=jid+'-cap2'
+                    feedback=('上一版实现使用了平台不支持的表达式能力：'+errors+
+                              '。请只使用平台支持的字段、面板方法和 numpy 函数（np.log/np.log1p 可用）；'
+                              '不得使用裸 ln/log、math、import、OLS/回归、矩阵运算或未列出的 self 方法。'
+                              '若无法用支持的能力保持原假设，请返回 rejected 并说明，而不是编造替代实现。')
+                    body2={**body,'prompt':instruction+'\n'+feedback+'\n'+prompt,'idempotency_key':str(uuid.uuid4())}
+                    out=generate(uid,org,row['project_id'],retry_id,body2,research_contract=contract,proposal=(draft.get('researchProposal') or {}).get('proposal'),method_snapshot=row['input'].get('method_snapshot'))
             if out.get('status')=='ready':
                 from .factor_window import conflict as window_conflict
                 factor=out.get('factor') or {}

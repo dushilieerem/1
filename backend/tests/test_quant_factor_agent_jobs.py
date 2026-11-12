@@ -83,3 +83,13 @@ class WindowFeedbackTests(unittest.TestCase):
   self.assertTrue(gen.call_args_list[1].args[3].endswith('-window2'))
   self.assertIn('5 日反转',gen.call_args_list[1].args[4]['prompt']);self.assertIsInstance(uuid.UUID(gen.call_args_list[1].args[4]['idempotency_key']),uuid.UUID)
   self.assertEqual([c.args[4]['action'] for c in update.call_args_list].count('implementation_window_feedback'),1)
+
+
+class CapabilityFeedbackTests(unittest.TestCase):
+ def test_f3_unsupported_capability_is_fed_back_and_rewritten_once(self):
+  draft={'hypothesis':'用成交量计算量价因子','target':'1 day','name':'f','code':''}
+  first={'status':'rejected','validation':{'status':'failed','errors':['需求暂不支持：自然对数 ln']},'meta':{}}
+  second={'status':'ready','validation':{'status':'passed'},'factor':{'factor_name':'f','factor_code':'def f0_factor(self):\n    return -self.close.pct_change(5)'},'meta':{}}
+  with patch.object(jobs,'read',return_value={'status':'queued','stage':'F3','project_id':'p','input':{'registered_rules':{'direction':'negative','icMetric':'rank_ic'},'draft':draft}}),patch.object(jobs,'update',return_value=True) as update,patch('services.quant_factor.f0_agent.record_progress'),patch('services.quant_factor.generation.generate',side_effect=[first,second]) as gen:
+   jobs.run(1,2,'j')
+  self.assertEqual(gen.call_count,2);self.assertTrue(gen.call_args_list[1].args[3].endswith('-cap2'));self.assertIn('自然对数',gen.call_args_list[1].args[4]['prompt']);self.assertIn('np.log',gen.call_args_list[1].args[4]['prompt'])

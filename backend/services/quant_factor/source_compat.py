@@ -24,6 +24,35 @@ NP = {
     "nan",
     "inf",
 }
+def capability_catalog():
+    """The product's actual panel-expression surface, used by planners and F3."""
+    return {
+        'fields': sorted(FIELDS),
+        'methods': sorted(METHODS),
+        'functions': sorted(FUNCTIONS),
+        'numpy': sorted(NP),
+        'notes': [
+            'Use np.log/np.log1p for elementwise logs; bare ln/log and self.log are not panel methods.',
+            'No imports, arbitrary Python, matrix algebra, OLS/regression, or nested functions.',
+            'Every rolling window must be a fixed backward window.',
+        ],
+    }
+
+
+def unsupported_proposal_reason(text):
+    """Return a capability mismatch for proposal prose that asks for unsupported work."""
+    value = str(text or '')
+    markers = ('import ', 'numpy as', 'math.', 'self.log', 'self.ln', 'np.linalg', 'np.polyfit', 'OLS', '回归')
+    for marker in markers:
+        if marker in value:
+            return '研究提案要求平台不支持的表达式能力：' + marker
+    for marker in ('ln(', 'log('):
+        # np.log(...) is supported; a bare ln()/log() is not.
+        if marker in value.replace('np.log1p(', '').replace('np.log(', ''):
+            return '研究提案要求平台不支持的表达式能力：' + marker
+    return ''
+
+
 NODES = (
     ast.Module,
     ast.FunctionDef,

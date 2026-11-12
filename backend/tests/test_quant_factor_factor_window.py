@@ -31,3 +31,26 @@ def test_volatility_overlay_is_not_mistaken_for_the_return_horizon():
     assert declared_window('Agent 自主研究：1日反转基线 · 1111') == 1
     assert declared_window(hypothesis) == 1
     assert conflict('Agent 自主研究：1日反转基线 · 1111', hypothesis, 'self.close.pct_change(1)') == ''
+
+
+def test_composite_multi_window_factor_is_not_rejected_as_single_window_mismatch():
+    hypothesis = ('构造1日与3日反转排名等权合成因子：r1=close_{i,t}/close_{i,t-1}-1，'
+                  'r3=close_{i,t}/close_{i,t-3}-1，signal=(rank(-r1)+rank(-r3))/2')
+    code = ('def f0_factor(self):\n'
+            '    a=self.close.shift(1);b=self.close.shift(3)\n'
+            '    return -(self.close/a-1).rank(axis=1,pct=True)-(self.close/b-1).rank(axis=1,pct=True)')
+    assert conflict('Agent 自主研究：1日反转基线 · 1112', hypothesis, code) == ''
+
+
+def test_volatility_lookback_plus_raw_window_is_not_rejected():
+    hypothesis = 'vol=过去3个交易日收益的标准差；raw=-(close_{i,t}/close_{i,t-3}-1)；signal=raw/vol'
+    code = ('def f0_factor(self):\n'
+            '    ret=self.close.pct_change(1);vol=ret.rolling(3,min_periods=3).std()\n'
+            '    raw=-(self.close/self.close.shift(3)-1);return raw/vol')
+    assert conflict('反转基线', hypothesis, code) == ''
+
+
+def test_parent_window_mention_with_a_new_single_window_is_not_rejected():
+    hypothesis = '将父候选的3日反转改为2日反转：r2=close_{i,t}/close_{i,t-2}-1'
+    code = 'def f0_factor(self):\n    return -(self.close/self.close.shift(2)-1)'
+    assert conflict('反转基线', hypothesis, code) == ''

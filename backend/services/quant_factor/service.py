@@ -69,7 +69,9 @@ def current(uid,org,cid):
     with get_conn() as c:
         topic=c.execute('SELECT id FROM quant_factor_topics WHERE user_id=%s AND org_id=%s AND project_id=%s',(uid,org,row['project_id'])).fetchone()
     from .presentation import context,candidate_identity
+    from .quality import assess as quality_assess
     row['presentation']=candidate_identity(row,context(uid,org,row['project_id']))
+    row['quality']=quality_assess(row)
     row['validation_mode']='sealed' if topic else 'legacy'
     from .review import feedback_materials
     try:row['feedback_eligibility']={'allowed':True,**feedback_materials(row)}

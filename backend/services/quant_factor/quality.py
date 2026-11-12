@@ -9,8 +9,8 @@ from __future__ import annotations
 from datetime import date
 
 VERSION = 'quant.factor-quality.v1'
-SHORT_SAMPLE_OBSERVATIONS = 120
-SHORT_WINDOW_DAYS = 180
+SHORT_SAMPLE_OBSERVATIONS = 250
+SHORT_WINDOW_DAYS = 730
 HIGH_TURNOVER = 0.30
 
 

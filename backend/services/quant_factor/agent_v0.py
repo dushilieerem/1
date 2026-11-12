@@ -38,7 +38,7 @@ HYPOTHESIS = (
     '短周期反转基线：过去 5 个交易日累计收益最低的固定 40 只样本，'
     '次日存在正向反转；仅使用 OHLCV，不改变固定区间与门槛。'
 )
-_ACCEPTANCE = '科学评估 v2：方向 Rank IC ≥ 0.02，NW t ≥ t*(K)，有效观测 ≥ 60，最大回撤 ≤ 0.20；成本必须非零'
+_ACCEPTANCE = '科学评估 v2：方向 Rank IC ≥ 0.02，NW t ≥ t*(K)，有效观测 ≥ 250，最大回撤 ≤ 0.20；成本必须非零'
 TEMPLATES = [
     {'key': 'reversal_5d', 'title': '5日反转基线', 'window': 5, 'hypothesis': HYPOTHESIS},
     {'key': 'reversal_1d', 'title': '1日反转基线', 'window': 1,
@@ -253,7 +253,7 @@ def _baseline_config(template: dict | None = None) -> dict:
         'researchPlan': {
             'rules': {
                 'icMetric': 'rank_ic', 'direction': 'positive',
-                'maxDrawdown': 0.20, 'minSignedIc': 0.02, 'minObservations': 60,
+                'maxDrawdown': 0.20, 'minSignedIc': 0.02, 'minObservations': 250,
             },
             'target': '未来1个交易日收益',
             'revision': 'agent-v0-' + str(uuid.uuid4()),
@@ -262,11 +262,11 @@ def _baseline_config(template: dict | None = None) -> dict:
             'acceptance': _ACCEPTANCE,
             'hypothesis': template['hypothesis'],
             'evaluationProtocol': 'scientific-v2',
-            'validationEnd': '2026-09-21',
-            'developmentEnd': '2025-09-30',
+            'validationEnd': '2025-12-31',
+            'developmentEnd': '2024-12-31',
             'researchPurpose': 'discovery',
-            'validationStart': '2026-06-22',
-            'developmentStart': '2025-07-01',
+            'validationStart': '2025-01-01',
+            'developmentStart': '2022-01-01',
             'fieldRestriction': 'ohlcv',
             'improvementScope': '只改进实现，不改变经济假设和方向',
             'candidateExpression': '',
